@@ -19750,3 +19750,103 @@ select.tasknotes-settings__card-input {
     min-width: 100px;
 }
 
+/* ================================================
+   COMPATIBILITY PANEL (Convert Mode)
+   ================================================ */
+
+.tn-bulk-compatibility-panel {
+    background: var(--background-secondary);
+    border-radius: 6px;
+    padding: 12px;
+    margin: 12px 0;
+}
+
+.tn-bulk-compatibility-header {
+    font-weight: 600;
+    margin-bottom: 8px;
+    font-size: 0.85em;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+}
+
+.tn-bulk-compatibility-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+}
+
+.tn-bulk-compatibility-icon {
+    width: 16px;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.tn-bulk-compatibility-icon.ready {
+    color: var(--text-success);
+}
+
+.tn-bulk-compatibility-icon.skip {
+    color: var(--text-warning);
+}
+
+.tn-bulk-compatibility-icon.error {
+    color: var(--text-error);
+}
+
+.tn-bulk-compatibility-toggle {
+    margin-top: 8px;
+    margin-left: 24px;
+}
+
+.tn-bulk-compatibility-toggle-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.85em;
+    padding: 4px 0;
+}
+
+.tn-bulk-compatibility-toggle-btn:hover {
+    color: var(--text-normal);
+}
+
+.tn-bulk-compatibility-breakdown {
+    margin-left: 24px;
+    padding: 0;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.2s ease, padding 0.2s ease;
+}
+
+.tn-bulk-compatibility-breakdown.expanded {
+    max-height: 150px;
+    overflow-y: auto;
+    padding: 8px 0;
+}
+
+.tn-bulk-compatibility-file {
+    padding: 2px 8px;
+    font-size: 0.85em;
+    color: var(--text-muted);
+    font-family: var(--font-monospace);
+}
+
+.tn-bulk-compatibility-overflow {
+    padding: 2px 8px;
+    font-size: 0.85em;
+    color: var(--text-faint);
+    font-style: italic;
+}
+
+.tn-bulk-compatibility-warning {
+    background: var(--background-modifier-error-hover);
+    padding: 8px 12px;
+    border-radius: 4px;
+    margin-top: 8px;
+    font-size: 0.9em;
+    color: var(--text-error);
+}
+

@@ -9,7 +9,7 @@ import { App, Modal, Notice, Setting } from "obsidian";
 import TaskNotesPlugin from "../main";
 import { BasesDataItem } from "../bases/helpers";
 import { BulkTaskEngine, BulkCreationOptions, BulkCreationResult } from "./bulk-task-engine";
-import { BulkConvertEngine, BulkConvertOptions, BulkConvertResult } from "./bulk-convert-engine";
+import { BulkConvertEngine, BulkConvertOptions, BulkConvertResult, ConvertPreCheckResult } from "./bulk-convert-engine";
 
 type BulkMode = "generate" | "convert";
 
@@ -46,6 +46,8 @@ export class BulkTaskCreationModal extends Modal {
 	private optionsContainer: HTMLElement | null = null;
 	private previewContainer: HTMLElement | null = null;
 	private statusContainer: HTMLElement | null = null;
+	private compatibilityContainer: HTMLElement | null = null;
+	private compatibilityExpanded = false;
 	private actionButton: HTMLButtonElement | null = null;
 	private progressBar: HTMLElement | null = null;
 
@@ -87,6 +89,10 @@ export class BulkTaskCreationModal extends Modal {
 		// Options section (dynamic per mode)
 		this.optionsContainer = contentEl.createDiv({ cls: "tn-bulk-options-section" });
 		this.rebuildOptions();
+
+		// Compatibility panel (Convert mode only)
+		this.compatibilityContainer = contentEl.createDiv({ cls: "tn-bulk-compatibility-panel" });
+		this.compatibilityContainer.style.display = this.mode === "convert" ? "block" : "none";
 
 		// Status/progress section
 		this.statusContainer = contentEl.createDiv({ cls: "tn-bulk-status" });
@@ -142,6 +148,14 @@ export class BulkTaskCreationModal extends Modal {
 
 		// Rebuild options for new mode
 		this.rebuildOptions();
+
+		// Show/hide compatibility panel (Convert mode only)
+		if (this.compatibilityContainer) {
+			this.compatibilityContainer.style.display = this.mode === "convert" ? "block" : "none";
+			if (this.mode !== "convert") {
+				this.compatibilityContainer.empty();
+			}
+		}
 
 		// Re-run pre-check
 		this.runPreCheck();
@@ -344,27 +358,13 @@ export class BulkTaskCreationModal extends Modal {
 
 		const preCheck = await this.convertEngine.preCheck(this.items);
 
+		// Clear the simple status (we use compatibility panel instead)
 		this.statusContainer.empty();
 
-		// Build status message parts
-		const parts: string[] = [];
-		parts.push(`Will convert ${preCheck.toConvert} note${preCheck.toConvert !== 1 ? "s" : ""}`);
+		// Render the rich compatibility panel
+		this.renderCompatibilityPanel(preCheck);
 
-		if (preCheck.alreadyTasks > 0 && this.skipAlreadyTasks) {
-			parts.push(`skip ${preCheck.alreadyTasks} already task${preCheck.alreadyTasks !== 1 ? "s" : ""}`);
-		}
-
-		if (preCheck.nonMarkdown > 0) {
-			parts.push(`skip ${preCheck.nonMarkdown} non-markdown`);
-		}
-
-		this.statusContainer.createSpan({
-			text: parts.join(", "),
-			cls: "tn-bulk-status-info",
-		});
-
-		// Mark skipped items in preview (combine both sets)
-		const allSkipped = new Set([...preCheck.alreadyTaskPaths, ...preCheck.nonMarkdownPaths]);
+		// Mark skipped items in preview
 		if (this.skipAlreadyTasks) {
 			this.updatePreviewWithSkippedMulti(preCheck.alreadyTaskPaths, preCheck.nonMarkdownPaths);
 		} else {
@@ -438,6 +438,124 @@ export class BulkTaskCreationModal extends Modal {
 				const badge = itemEl.querySelector(".tn-bulk-skip-badge");
 				if (badge) badge.remove();
 			}
+		}
+	}
+
+	/**
+	 * Render the compatibility panel showing file type breakdown for Convert mode.
+	 */
+	private renderCompatibilityPanel(preCheck: ConvertPreCheckResult) {
+		if (!this.compatibilityContainer) return;
+		this.compatibilityContainer.empty();
+
+		// Header
+		this.compatibilityContainer.createDiv({
+			cls: "tn-bulk-compatibility-header",
+			text: "Compatibility check",
+		});
+
+		// Ready to convert row
+		const readyRow = this.compatibilityContainer.createDiv({ cls: "tn-bulk-compatibility-row" });
+		readyRow.createSpan({ cls: "tn-bulk-compatibility-icon ready", text: "✓" });
+		readyRow.createSpan({
+			text: `Ready to convert: ${preCheck.toConvert} markdown file${preCheck.toConvert !== 1 ? "s" : ""}`,
+		});
+
+		// Already tasks row (if any and skipping)
+		if (preCheck.alreadyTasks > 0 && this.skipAlreadyTasks) {
+			const taskRow = this.compatibilityContainer.createDiv({ cls: "tn-bulk-compatibility-row" });
+			taskRow.createSpan({ cls: "tn-bulk-compatibility-icon skip", text: "⊘" });
+			taskRow.createSpan({
+				text: `Skip (already tasks): ${preCheck.alreadyTasks} file${preCheck.alreadyTasks !== 1 ? "s" : ""}`,
+			});
+		}
+
+		// Non-markdown row (if any)
+		if (preCheck.nonMarkdown > 0) {
+			const nonMdRow = this.compatibilityContainer.createDiv({ cls: "tn-bulk-compatibility-row" });
+			nonMdRow.createSpan({ cls: "tn-bulk-compatibility-icon error", text: "✗" });
+			nonMdRow.createSpan({
+				text: `Skip (non-markdown): ${preCheck.nonMarkdown} file${preCheck.nonMarkdown !== 1 ? "s" : ""}`,
+			});
+
+			// Expandable breakdown toggle
+			const toggleRow = this.compatibilityContainer.createDiv({ cls: "tn-bulk-compatibility-toggle" });
+			const toggleBtn = toggleRow.createEl("button", {
+				cls: "tn-bulk-compatibility-toggle-btn",
+				text: this.compatibilityExpanded ? "▼ Incompatible files" : "▶ Incompatible files",
+			});
+
+			// Breakdown container
+			const breakdownEl = this.compatibilityContainer.createDiv({
+				cls: `tn-bulk-compatibility-breakdown ${this.compatibilityExpanded ? "expanded" : ""}`,
+			});
+
+			// Populate breakdown with filenames
+			this.populateFileBreakdown(breakdownEl, preCheck.fileTypeBreakdown);
+
+			// Toggle click handler
+			toggleBtn.addEventListener("click", () => {
+				this.compatibilityExpanded = !this.compatibilityExpanded;
+				toggleBtn.textContent = this.compatibilityExpanded ? "▼ Incompatible files" : "▶ Incompatible files";
+				if (this.compatibilityExpanded) {
+					breakdownEl.addClass("expanded");
+				} else {
+					breakdownEl.removeClass("expanded");
+				}
+			});
+		}
+
+		// Warning if high skip ratio
+		const totalItems = this.items.length;
+		const skipCount = preCheck.alreadyTasks + preCheck.nonMarkdown;
+		const skipRatio = totalItems > 0 ? skipCount / totalItems : 0;
+
+		if (skipRatio > 0.25 && skipCount > 0) {
+			const warningEl = this.compatibilityContainer.createDiv({ cls: "tn-bulk-compatibility-warning" });
+			const percent = Math.round(skipRatio * 100);
+			warningEl.createSpan({ text: `⚠ ${percent}% of selected files will be skipped` });
+		}
+	}
+
+	/**
+	 * Populate the file breakdown section with filenames grouped by extension.
+	 */
+	private populateFileBreakdown(container: HTMLElement, breakdown: Map<string, string[]>) {
+		const MAX_FILES = 5;
+		let totalShown = 0;
+		const overflow: { ext: string; count: number }[] = [];
+
+		// Flatten all files into a single list for display
+		const allFiles: { name: string; ext: string }[] = [];
+		for (const [ext, files] of breakdown) {
+			for (const name of files) {
+				allFiles.push({ name, ext });
+			}
+		}
+
+		// Show first MAX_FILES
+		for (let i = 0; i < Math.min(allFiles.length, MAX_FILES); i++) {
+			const file = allFiles[i];
+			container.createDiv({
+				cls: "tn-bulk-compatibility-file",
+				text: `${file.name}.${file.ext}`,
+			});
+			totalShown++;
+		}
+
+		// Calculate overflow
+		if (allFiles.length > MAX_FILES) {
+			const remaining = allFiles.length - MAX_FILES;
+			// Get unique extensions in overflow
+			const overflowExts = new Set<string>();
+			for (let i = MAX_FILES; i < allFiles.length; i++) {
+				overflowExts.add(`.${allFiles[i].ext}`);
+			}
+			const extList = Array.from(overflowExts).join(", ");
+			container.createDiv({
+				cls: "tn-bulk-compatibility-overflow",
+				text: `...and ${remaining} more (${extList})`,
+			});
 		}
 	}
 

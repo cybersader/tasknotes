@@ -40,6 +40,8 @@ export interface ConvertPreCheckResult {
 	/** Non-markdown files that will be skipped */
 	nonMarkdown: number;
 	nonMarkdownPaths: Set<string>;
+	/** Breakdown of non-markdown files by extension: ext -> [filenames] */
+	fileTypeBreakdown: Map<string, string[]>;
 }
 
 /**
@@ -55,6 +57,7 @@ export class BulkConvertEngine {
 	async preCheck(items: BasesDataItem[]): Promise<ConvertPreCheckResult> {
 		const alreadyTaskPaths = new Set<string>();
 		const nonMarkdownPaths = new Set<string>();
+		const fileTypeBreakdown = new Map<string, string[]>();
 
 		console.log("[BulkConvertEngine] preCheck:", {
 			itemCount: items.length,
@@ -71,6 +74,12 @@ export class BulkConvertEngine {
 			// Skip non-markdown files (e.g., .xlsx, .pdf, .png)
 			if (file.extension !== "md") {
 				nonMarkdownPaths.add(sourcePath);
+				// Track by extension for breakdown
+				const ext = file.extension.toLowerCase();
+				if (!fileTypeBreakdown.has(ext)) {
+					fileTypeBreakdown.set(ext, []);
+				}
+				fileTypeBreakdown.get(ext)!.push(file.basename);
 				continue;
 			}
 
@@ -91,9 +100,10 @@ export class BulkConvertEngine {
 			nonMarkdown,
 			alreadyTaskPaths: [...alreadyTaskPaths],
 			nonMarkdownPaths: [...nonMarkdownPaths],
+			fileTypeBreakdown: Object.fromEntries(fileTypeBreakdown),
 		});
 
-		return { toConvert, alreadyTasks, alreadyTaskPaths, nonMarkdown, nonMarkdownPaths };
+		return { toConvert, alreadyTasks, alreadyTaskPaths, nonMarkdown, nonMarkdownPaths, fileTypeBreakdown };
 	}
 
 	/**
