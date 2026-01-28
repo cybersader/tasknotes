@@ -67,12 +67,23 @@ const versionsWithDates = versionsToBundle.map(version => ({
 	version,
 	date: getVersionDate(version)
 })).sort((a, b) => {
-	// Versions without dates go to the end
-	if (!a.date && !b.date) return 0;
-	if (!a.date) return 1;
-	if (!b.date) return -1;
-	// Sort by date descending (newest first)
-	return new Date(b.date).getTime() - new Date(a.date).getTime();
+	// If both have dates, sort by date descending (newest first)
+	if (a.date && b.date) {
+		const dateCompare = new Date(b.date).getTime() - new Date(a.date).getTime();
+		if (dateCompare !== 0) return dateCompare;
+	}
+
+	// Fall back to semantic version comparison (newest first)
+	const vA = parseVersion(a.version);
+	const vB = parseVersion(b.version);
+	if (vA && vB) {
+		if (vA.major !== vB.major) return vB.major - vA.major;
+		if (vA.minor !== vB.minor) return vB.minor - vA.minor;
+		return vB.patch - vA.patch;
+	}
+
+	// Last resort: string comparison
+	return b.version.localeCompare(a.version);
 });
 
 // Generate imports and metadata
