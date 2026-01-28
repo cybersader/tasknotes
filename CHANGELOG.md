@@ -4,6 +4,12 @@ All notable changes to this TaskNotes fork will be documented in this file.
 
 This fork (`cybersader/tasknotes`) adds bulk tasking, notifications, and other enhancements to the upstream [TaskNotes](https://github.com/callumalpass/tasknotes) plugin.
 
+## [4.3.4] - 2026-01-28
+
+### Fixed
+- Convert mode now skips non-markdown files (e.g., `.xlsx`, `.pdf`, `.png`) instead of timing out on metadata cache
+- Pre-check shows non-markdown file count in status message
+
 ## [4.3.3] - 2026-01-28
 
 ### Fixed

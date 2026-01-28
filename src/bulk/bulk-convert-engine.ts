@@ -23,7 +23,7 @@ export interface BulkConvertOptions {
 export interface BulkConvertResult {
 	/** Number of notes successfully converted */
 	converted: number;
-	/** Number of notes skipped (already tasks) */
+	/** Number of notes skipped (already tasks or non-markdown) */
 	skipped: number;
 	/** Number of notes that failed to convert */
 	failed: number;
@@ -37,6 +37,9 @@ export interface ConvertPreCheckResult {
 	toConvert: number;
 	alreadyTasks: number;
 	alreadyTaskPaths: Set<string>;
+	/** Non-markdown files that will be skipped */
+	nonMarkdown: number;
+	nonMarkdownPaths: Set<string>;
 }
 
 /**
@@ -51,6 +54,7 @@ export class BulkConvertEngine {
 	 */
 	async preCheck(items: BasesDataItem[]): Promise<ConvertPreCheckResult> {
 		const alreadyTaskPaths = new Set<string>();
+		const nonMarkdownPaths = new Set<string>();
 
 		console.log("[BulkConvertEngine] preCheck:", {
 			itemCount: items.length,
@@ -64,6 +68,12 @@ export class BulkConvertEngine {
 			const file = this.plugin.app.vault.getAbstractFileByPath(sourcePath);
 			if (!(file instanceof TFile)) continue;
 
+			// Skip non-markdown files (e.g., .xlsx, .pdf, .png)
+			if (file.extension !== "md") {
+				nonMarkdownPaths.add(sourcePath);
+				continue;
+			}
+
 			const metadata = this.plugin.app.metadataCache.getFileCache(file);
 			const frontmatter = metadata?.frontmatter;
 			if (frontmatter && this.plugin.cacheManager.isTaskFile(frontmatter)) {
@@ -72,15 +82,18 @@ export class BulkConvertEngine {
 		}
 
 		const alreadyTasks = alreadyTaskPaths.size;
-		const toConvert = items.length - alreadyTasks;
+		const nonMarkdown = nonMarkdownPaths.size;
+		const toConvert = items.length - alreadyTasks - nonMarkdown;
 
 		console.log("[BulkConvertEngine] preCheck result:", {
 			toConvert,
 			alreadyTasks,
+			nonMarkdown,
 			alreadyTaskPaths: [...alreadyTaskPaths],
+			nonMarkdownPaths: [...nonMarkdownPaths],
 		});
 
-		return { toConvert, alreadyTasks, alreadyTaskPaths };
+		return { toConvert, alreadyTasks, alreadyTaskPaths, nonMarkdown, nonMarkdownPaths };
 	}
 
 	/**
@@ -113,6 +126,13 @@ export class BulkConvertEngine {
 			const sourcePath = item.path || "";
 
 			options.onProgress?.(i + 1, total, `Converting ${i + 1} of ${total}...`);
+
+			// Skip non-markdown files (e.g., .xlsx, .pdf, .png)
+			if (preCheck.nonMarkdownPaths.has(sourcePath)) {
+				console.log("[BulkConvertEngine] Skipping (non-markdown):", sourcePath);
+				result.skipped++;
+				continue;
+			}
 
 			// Skip if already a task
 			if (preCheck.alreadyTaskPaths.has(sourcePath)) {

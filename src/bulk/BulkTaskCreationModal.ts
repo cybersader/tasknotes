@@ -345,29 +345,34 @@ export class BulkTaskCreationModal extends Modal {
 		const preCheck = await this.convertEngine.preCheck(this.items);
 
 		this.statusContainer.empty();
+
+		// Build status message parts
+		const parts: string[] = [];
+		parts.push(`Will convert ${preCheck.toConvert} note${preCheck.toConvert !== 1 ? "s" : ""}`);
+
 		if (preCheck.alreadyTasks > 0 && this.skipAlreadyTasks) {
-			this.statusContainer.createSpan({
-				text: `Will convert ${preCheck.toConvert} note${preCheck.toConvert !== 1 ? "s" : ""}, skip ${preCheck.alreadyTasks} already task${preCheck.alreadyTasks !== 1 ? "s" : ""}`,
-				cls: "tn-bulk-status-info",
-			});
-		} else {
-			const count = this.skipAlreadyTasks ? preCheck.toConvert : this.items.length;
-			this.statusContainer.createSpan({
-				text: `Will convert ${count} note${count !== 1 ? "s" : ""}`,
-				cls: "tn-bulk-status-info",
-			});
+			parts.push(`skip ${preCheck.alreadyTasks} already task${preCheck.alreadyTasks !== 1 ? "s" : ""}`);
 		}
 
+		if (preCheck.nonMarkdown > 0) {
+			parts.push(`skip ${preCheck.nonMarkdown} non-markdown`);
+		}
+
+		this.statusContainer.createSpan({
+			text: parts.join(", "),
+			cls: "tn-bulk-status-info",
+		});
+
+		// Mark skipped items in preview (combine both sets)
+		const allSkipped = new Set([...preCheck.alreadyTaskPaths, ...preCheck.nonMarkdownPaths]);
 		if (this.skipAlreadyTasks) {
-			this.updatePreviewWithSkipped(preCheck.alreadyTaskPaths, "already task");
+			this.updatePreviewWithSkippedMulti(preCheck.alreadyTaskPaths, preCheck.nonMarkdownPaths);
 		} else {
-			// Clear any badges if skip is off
-			this.updatePreviewWithSkipped(new Set(), "already task");
+			this.updatePreviewWithSkippedMulti(new Set(), preCheck.nonMarkdownPaths);
 		}
 
 		if (this.actionButton) {
-			const actionCount = this.skipAlreadyTasks ? preCheck.toConvert : this.items.length;
-			this.actionButton.disabled = actionCount === 0;
+			this.actionButton.disabled = preCheck.toConvert === 0;
 		}
 	}
 
@@ -388,6 +393,40 @@ export class BulkTaskCreationModal extends Modal {
 			if (item.path && existingPaths.has(item.path)) {
 				itemEl.addClass("tn-bulk-preview-skipped");
 				// Add or update skipped indicator
+				let badge = itemEl.querySelector(".tn-bulk-skip-badge") as HTMLElement;
+				if (!badge) {
+					badge = itemEl.createSpan({ cls: "tn-bulk-skip-badge", text: badgeText });
+				} else {
+					badge.textContent = badgeText;
+				}
+			} else {
+				itemEl.removeClass("tn-bulk-preview-skipped");
+				const badge = itemEl.querySelector(".tn-bulk-skip-badge");
+				if (badge) badge.remove();
+			}
+		}
+	}
+
+	/**
+	 * Update preview with multiple skip reasons (already task, non-markdown).
+	 */
+	private updatePreviewWithSkippedMulti(alreadyTaskPaths: Set<string>, nonMarkdownPaths: Set<string>) {
+		if (!this.previewContainer) return;
+
+		const items = this.previewContainer.querySelectorAll(".tn-bulk-preview-item");
+		const maxPreview = this.items.length > 5 ? 3 : 5;
+
+		for (let i = 0; i < Math.min(this.items.length, maxPreview); i++) {
+			const item = this.items[i];
+			const itemEl = items[i] as HTMLElement;
+			if (!itemEl) continue;
+
+			const isAlreadyTask = item.path && alreadyTaskPaths.has(item.path);
+			const isNonMarkdown = item.path && nonMarkdownPaths.has(item.path);
+
+			if (isAlreadyTask || isNonMarkdown) {
+				itemEl.addClass("tn-bulk-preview-skipped");
+				const badgeText = isNonMarkdown ? "non-markdown" : "already task";
 				let badge = itemEl.querySelector(".tn-bulk-skip-badge") as HTMLElement;
 				if (!badge) {
 					badge = itemEl.createSpan({ cls: "tn-bulk-skip-badge", text: badgeText });
