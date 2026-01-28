@@ -158,8 +158,8 @@ export class BulkConvertEngine {
 				const propName = settings.taskPropertyName;
 				const propValue = settings.taskPropertyValue;
 				if (propName && frontmatter[propName] === undefined) {
-					// Parse "true"/"false" strings as booleans
-					if (propValue === "true") {
+					// Parse "true"/"false" strings as booleans, default to true if empty
+					if (propValue === "true" || propValue === "") {
 						frontmatter[propName] = true;
 					} else if (propValue === "false") {
 						frontmatter[propName] = false;
