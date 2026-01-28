@@ -187,7 +187,8 @@ export class BulkConvertEngine {
 				// Property method: set the configured property
 				const propName = settings.taskPropertyName;
 				const propValue = settings.taskPropertyValue;
-				if (propName && frontmatter[propName] === undefined) {
+				// Set if missing OR if empty string (fixes buggy conversions from older versions)
+				if (propName && (frontmatter[propName] === undefined || frontmatter[propName] === "")) {
 					// Parse "true"/"false" strings as booleans, default to true if empty
 					if (propValue === "true" || propValue === "") {
 						frontmatter[propName] = true;

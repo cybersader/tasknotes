@@ -4,6 +4,18 @@ All notable changes to this TaskNotes fork will be documented in this file.
 
 This fork (`cybersader/tasknotes`) adds bulk tasking, notifications, and other enhancements to the upstream [TaskNotes](https://github.com/callumalpass/tasknotes) plugin.
 
+## [4.3.5] - 2026-01-28
+
+### Added
+- Compatibility panel in Convert mode showing file type breakdown before conversion
+  - Shows ready-to-convert, already-task, and non-markdown file counts
+  - Expandable section listing incompatible filenames (max 5, then grouped overflow)
+  - Warning banner when >25% of files will be skipped
+
+### Fixed
+- "What's New" page now shows fork release notes (was only showing upstream versions)
+- Re-converting files with empty `isTask: ""` from buggy v4.3.3 now properly sets `isTask: true`
+
 ## [4.3.4] - 2026-01-28
 
 ### Fixed
