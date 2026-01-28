@@ -52,26 +52,14 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Build plugin
-        run: npm run build
-
-      - name: Verify build outputs
-        run: |
-          echo "=== Checking build outputs ==="
-          ls -la main.js styles.css manifest.json
-          echo "=== main.js size ==="
-          wc -c main.js
-          echo "=== styles.css size ==="
-          wc -c styles.css
-
-      - name: Extract release notes from CHANGELOG.md
+      # Step 1: Generate release notes from CHANGELOG.md BEFORE build
+      - name: Generate release notes from CHANGELOG.md
         id: changelog
         run: |
           tag="${{ needs.check-version.outputs.new-version }}"
           echo "Extracting notes for version $tag from CHANGELOG.md"
 
           # Extract section between this version header and the next version header (or end markers)
-          # Uses awk to capture everything from "## [VERSION]" until the next "## [" or "---"
           notes=$(awk -v ver="$tag" '
             /^## \[/ {
               if (found) exit
@@ -88,11 +76,53 @@ jobs:
             echo "Warning: No changelog entry found for $tag, using fallback"
           fi
 
-          # Write to file for multi-line support
+          # Write to file for GitHub Release
           echo "$notes" > release_notes.md
-          echo "=== Release notes ==="
+          echo "=== Release notes for GitHub Release ==="
           cat release_notes.md
 
+          # Create docs/releases/{version}.md for What's New page (if missing)
+          release_file="docs/releases/${tag}.md"
+          if [ ! -f "$release_file" ]; then
+            echo "Creating $release_file for What's New page"
+            {
+              echo "# TaskNotes $tag (Fork)"
+              echo ""
+              echo "*This release is from the [cybersader/tasknotes](https://github.com/cybersader/tasknotes) fork.*"
+              echo ""
+              echo "$notes"
+            } > "$release_file"
+            echo "created=true" >> $GITHUB_OUTPUT
+          else
+            echo "$release_file already exists, skipping"
+            echo "created=false" >> $GITHUB_OUTPUT
+          fi
+
+      # Step 2: Build plugin (now includes the release notes file)
+      - name: Build plugin
+        run: npm run build
+
+      - name: Verify build outputs
+        run: |
+          echo "=== Checking build outputs ==="
+          ls -la main.js styles.css manifest.json
+          echo "=== main.js size ==="
+          wc -c main.js
+          echo "=== styles.css size ==="
+          wc -c styles.css
+
+      # Step 3: Commit release notes file if we created it
+      - name: Commit release notes file if created
+        if: steps.changelog.outputs.created == 'true'
+        run: |
+          tag="${{ needs.check-version.outputs.new-version }}"
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add "docs/releases/${tag}.md"
+          git commit -m "docs: auto-generate release notes for $tag [skip ci]"
+          git push origin main
+
+      # Step 4: Create tag and GitHub release
       - name: Create tag and release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
