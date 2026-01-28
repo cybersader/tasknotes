@@ -64,6 +64,35 @@ jobs:
           echo "=== styles.css size ==="
           wc -c styles.css
 
+      - name: Extract release notes from CHANGELOG.md
+        id: changelog
+        run: |
+          tag="${{ needs.check-version.outputs.new-version }}"
+          echo "Extracting notes for version $tag from CHANGELOG.md"
+
+          # Extract section between this version header and the next version header (or end markers)
+          # Uses awk to capture everything from "## [VERSION]" until the next "## [" or "---"
+          notes=$(awk -v ver="$tag" '
+            /^## \[/ {
+              if (found) exit
+              if ($0 ~ "\\[" ver "\\]") found=1
+              next
+            }
+            /^---/ { if (found) exit }
+            found { print }
+          ' CHANGELOG.md)
+
+          # Fallback if no notes found
+          if [ -z "$notes" ]; then
+            notes="Release $tag"
+            echo "Warning: No changelog entry found for $tag, using fallback"
+          fi
+
+          # Write to file for multi-line support
+          echo "$notes" > release_notes.md
+          echo "=== Release notes ==="
+          cat release_notes.md
+
       - name: Create tag and release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -80,8 +109,8 @@ jobs:
           git tag "$tag"
           git push origin "$tag"
 
-          # Create release (NOT draft - publishes immediately)
+          # Create release with notes from CHANGELOG.md
           gh release create "$tag" \
             --title="$tag" \
-            --notes="Release $tag with bulk tasking, notifications, and device identity enhancements." \
+            --notes-file release_notes.md \
             main.js manifest.json styles.css
