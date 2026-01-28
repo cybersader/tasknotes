@@ -20,7 +20,7 @@ jobs:
         id: version-check
         run: |
           current_version=$(node -p "require('./package.json').version")
-          previous_version=$(git show HEAD~1:package.json | node -p "JSON.parse(require('fs').readFileSync('/dev/stdin', 'utf8')).version")
+          previous_version=$(git show HEAD~1:package.json 2>/dev/null | node -p "JSON.parse(require('fs').readFileSync('/dev/stdin', 'utf8')).version" 2>/dev/null || echo "0.0.0")
 
           echo "Current version: $current_version"
           echo "Previous version: $previous_version"
@@ -34,7 +34,7 @@ jobs:
             echo "changed=false" >> $GITHUB_OUTPUT
           fi
 
-  build:
+  build-and-release:
     needs: check-version
     if: needs.check-version.outputs.version-changed == 'true'
     runs-on: ubuntu-latest
@@ -55,6 +55,15 @@ jobs:
       - name: Build plugin
         run: npm run build
 
+      - name: Verify build outputs
+        run: |
+          echo "=== Checking build outputs ==="
+          ls -la main.js styles.css manifest.json
+          echo "=== main.js size ==="
+          wc -c main.js
+          echo "=== styles.css size ==="
+          wc -c styles.css
+
       - name: Create tag and release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -63,10 +72,16 @@ jobs:
 
           git config user.name github-actions
           git config user.email github-actions@github.com
+
+          # Delete tag if it already exists (re-run scenario)
+          git tag -d "$tag" 2>/dev/null || true
+          git push origin ":refs/tags/$tag" 2>/dev/null || true
+
           git tag "$tag"
           git push origin "$tag"
 
+          # Create release (NOT draft - publishes immediately)
           gh release create "$tag" \
             --title="$tag" \
-            --draft \
+            --notes="Release $tag with bulk tasking, notifications, and device identity enhancements." \
             main.js manifest.json styles.css
