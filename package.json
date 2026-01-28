@@ -34,7 +34,8 @@
 		"i18n:check-usage": "i18n-state check-usage",
 		"i18n:find-unused": "i18n-state find-unused",
 		"i18n:check-duplicates": "i18n-state check-duplicates",
-		"i18n:generate-template": "i18n-state generate-template"
+		"i18n:generate-template": "i18n-state generate-template",
+		"reset": "node reset-test-data.mjs"
 	},
 	"keywords": [],
 	"author": "",

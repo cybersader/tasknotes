@@ -429,3 +429,160 @@
         font-size: var(--tn-font-size-sm);
     }
 }
+
+/* ================================================
+   BULK TASKING BUTTON
+   ================================================ */
+
+/* Hide bulk creation button by default */
+.tn-bases-bulk-create-btn {
+    display: none;
+}
+
+/* Show bulk creation button when TaskNotes view is active */
+.tasknotes-view-active .tn-bases-bulk-create-btn {
+    display: flex;
+}
+
+/* ================================================
+   BULK TASKING MODE SELECTOR
+   ================================================ */
+
+.tn-bulk-mode-section {
+    margin-bottom: var(--tn-spacing-xs);
+}
+
+.tn-bulk-mode-section .setting-item {
+    border-top: none;
+    padding: var(--tn-spacing-xs) 0;
+}
+
+/* ================================================
+   BULK TASKING MODAL
+   ================================================ */
+
+.tn-bulk-creation-modal {
+    max-width: 500px;
+}
+
+.tn-bulk-creation-modal h2 {
+    margin-bottom: 2px;
+}
+
+.tn-bulk-summary {
+    font-size: var(--tn-font-size-sm);
+    color: var(--tn-text-muted);
+    margin-bottom: var(--tn-spacing-sm);
+}
+
+/* Preview section */
+.tn-bulk-preview-section {
+    margin-bottom: var(--tn-spacing-sm);
+}
+
+.tn-bulk-preview {
+    padding: var(--tn-spacing-xs) 0;
+    max-height: 160px;
+    overflow-y: auto;
+}
+
+.tn-bulk-preview-item {
+    display: flex;
+    align-items: center;
+    gap: var(--tn-spacing-sm);
+    padding: 2px 0;
+}
+
+.tn-bulk-preview-title {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: var(--tn-font-size-sm);
+    color: var(--tn-text-muted);
+}
+
+.tn-bulk-preview-item.tn-bulk-preview-skipped {
+    opacity: 0.5;
+    text-decoration: line-through;
+}
+
+.tn-bulk-skip-badge {
+    font-size: var(--tn-font-size-xs);
+    background: var(--tn-bg-secondary);
+    color: var(--tn-text-muted);
+    padding: 2px 6px;
+    border-radius: var(--tn-radius-sm);
+    flex-shrink: 0;
+}
+
+.tn-bulk-preview-more {
+    padding: 2px 0;
+    color: var(--tn-text-muted);
+    font-size: var(--tn-font-size-sm);
+    font-style: italic;
+}
+
+/* Options section */
+.tn-bulk-options-section {
+    margin-bottom: var(--tn-spacing-sm);
+}
+
+.tn-bulk-options-section .setting-item {
+    border-top: none;
+    padding: var(--tn-spacing-xs) 0;
+}
+
+/* Status section */
+.tn-bulk-status {
+    margin-bottom: var(--tn-spacing-sm);
+    min-height: 20px;
+}
+
+.tn-bulk-status-info {
+    color: var(--tn-text-muted);
+    font-size: var(--tn-font-size-sm);
+}
+
+.tn-bulk-status-success {
+    color: var(--tn-color-success);
+    font-weight: var(--tn-font-weight-medium);
+}
+
+.tn-bulk-status-warning {
+    color: var(--tn-color-warning);
+}
+
+.tn-bulk-status-error {
+    color: var(--tn-color-error);
+}
+
+/* Actions section */
+.tn-bulk-actions {
+    display: flex;
+    flex-direction: column;
+    gap: var(--tn-spacing-md);
+}
+
+.tn-bulk-progress {
+    height: 6px;
+    background: var(--tn-bg-secondary);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.tn-bulk-progress-bar {
+    height: 100%;
+    background: var(--tn-interactive-accent);
+    transition: width 0.3s ease;
+}
+
+.tn-bulk-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--tn-spacing-sm);
+}
+
+.tn-bulk-buttons button {
+    min-width: 100px;
+}

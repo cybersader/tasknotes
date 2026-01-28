@@ -1,4 +1,4 @@
-import { Component, App, setIcon } from "obsidian";
+import { Component, App, setIcon, TFile, parseYaml, Notice } from "obsidian";
 import TaskNotesPlugin from "../main";
 import { BasesDataAdapter } from "./BasesDataAdapter";
 import { PropertyMappingService } from "./PropertyMappingService";
@@ -8,6 +8,8 @@ import { DEFAULT_INTERNAL_VISIBLE_PROPERTIES } from "../settings/defaults";
 import { SearchBox } from "./components/SearchBox";
 import { TaskSearchFilter } from "./TaskSearchFilter";
 import { BatchContextMenu } from "../components/BatchContextMenu";
+import type { NotificationItem } from "../modals/BasesNotificationModal";
+import { BulkTaskCreationModal } from "../bulk/BulkTaskCreationModal";
 
 /**
  * Abstract base class for all TaskNotes Bases views.
@@ -39,6 +41,12 @@ export abstract class BasesViewBase extends Component {
 	// Selection mode state
 	protected selectionModeCleanup: (() => void) | null = null;
 	protected selectionIndicatorEl: HTMLElement | null = null;
+
+	// Notification state - prevent duplicate notifications per session
+	private notifyChecked = false;
+
+	// Store reference to toolbar parent for cleanup
+	private toolbarParentEl: HTMLElement | null = null;
 
 	constructor(controller: any, containerEl: HTMLElement, plugin: TaskNotesPlugin) {
 		// Call Component constructor
@@ -91,6 +99,8 @@ export abstract class BasesViewBase extends Component {
 			this.dataUpdateDebounceTimer = null;
 			try {
 				this.render();
+				// Check for notification trigger after data arrives
+				this.checkAndTriggerNotification();
 			} catch (error) {
 				console.error(`[TaskNotes][${this.type}] Render error:`, error);
 				this.renderError(error as Error);
@@ -187,6 +197,9 @@ export abstract class BasesViewBase extends Component {
 
 		// Add custom "New Task" button and hide the default Bases "New" button
 		this.setupNewTaskButton();
+
+		// Add "Generate Tasks" button for bulk task creation from Bases items
+		this.setupBulkCreationButton();
 	}
 
 	/**
@@ -197,19 +210,25 @@ export abstract class BasesViewBase extends Component {
 		// Defer to allow Bases to render its toolbar first
 		setTimeout(() => this.injectNewTaskButton(), 100);
 
-		// Register cleanup to toggle off the active class when view is unloaded
-		this.register(() => this.cleanupNewTaskButton());
+		// Register cleanup to remove buttons and class when view is unloaded
+		this.register(() => this.cleanupToolbarButtons());
 	}
 
 	/**
-	 * Clean up: just remove the "active" class, keep the button for reuse.
+	 * Clean up: remove buttons and active class when view unloads.
+	 * This ensures buttons don't persist when switching to non-TaskNotes view types.
 	 */
-	private cleanupNewTaskButton(): void {
-		const basesViewEl = this.containerEl.closest(".bases-view");
-		const parentEl = basesViewEl?.parentElement;
+	private cleanupToolbarButtons(): void {
+		// Remove the active class
+		this.toolbarParentEl?.classList.remove("tasknotes-view-active");
 
-		// Only remove the "active" class - button stays for potential reuse
-		parentEl?.classList.remove("tasknotes-view-active");
+		// Remove the buttons we injected
+		const newTaskBtn = this.toolbarParentEl?.querySelector(".tn-bases-new-task-btn");
+		const bulkBtn = this.toolbarParentEl?.querySelector(".tn-bases-bulk-create-btn");
+		newTaskBtn?.remove();
+		bulkBtn?.remove();
+
+		this.toolbarParentEl = null;
 	}
 
 	/**
@@ -233,6 +252,9 @@ export abstract class BasesViewBase extends Component {
 
 		// Mark parent as having an active TaskNotes view (controls visibility via CSS)
 		parentEl.classList.add("tasknotes-view-active");
+
+		// Store reference for cleanup
+		this.toolbarParentEl = parentEl as HTMLElement;
 
 		const toolbarEl = parentEl.querySelector(".bases-toolbar");
 		if (!toolbarEl) {
@@ -283,6 +305,116 @@ export abstract class BasesViewBase extends Component {
 		}
 
 		console.debug("[TaskNotes][Bases] Injected New Task button into toolbar");
+	}
+
+	/**
+	 * Setup the "Bulk tasking" button for bulk task creation/conversion.
+	 * Injects the button into the Bases toolbar.
+	 */
+	protected setupBulkCreationButton(): void {
+		// Defer to allow Bases to render its toolbar first
+		setTimeout(() => this.injectBulkCreationButton(), 150);
+	}
+
+	/**
+	 * Inject the "Bulk tasking" button into the Bases toolbar.
+	 */
+	private injectBulkCreationButton(): void {
+		// Respect settings toggle
+		if (!this.plugin.settings.enableBulkActionsButton) return;
+
+		// Find the Bases view container
+		const basesViewEl = this.containerEl.closest(".bases-view");
+		if (!basesViewEl) {
+			return;
+		}
+
+		const parentEl = basesViewEl.parentElement;
+		if (!parentEl) {
+			return;
+		}
+
+		const toolbarEl = parentEl.querySelector(".bases-toolbar");
+		if (!toolbarEl) {
+			return;
+		}
+
+		// Check if we already added the button
+		if (toolbarEl.querySelector(".tn-bases-bulk-create-btn")) return;
+
+		// Use correct document for pop-out window support
+		const doc = this.containerEl.ownerDocument;
+
+		// Create "Bulk tasking" button matching Bases' text-icon-button style
+		const bulkBtn = doc.createElement("div");
+		bulkBtn.className = "bases-toolbar-item tn-bases-bulk-create-btn";
+
+		const innerBtn = doc.createElement("div");
+		innerBtn.className = "text-icon-button";
+		innerBtn.tabIndex = 0;
+
+		// Add icon (layers icon to represent multiple items)
+		const iconSpan = doc.createElement("span");
+		iconSpan.className = "text-button-icon";
+		setIcon(iconSpan, "layers");
+		innerBtn.appendChild(iconSpan);
+
+		// Add label
+		const labelSpan = doc.createElement("span");
+		labelSpan.className = "text-button-label";
+		labelSpan.textContent = "Bulk tasking";
+		innerBtn.appendChild(labelSpan);
+
+		bulkBtn.appendChild(innerBtn);
+
+		bulkBtn.addEventListener("click", () => {
+			this.handleBulkCreation();
+		});
+
+		// Find our "New Task" button and insert after it
+		const newTaskBtn = toolbarEl.querySelector(".tn-bases-new-task-btn");
+		if (newTaskBtn) {
+			newTaskBtn.after(bulkBtn);
+		} else {
+			// Fallback: append to end of toolbar
+			toolbarEl.appendChild(bulkBtn);
+		}
+
+		console.debug("[TaskNotes][Bases] Injected Bulk tasking button into toolbar");
+	}
+
+	/**
+	 * Handle click on the "Bulk tasking" button.
+	 * Opens the bulk task modal with current Bases items.
+	 */
+	private handleBulkCreation(): void {
+		try {
+			// Extract all data items from the current Bases view
+			const dataItems = this.dataAdapter.extractDataItems();
+
+			if (dataItems.length === 0) {
+				new Notice("No items in this view to create tasks from");
+				return;
+			}
+
+			// Get the .base file path for Convert mode linking
+			const baseFile = this.findBaseFile();
+			const baseFilePath = baseFile?.path;
+
+			// Open the bulk tasking modal
+			const app = this.app || this.plugin.app;
+			const modal = new BulkTaskCreationModal(app, this.plugin, dataItems, {
+				onTasksCreated: () => {
+					// Refresh the view after tasks are created/converted
+					this.refresh();
+				},
+			}, baseFilePath);
+
+			modal.open();
+		} catch (error) {
+			console.error("[TaskNotes][Bases] Error opening bulk creation modal:", error);
+			new Notice("Failed to open bulk task creation: " + (error instanceof Error ? error.message : String(error)));
+		}
 	}
 
 	/**
@@ -886,6 +1018,100 @@ export abstract class BasesViewBase extends Component {
 			}
 		}
 		return paths;
+	}
+
+	// =====================
+	// Notification Methods
+	// =====================
+
+	/**
+	 * Check if this view's .base file has `notify: true` and trigger notification.
+	 * Only fires once per view session to avoid notification spam.
+	 */
+	private async checkAndTriggerNotification(): Promise<void> {
+		// Only check once per view session
+		if (this.notifyChecked) return;
+		this.notifyChecked = true;
+
+		// Ensure watcher is available
+		if (!this.plugin.basesQueryWatcher) return;
+
+		try {
+			// Find the .base file for this view
+			const baseFile = this.findBaseFile();
+			if (!baseFile) return;
+
+			// Read the file and check for notify: true
+			const content = await this.plugin.app.vault.read(baseFile);
+			const parsed = parseYaml(content);
+			if (!parsed?.notify) return;
+
+			// Extract data items from the view
+			const dataItems = this.dataAdapter.extractDataItems();
+			if (!dataItems || dataItems.length === 0) return;
+
+			// Build notification items from the Bases data
+			const items: NotificationItem[] = [];
+			for (const item of dataItems) {
+				const frontmatter =
+					item.properties ||
+					(item.file instanceof TFile
+						? this.plugin.app.metadataCache.getFileCache(item.file)?.frontmatter
+						: null);
+
+				const isTask = frontmatter
+					? this.plugin.cacheManager.isTaskFile(frontmatter)
+					: false;
+
+				const title =
+					(frontmatter as any)?.title ||
+					(frontmatter as any)?.[this.plugin.fieldMapper.toUserField("title")] ||
+					item.file?.basename ||
+					item.path ||
+					"Untitled";
+
+				items.push({
+					path: item.path || "",
+					title,
+					isTask,
+					status: isTask ? (frontmatter as any)?.status : undefined,
+				});
+			}
+
+			// Tell the watcher to show the notification
+			const baseName = parsed.name || baseFile.basename;
+			this.plugin.basesQueryWatcher.showNotificationFromView(
+				baseFile.path,
+				baseName,
+				items
+			);
+		} catch (error) {
+			console.debug("[BasesViewBase] Notification check failed:", error);
+		}
+	}
+
+	/**
+	 * Find the .base file associated with this view by traversing workspace leaves.
+	 */
+	private findBaseFile(): TFile | null {
+		const app = this.app || this.plugin.app;
+		let foundFile: TFile | null = null;
+
+		app.workspace.iterateAllLeaves((leaf) => {
+			if (foundFile) return; // Already found
+
+			if (leaf.view?.getViewType?.() === "bases") {
+				const view = leaf.view as any;
+				// Check if this leaf's DOM contains our container
+				if (view.containerEl?.contains(this.containerEl)) {
+					if (view.file instanceof TFile) {
+						foundFile = view.file;
+					}
+				}
+			}
+		});
+
+		return foundFile;
 	}
 
 	// Abstract methods that subclasses must implement

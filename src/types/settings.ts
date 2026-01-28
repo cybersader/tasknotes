@@ -89,6 +89,18 @@ export interface ProjectAutosuggestSettings {
 	propertyValue?: string; // Expected value for the property (empty = property must exist)
 }
 
+/**
+ * Mapping between a device and a user note in the vault.
+ * Used by the device identity system for auto-attribution in shared vaults.
+ */
+export interface DeviceUserMapping {
+	deviceId: string;
+	userNotePath: string;
+	deviceName: string;
+	lastSeen: number;
+	userDisplayName?: string;
+}
+
 export interface TaskNotesSettings {
 	tasksFolder: string; // Now just a default location for new tasks
 	moveArchivedTasks: boolean; // Whether to move tasks to archive folder when archived
@@ -204,6 +216,8 @@ export interface TaskNotesSettings {
 	// Bases integration settings
 	enableBases: boolean;
 	autoCreateDefaultBasesFiles: boolean; // Auto-create missing default Base files on startup
+	enableBulkActionsButton: boolean; // Show the "Bulk tasking" button in Bases view toolbars (key kept for backward compat)
+	defaultBulkMode: "generate" | "convert"; // Default mode for the bulk tasking modal
 	// Command-to-file mappings for view commands (v4)
 	commandFileMapping: {
 		'open-calendar-view': string;

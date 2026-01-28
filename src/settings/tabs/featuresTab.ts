@@ -461,6 +461,44 @@ export function renderFeaturesTab(
 		}
 	);
 
+	// Bases Views Section
+	createSettingGroup(
+		container,
+		{
+			heading: "Bases views",
+			description: "Settings for Bases view integration and toolbar buttons",
+		},
+		(group) => {
+			group.addSetting((setting) =>
+				configureToggleSetting(setting, {
+					name: "Bulk tasking button",
+					desc: "Show the bulk tasking button in Bases view toolbars",
+					getValue: () => plugin.settings.enableBulkActionsButton,
+					setValue: async (value: boolean) => {
+						plugin.settings.enableBulkActionsButton = value;
+						save();
+					},
+				})
+			);
+
+			group.addSetting((setting) =>
+				setting
+					.setName("Default bulk mode")
+					.setDesc("Choose whether the bulk tasking modal defaults to generating new tasks or converting existing notes")
+					.addDropdown((dropdown) =>
+						dropdown
+							.addOption("generate", "Generate new tasks")
+							.addOption("convert", "Convert to tasks")
+							.setValue(plugin.settings.defaultBulkMode || "generate")
+							.onChange(async (value) => {
+								plugin.settings.defaultBulkMode = value as "generate" | "convert";
+								save();
+							})
+					)
+			);
+		}
+	);
+
 	// Performance & Behavior Section
 	createSettingGroup(
 		container,

@@ -11,15 +11,7 @@ node_modules
 # Environment variables (contains OAuth client IDs)
 .env
 
-# Don't include the compiled main.js file in the repo.
-# They should be uploaded to GitHub releases instead.
-main.js
-
-# Don't include the generated styles.css file in the repo.
-# It's built from source files in styles/ directory during CI/build process.
-styles.css
-
-# Don't include the auto-generated release notes import file
+# Auto-generated release notes import
 src/releaseNotes.ts
 
 # Exclude sourcemaps
@@ -80,3 +72,13 @@ tasknotes-e2e-vault/.obsidian/workspace.json
 .obsidian-config-e2e
 # Generated calendar files
 tasknotes-e2e-vault/*.ics
+
+# Dev vault nested Obsidian config (repo lives inside plugin folder)
+.obsidian/
+
+# Upstream reference copy
+tasknotes-upstream/
+
+# Agent workspace and planning
+knowledge-base/
+task_plan.md

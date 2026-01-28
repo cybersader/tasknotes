@@ -85,6 +85,7 @@ import { StatusBarService } from "./services/StatusBarService";
 import { ProjectSubtasksService } from "./services/ProjectSubtasksService";
 import { ExpandedProjectsService } from "./services/ExpandedProjectsService";
 import { NotificationService } from "./services/NotificationService";
+import { BasesQueryWatcher } from "./notifications";
 import { AutoExportService } from "./services/AutoExportService";
 // Type-only import for HTTPAPIService (actual import is dynamic on desktop only)
 import type { HTTPAPIService } from "./services/HTTPAPIService";
@@ -196,6 +197,9 @@ export default class TaskNotesPlugin extends Plugin {
 
 	// Notification service
 	notificationService: NotificationService;
+
+	// Bases query notification watcher
+	basesQueryWatcher: BasesQueryWatcher;
 
 	// HTTP API service
 	apiService?: HTTPAPIService;
@@ -364,6 +368,7 @@ export default class TaskNotesPlugin extends Plugin {
 		this.dragDropManager = new DragDropManager(this);
 		this.statusBarService = new StatusBarService(this);
 		this.notificationService = new NotificationService(this);
+		this.basesQueryWatcher = new BasesQueryWatcher(this);
 		this.viewPerformanceService = new ViewPerformanceService(this);
 
 		// Initialize Bases filter converter for saved view export
@@ -559,6 +564,9 @@ export default class TaskNotesPlugin extends Plugin {
 
 			// Initialize notification service
 			await this.notificationService.initialize();
+
+			// Initialize Bases query watcher for background notifications
+			await this.basesQueryWatcher.initialize();
 
 			// Warm up TaskManager indexes for better performance
 			await this.warmupProjectIndexes();
@@ -1174,6 +1182,11 @@ export default class TaskNotesPlugin extends Plugin {
 		// Clean up notification service
 		if (this.notificationService) {
 			this.notificationService.destroy();
+		}
+
+		// Clean up Bases query watcher
+		if (this.basesQueryWatcher) {
+			this.basesQueryWatcher.destroy();
 		}
 
 		// Clean up task manager
@@ -2258,7 +2271,21 @@ export default class TaskNotesPlugin extends Plugin {
 	}
 
 	openTaskCreationModal(prePopulatedValues?: Partial<TaskInfo>) {
-		new TaskCreationModal(this.app, this, { prePopulatedValues }).open();
+		const values: Partial<TaskInfo> = { ...prePopulatedValues };
+
+		// Include current note as project if enabled (fixes missing functionality)
+		if (this.settings.taskCreationDefaults.useParentNoteAsProject && !values.projects?.length) {
+			const currentFile = this.app.workspace.getActiveFile();
+			if (currentFile) {
+				const parentNote = this.app.fileManager.generateMarkdownLink(
+					currentFile,
+					currentFile.path
+				);
+				values.projects = [parentNote];
+			}
+		}
+
+		new TaskCreationModal(this.app, this, { prePopulatedValues: Object.keys(values).length > 0 ? values : undefined }).open();
 	}
 
 	/**
