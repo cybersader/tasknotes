@@ -360,12 +360,17 @@ export class TaskService {
 			if (this.plugin.settings.taskIdentificationMethod === "property") {
 				const propName = this.plugin.settings.taskPropertyName;
 				const propValue = this.plugin.settings.taskPropertyValue;
-				if (propName && propValue) {
-					// Coerce boolean-like strings to actual booleans for compatibility with Obsidian properties
-					const lower = propValue.toLowerCase();
-					const coercedValue =
-						lower === "true" || lower === "false" ? lower === "true" : propValue;
-					frontmatter[propName] = coercedValue as any;
+				if (propName) {
+					if (propValue) {
+						// Coerce boolean-like strings to actual booleans for compatibility with Obsidian properties
+						const lower = propValue.toLowerCase();
+						const coercedValue =
+							lower === "true" || lower === "false" ? lower === "true" : propValue;
+						frontmatter[propName] = coercedValue as any;
+					} else {
+						// Empty propValue = default to true (boolean)
+						frontmatter[propName] = true;
+					}
 				}
 				if (tagsArray.length > 0) {
 					frontmatter.tags = tagsArray;

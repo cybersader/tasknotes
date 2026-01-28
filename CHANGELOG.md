@@ -4,6 +4,12 @@ All notable changes to this TaskNotes fork will be documented in this file.
 
 This fork (`cybersader/tasknotes`) adds bulk tasking, notifications, and other enhancements to the upstream [TaskNotes](https://github.com/callumalpass/tasknotes) plugin.
 
+## [4.3.6] - 2026-01-28
+
+### Fixed
+- **isTask detection bug**: `TaskManager.isTaskFile()` rejected empty `taskPropertyValue` setting, so converted files with `isTask: true` were never recognized as tasks. Guard clause now treats empty value as "property existence check" (any truthy value matches).
+- **Task creation with empty propValue**: `TaskService` now defaults to `isTask: true` (boolean) when `taskPropertyValue` setting is empty, matching the convert engine's behavior.
+
 ## [4.3.5] - 2026-01-28
 
 ### Added
