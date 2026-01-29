@@ -187,15 +187,42 @@ export class BulkConvertEngine {
 				// Property method: set the configured property
 				const propName = settings.taskPropertyName;
 				const propValue = settings.taskPropertyValue;
-				// Set if missing OR if empty string (fixes buggy conversions from older versions)
-				if (propName && (frontmatter[propName] === undefined || frontmatter[propName] === "")) {
-					// Parse "true"/"false" strings as booleans, default to true if empty
-					if (propValue === "true" || propValue === "") {
-						frontmatter[propName] = true;
-					} else if (propValue === "false") {
-						frontmatter[propName] = false;
-					} else {
-						frontmatter[propName] = propValue;
+
+				if (propName) {
+					const existingValue = frontmatter[propName];
+
+					// Auto-repair: Convert string "true"/"false" to boolean if found
+					// This fixes files converted by older buggy versions
+					const needsRepair = typeof existingValue === "string" &&
+						(existingValue.toLowerCase() === "true" || existingValue.toLowerCase() === "false");
+
+					// Set if missing, empty string, or needs type repair
+					if (existingValue === undefined || existingValue === "" || needsRepair) {
+						// Determine the value to write:
+						// - If propValue is empty or "true", write boolean true
+						// - If propValue is "false", write boolean false
+						// - Otherwise, write the configured value (but coerce "true"/"false" strings to boolean)
+						const normalizedPropValue = propValue?.toLowerCase().trim() || "";
+
+						if (normalizedPropValue === "" || normalizedPropValue === "true") {
+							frontmatter[propName] = true;
+						} else if (normalizedPropValue === "false") {
+							frontmatter[propName] = false;
+						} else {
+							// Custom value - still check if it looks like a boolean
+							if (propValue.toLowerCase() === "yes" || propValue === "1") {
+								frontmatter[propName] = true;
+							} else if (propValue.toLowerCase() === "no" || propValue === "0") {
+								frontmatter[propName] = false;
+							} else {
+								// Truly custom string value (rare case)
+								frontmatter[propName] = propValue;
+							}
+						}
+
+						if (needsRepair) {
+							console.log(`[BulkConvertEngine] Repaired ${propName}: "${existingValue}" → ${frontmatter[propName]} (${typeof frontmatter[propName]})`);
+						}
 					}
 				}
 			} else {

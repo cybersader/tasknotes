@@ -4,6 +4,15 @@ All notable changes to this TaskNotes fork will be documented in this file.
 
 This fork (`cybersader/tasknotes`) adds bulk tasking, notifications, and other enhancements to the upstream [TaskNotes](https://github.com/callumalpass/tasknotes) plugin.
 
+## [4.3.7] - 2026-01-29
+
+### Fixed
+- **isTask checkbox rendering (dash/prohibition symbol)**: Added auto-repair for files with string `"true"` instead of boolean `true`. Convert mode now detects and fixes type mismatches, ensuring Obsidian Bases renders checkboxes correctly.
+- **BasesQueryWatcher "monitoring 0 bases"**: Added debug logging to identify why `.base` files with `notify: true` weren't being monitored. Silent YAML parse errors are now logged.
+
+### Changed
+- Convert engine now coerces boolean-like strings (`"yes"`, `"no"`, `"1"`, `"0"`) to proper booleans
+
 ## [4.3.6] - 2026-01-28
 
 ### Fixed

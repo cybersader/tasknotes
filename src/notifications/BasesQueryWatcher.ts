@@ -147,7 +147,7 @@ export class BasesQueryWatcher {
 	private async checkAndRegisterBase(file: TFile): Promise<void> {
 		try {
 			const content = await this.plugin.app.vault.read(file);
-			const config = this.parseBaseConfig(content);
+			const config = this.parseBaseConfig(content, file.path);
 
 			if (config.notify) {
 				// Check if already registered
@@ -176,10 +176,15 @@ export class BasesQueryWatcher {
 	 * Checks both top-level and per-view `notify: true` since .base files
 	 * store notify as a per-view property inside views[n].
 	 */
-	private parseBaseConfig(content: string): BaseFileConfig {
+	private parseBaseConfig(content: string, filePath?: string): BaseFileConfig {
 		try {
 			// .base files are YAML
 			const parsed = parseYaml(content);
+
+			if (!parsed) {
+				console.warn(`[BasesQueryWatcher] parseYaml returned null/undefined for ${filePath || 'unknown file'}`);
+				return { notify: false };
+			}
 
 			// Check top-level notify (future-proofing)
 			let hasNotify = parsed?.notify === true;
@@ -187,6 +192,14 @@ export class BasesQueryWatcher {
 			// Also check per-view notify (current .base format)
 			if (!hasNotify && Array.isArray(parsed?.views)) {
 				hasNotify = parsed.views.some((v: any) => v?.notify === true);
+				if (hasNotify) {
+					console.log(`[BasesQueryWatcher] Found notify:true in views[] for ${filePath || 'unknown file'}`);
+				}
+			}
+
+			// Debug: log what we found
+			if (filePath) {
+				console.log(`[BasesQueryWatcher] Parsed ${filePath}: notify=${hasNotify}, hasViews=${Array.isArray(parsed?.views)}, viewCount=${parsed?.views?.length || 0}`);
 			}
 
 			return {
@@ -196,7 +209,8 @@ export class BasesQueryWatcher {
 				notifyThreshold: parsed?.notifyThreshold || 1,
 				source: parsed?.source,
 			};
-		} catch {
+		} catch (error) {
+			console.warn(`[BasesQueryWatcher] YAML parse error for ${filePath || 'unknown file'}:`, error);
 			return { notify: false };
 		}
 	}
@@ -425,7 +439,7 @@ export class BasesQueryWatcher {
 
 		try {
 			const content = await this.plugin.app.vault.read(file);
-			const config = this.parseBaseConfig(content);
+			const config = this.parseBaseConfig(content, file.path);
 
 			if (!config.source) {
 				return null;
