@@ -4,6 +4,11 @@ All notable changes to this TaskNotes fork will be documented in this file.
 
 This fork (`cybersader/tasknotes`) adds bulk tasking, notifications, and other enhancements to the upstream [TaskNotes](https://github.com/callumalpass/tasknotes) plugin.
 
+## [4.3.8] - 2026-01-29
+
+### Fixed
+- **isTask empty value bug**: When `isTask:` had no value (YAML null), the convert engine didn't repair it. Now handles `null` in addition to `undefined` and empty string.
+
 ## [4.3.7] - 2026-01-29
 
 ### Fixed

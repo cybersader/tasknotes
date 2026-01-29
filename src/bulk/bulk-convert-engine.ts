@@ -196,8 +196,8 @@ export class BulkConvertEngine {
 					const needsRepair = typeof existingValue === "string" &&
 						(existingValue.toLowerCase() === "true" || existingValue.toLowerCase() === "false");
 
-					// Set if missing, empty string, or needs type repair
-					if (existingValue === undefined || existingValue === "" || needsRepair) {
+					// Set if missing, null (YAML empty value), empty string, or needs type repair
+					if (existingValue === undefined || existingValue === null || existingValue === "" || needsRepair) {
 						// Determine the value to write:
 						// - If propValue is empty or "true", write boolean true
 						// - If propValue is "false", write boolean false
