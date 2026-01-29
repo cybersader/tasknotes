@@ -4,6 +4,11 @@ All notable changes to this TaskNotes fork will be documented in this file.
 
 This fork (`cybersader/tasknotes`) adds bulk tasking, notifications, and other enhancements to the upstream [TaskNotes](https://github.com/callumalpass/tasknotes) plugin.
 
+## [4.3.9] - 2026-01-29
+
+### Fixed
+- **isTask still empty after convert**: Replaced complex conditional logic with simple unconditional approach. Now deletes existing value and sets fresh boolean `true`. No more edge cases.
+
 ## [4.3.8] - 2026-01-29
 
 ### Fixed

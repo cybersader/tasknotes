@@ -189,41 +189,26 @@ export class BulkConvertEngine {
 				const propValue = settings.taskPropertyValue;
 
 				if (propName) {
-					const existingValue = frontmatter[propName];
+					// SIMPLE FIX: Delete and re-set unconditionally
+					// Previous conditional logic was too fragile and missed edge cases
+					const oldValue = frontmatter[propName];
+					delete frontmatter[propName];
 
-					// Auto-repair: Convert string "true"/"false" to boolean if found
-					// This fixes files converted by older buggy versions
-					const needsRepair = typeof existingValue === "string" &&
-						(existingValue.toLowerCase() === "true" || existingValue.toLowerCase() === "false");
+					// Determine the value to write based on propValue setting
+					const normalizedPropValue = (propValue || "").toLowerCase().trim();
+					let newValue: boolean | string;
 
-					// Set if missing, null (YAML empty value), empty string, or needs type repair
-					if (existingValue === undefined || existingValue === null || existingValue === "" || needsRepair) {
-						// Determine the value to write:
-						// - If propValue is empty or "true", write boolean true
-						// - If propValue is "false", write boolean false
-						// - Otherwise, write the configured value (but coerce "true"/"false" strings to boolean)
-						const normalizedPropValue = propValue?.toLowerCase().trim() || "";
-
-						if (normalizedPropValue === "" || normalizedPropValue === "true") {
-							frontmatter[propName] = true;
-						} else if (normalizedPropValue === "false") {
-							frontmatter[propName] = false;
-						} else {
-							// Custom value - still check if it looks like a boolean
-							if (propValue.toLowerCase() === "yes" || propValue === "1") {
-								frontmatter[propName] = true;
-							} else if (propValue.toLowerCase() === "no" || propValue === "0") {
-								frontmatter[propName] = false;
-							} else {
-								// Truly custom string value (rare case)
-								frontmatter[propName] = propValue;
-							}
-						}
-
-						if (needsRepair) {
-							console.log(`[BulkConvertEngine] Repaired ${propName}: "${existingValue}" → ${frontmatter[propName]} (${typeof frontmatter[propName]})`);
-						}
+					if (normalizedPropValue === "" || normalizedPropValue === "true" || normalizedPropValue === "yes" || normalizedPropValue === "1") {
+						newValue = true;
+					} else if (normalizedPropValue === "false" || normalizedPropValue === "no" || normalizedPropValue === "0") {
+						newValue = false;
+					} else {
+						// Custom string value (rare)
+						newValue = propValue;
 					}
+
+					frontmatter[propName] = newValue;
+					console.log(`[BulkConvertEngine] Set ${propName}: ${oldValue} → ${newValue} (${typeof newValue})`);
 				}
 			} else {
 				// Tag method: ensure tags array includes the task tag
