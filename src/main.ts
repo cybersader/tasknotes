@@ -98,6 +98,8 @@ import { MicrosoftCalendarService } from "./services/MicrosoftCalendarService";
 import { LicenseService } from "./services/LicenseService";
 import { CalendarProviderRegistry } from "./services/CalendarProvider";
 import { TaskCalendarSyncService } from "./services/TaskCalendarSyncService";
+import { DeviceIdentityManager } from "./identity/DeviceIdentityManager";
+import { UserRegistry } from "./identity/UserRegistry";
 
 interface TranslatedCommandDefinition {
 	id: string;
@@ -221,6 +223,10 @@ export default class TaskNotesPlugin extends Plugin {
 
 	// Task-to-Google Calendar sync service
 	taskCalendarSyncService: TaskCalendarSyncService;
+
+	// Device identity services (for shared vaults)
+	deviceIdentityManager: DeviceIdentityManager;
+	userRegistry: UserRegistry;
 
 	// Bases filter converter for exporting saved views
 	basesFilterConverter: import("./services/BasesFilterConverter").BasesFilterConverter;
@@ -370,6 +376,10 @@ export default class TaskNotesPlugin extends Plugin {
 		this.notificationService = new NotificationService(this);
 		this.basesQueryWatcher = new BasesQueryWatcher(this);
 		this.viewPerformanceService = new ViewPerformanceService(this);
+
+		// Initialize device identity services (for shared vaults)
+		this.deviceIdentityManager = new DeviceIdentityManager();
+		this.userRegistry = new UserRegistry(this, this.deviceIdentityManager);
 
 		// Initialize Bases filter converter for saved view export
 		const { BasesFilterConverter } = await import("./services/BasesFilterConverter");

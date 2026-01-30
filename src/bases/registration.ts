@@ -40,6 +40,12 @@ export async function registerBasesTaskList(plugin: TaskNotesPlugin): Promise<vo
 						displayName: "Enable search box",
 						default: false,
 					},
+					{
+						type: "toggle",
+						key: "notify",
+						displayName: "Enable notifications",
+						default: false,
+					},
 				],
 			});
 
@@ -107,6 +113,12 @@ export async function registerBasesTaskList(plugin: TaskNotesPlugin): Promise<vo
 						displayName: "Column Order (Advanced)",
 						placeholder: "Auto-managed when dragging columns",
 						default: "{}",
+					},
+					{
+						type: "toggle",
+						key: "notify",
+						displayName: "Enable notifications",
+						default: false,
 					},
 				],
 			});
@@ -479,6 +491,14 @@ export async function registerBasesTaskList(plugin: TaskNotesPlugin): Promise<vo
 							}
 						}
 
+						// Add notification toggle
+						options.push({
+							type: "toggle",
+							key: "notify",
+							displayName: "Enable notifications",
+							default: false,
+						});
+
 						return options;
 					},
 				});
@@ -510,6 +530,12 @@ export async function registerBasesTaskList(plugin: TaskNotesPlugin): Promise<vo
 							// Show text properties (note, formula, file)
 							return prop.startsWith("note.") || prop.startsWith("formula.") || prop.startsWith("file.");
 						},
+					},
+					{
+						type: "toggle",
+						key: "notify",
+						displayName: "Enable notifications",
+						default: false,
 					},
 				],
 			});
