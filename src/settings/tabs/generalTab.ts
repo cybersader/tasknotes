@@ -6,6 +6,7 @@ import {
 	configureToggleSetting,
 	configureDropdownSetting,
 } from "../components/settingHelpers";
+import { FolderSuggest } from "../components/FolderSuggest";
 import { TranslationKey } from "../../i18n";
 import { showConfirmationModal } from "../../modals/ConfirmationModal";
 
@@ -30,19 +31,27 @@ export function renderGeneralTab(
 			description: translate("settings.general.taskStorage.description"),
 		},
 		(group) => {
-			group.addSetting((setting) =>
-				configureTextSetting(setting, {
-					name: translate("settings.general.taskStorage.defaultFolder.name"),
-					desc: translate("settings.general.taskStorage.defaultFolder.description"),
-					placeholder: "TaskNotes",
-					getValue: () => plugin.settings.tasksFolder,
-					setValue: async (value: string) => {
-						plugin.settings.tasksFolder = value;
-						save();
-					},
-					ariaLabel: "Default folder path for new tasks",
-				})
-			);
+			group.addSetting((setting) => {
+				setting
+					.setName(translate("settings.general.taskStorage.defaultFolder.name"))
+					.setDesc(translate("settings.general.taskStorage.defaultFolder.description"));
+
+				// Create text input with folder suggest
+				const inputEl = setting.controlEl.createEl("input", {
+					type: "text",
+					cls: "tasknotes-settings__card-input folder-suggest-input",
+					attr: { placeholder: "TaskNotes" },
+				});
+				inputEl.value = plugin.settings.tasksFolder;
+
+				// Attach folder suggester
+				new FolderSuggest(plugin.app, inputEl);
+
+				inputEl.addEventListener("input", () => {
+					plugin.settings.tasksFolder = inputEl.value.trim();
+					save();
+				});
+			});
 
 			// Folder for converted inline tasks (only shown when instant convert is enabled)
 			if (plugin.settings.enableInstantTaskConvert) {
@@ -76,19 +85,27 @@ export function renderGeneralTab(
 			);
 
 			if (plugin.settings.moveArchivedTasks) {
-				group.addSetting((setting) =>
-					configureTextSetting(setting, {
-						name: translate("settings.general.taskStorage.archiveFolder.name"),
-						desc: translate("settings.general.taskStorage.archiveFolder.description"),
-						placeholder: "TaskNotes/Archive",
-						getValue: () => plugin.settings.archiveFolder,
-						setValue: async (value: string) => {
-							plugin.settings.archiveFolder = value;
-							save();
-						},
-						ariaLabel: "Archive folder path",
-					})
-				);
+				group.addSetting((setting) => {
+					setting
+						.setName(translate("settings.general.taskStorage.archiveFolder.name"))
+						.setDesc(translate("settings.general.taskStorage.archiveFolder.description"));
+
+					// Create text input with folder suggest
+					const inputEl = setting.controlEl.createEl("input", {
+						type: "text",
+						cls: "tasknotes-settings__card-input folder-suggest-input",
+						attr: { placeholder: "TaskNotes/Archive" },
+					});
+					inputEl.value = plugin.settings.archiveFolder;
+
+					// Attach folder suggester
+					new FolderSuggest(plugin.app, inputEl);
+
+					inputEl.addEventListener("input", () => {
+						plugin.settings.archiveFolder = inputEl.value.trim();
+						save();
+					});
+				});
 			}
 		}
 	);

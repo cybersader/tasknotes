@@ -4,6 +4,14 @@ All notable changes to this TaskNotes fork will be documented in this file.
 
 This fork (`cybersader/tasknotes`) adds bulk tasking, notifications, and other enhancements to the upstream [TaskNotes](https://github.com/callumalpass/tasknotes) plugin.
 
+## [4.3.11] - 2026-01-30
+
+### Added
+- **Folder autocomplete** for Default Tasks Folder and Archive Folder settings (Task Storage section)
+
+### Fixed
+- CI build failure due to missing device identity service imports in main.ts
+
 ## [4.3.10] - 2026-01-30
 
 ### Added
