@@ -4,6 +4,14 @@ All notable changes to this TaskNotes fork will be documented in this file.
 
 This fork (`cybersader/tasknotes`) adds bulk tasking, notifications, and other enhancements to the upstream [TaskNotes](https://github.com/callumalpass/tasknotes) plugin.
 
+## [4.3.12] - 2026-01-30
+
+### Fixed
+- **What's New page missing versions**: Build script now auto-generates missing release notes from CHANGELOG.md when versions are skipped (e.g., due to CI failures)
+
+### Added
+- Release notes gap detection in `generate-release-notes-import.mjs`
+
 ## [4.3.11] - 2026-01-30
 
 ### Added
