@@ -17459,6 +17459,15 @@ body:not(.is-mobile) .modal.mod-tasknotes .modal-button-container .mod-cta {
     margin-right: 12px;
 }
 
+/* Card Description (for explanatory text inside cards) */
+.tasknotes-settings__card-description {
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    line-height: 1.5;
+    padding: var(--tn-spacing-xs) 0;
+    margin-bottom: var(--tn-spacing-sm);
+}
+
 /* Card Inputs */
 .tasknotes-settings__card-input {
     padding: 8px 12px;
@@ -18497,6 +18506,224 @@ select.tasknotes-settings__card-input {
 .tasknotes-auto-export-status__error {
     font-weight: 500;
     color: var(--text-warning);
+}
+
+/* ================================================
+   INFO CALLOUT (Used in Team & Attribution)
+   ================================================ */
+
+.tasknotes-plugin .tasknotes-info-callout {
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--tn-radius-md);
+    padding: var(--tn-spacing-md);
+    margin-bottom: var(--tn-spacing-md);
+    margin-top: 0;
+}
+
+/* Spacing between consecutive callouts */
+.tasknotes-plugin .tasknotes-info-callout + .tasknotes-info-callout {
+    margin-top: var(--tn-spacing-sm);
+}
+
+.tasknotes-plugin .tasknotes-info-callout-title {
+    display: flex;
+    align-items: center;
+    gap: var(--tn-spacing-sm);
+    font-weight: 600;
+    color: var(--text-normal);
+    margin-bottom: var(--tn-spacing-sm);
+    line-height: 1.4;
+}
+
+.tasknotes-plugin .tasknotes-info-callout-title .svg-icon {
+    width: 18px;
+    height: 18px;
+    min-width: 18px;
+    color: var(--text-accent);
+    flex-shrink: 0;
+}
+
+.tasknotes-plugin .tasknotes-info-callout-content p {
+    margin: 0;
+    padding: var(--tn-spacing-xs) 0;
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    line-height: 1.5;
+}
+
+.tasknotes-plugin .tasknotes-info-callout-content p:last-child {
+    padding-bottom: 0;
+}
+
+/* Device ID display */
+.tasknotes-plugin .tasknotes-device-id-display {
+    font-family: var(--font-monospace);
+    font-size: var(--font-ui-smaller);
+    background: var(--background-secondary);
+}
+
+/* Info callout note (emphasized text) */
+.tasknotes-plugin .tasknotes-info-callout-note {
+    font-style: italic;
+    color: var(--text-accent);
+}
+
+/* Example callout variant */
+.tasknotes-plugin .tasknotes-info-callout--example {
+    background: var(--background-secondary-alt);
+    border-left: 3px solid var(--text-accent);
+}
+
+/* Field name highlight (for showing configurable field names) */
+.tasknotes-plugin .tasknotes-field-name {
+    font-family: var(--font-monospace);
+    font-size: 0.9em;
+    background: var(--background-modifier-hover);
+    padding: 2px 6px;
+    border-radius: var(--radius-s);
+    color: var(--text-accent);
+}
+
+/* Uses field display in settings */
+.tasknotes-plugin .tasknotes-uses-field {
+    display: flex;
+    align-items: center;
+    gap: var(--tn-spacing-xs);
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+}
+
+/* Clickable link in settings descriptions */
+.tasknotes-plugin .tasknotes-settings-link {
+    color: var(--text-accent);
+    cursor: var(--cursor);
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-underline-offset: 2px;
+}
+
+.tasknotes-plugin .tasknotes-settings-link:hover {
+    text-decoration-style: solid;
+    color: var(--interactive-accent-hover);
+}
+
+/* ================================================
+   FIELD STATUS SETTING (Styled Setting Items)
+   ================================================ */
+
+/* Base field status setting - adds spacing and visual distinction */
+.tasknotes-plugin .tasknotes-field-status-setting {
+    margin: var(--tn-spacing-sm) 0;
+    padding: var(--tn-spacing-sm) var(--tn-spacing-md);
+    border-radius: var(--tn-radius-md);
+    border: 1px solid var(--background-modifier-border);
+}
+
+/* Ensure inner content has proper spacing */
+.tasknotes-plugin .tasknotes-field-status-setting .setting-item-info {
+    padding-right: var(--tn-spacing-md);
+}
+
+.tasknotes-plugin .tasknotes-field-status-setting .setting-item-control {
+    flex-shrink: 0;
+}
+
+/* Warning state - orange accent */
+.tasknotes-plugin .tasknotes-field-status-setting--warning {
+    border-left: 4px solid var(--color-orange);
+    background: color-mix(in srgb, var(--color-orange) 6%, var(--background-secondary));
+}
+
+.tasknotes-plugin .tasknotes-field-status-setting--warning .setting-item-name {
+    color: var(--color-orange);
+    font-weight: 600;
+}
+
+/* Success state - subtle green accent */
+.tasknotes-plugin .tasknotes-field-status-setting--success {
+    border-left: 2px solid var(--color-green);
+    background: transparent;
+}
+
+.tasknotes-plugin .tasknotes-field-status-setting--success .setting-item-name {
+    color: inherit;
+    font-weight: 500;
+}
+
+.tasknotes-plugin .tasknotes-field-status--warning .tasknotes-field-status-actions button:first-child:hover {
+    background: var(--interactive-accent-hover);
+    border-color: var(--interactive-accent-hover);
+}
+
+/* ================================================
+   FOLDER & TAG SUGGESTION STYLING
+   ================================================ */
+
+/* Suggest input styling */
+.tasknotes-plugin .folder-suggest-input,
+.tasknotes-plugin .tag-suggest-input {
+    width: 100%;
+    max-width: 300px;
+}
+
+/* Folder suggestion items */
+.folder-suggestion-item {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2);
+    padding: var(--size-4-1) var(--size-4-2);
+}
+
+.folder-suggestion-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+}
+
+.folder-suggestion-icon .svg-icon {
+    width: 16px;
+    height: 16px;
+}
+
+.folder-suggestion-text {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Tag suggestion items */
+.tag-suggestion-item {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2);
+    padding: var(--size-4-1) var(--size-4-2);
+}
+
+.tag-suggestion-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-accent);
+}
+
+.tag-suggestion-icon .svg-icon {
+    width: 14px;
+    height: 14px;
+}
+
+.tag-suggestion-text {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Suggestion container styling (Obsidian provides this, but ensure visibility) */
+.suggestion-container.mod-scroll {
+    max-height: 300px;
 }
 
 /* ================================================

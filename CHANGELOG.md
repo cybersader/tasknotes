@@ -4,6 +4,26 @@ All notable changes to this TaskNotes fork will be documented in this file.
 
 This fork (`cybersader/tasknotes`) adds bulk tasking, notifications, and other enhancements to the upstream [TaskNotes](https://github.com/callumalpass/tasknotes) plugin.
 
+## [4.3.10] - 2026-01-30
+
+### Added
+- **Team Attribution enhancements**:
+  - Creator and Assignees cards now include descriptive help text
+  - Type dropdown (Text/List) for changing property format
+  - Type badge showing current field type in card header
+  - Auto-conversion of existing task data when type changes (text↔list)
+  - Delete buttons to remove Creator/Assignees fields when not needed
+  - Default types documented in overview callout (Creator: text, Assignees: list)
+
+### Fixed
+- Duplicate "Add User Field" buttons in Custom User Fields section (empty state + setting)
+- Translation key showing literally as label in property settings
+
+### Changed
+- Toned down success styling for Team Attribution fields (subtle green border only)
+- Assignees field now defaults to "list" type for multiple people
+- Clarified notification wording: "everyone using the vault" instead of "the entire team"
+
 ## [4.3.9] - 2026-01-29
 
 ### Fixed

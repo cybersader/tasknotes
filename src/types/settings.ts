@@ -251,6 +251,14 @@ export interface TaskNotesSettings {
 	microsoftCalendarSyncTokens: Record<string, string>; // Maps calendar ID to delta link
 	// Google Calendar task export settings
 	googleCalendarExport: GoogleCalendarExportSettings;
+	// Device identity settings (for shared vaults)
+	deviceUserMappings: DeviceUserMapping[];
+	autoSetCreator: boolean;
+	creatorFieldName: string;
+	assigneeFieldName: string;
+	// Person notes configuration (for Team & Attribution)
+	personNotesFolder: string;
+	personNotesTag: string;
 }
 
 export interface DefaultReminder {

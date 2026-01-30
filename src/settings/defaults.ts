@@ -409,4 +409,12 @@ export const DEFAULT_SETTINGS: TaskNotesSettings = {
 	microsoftCalendarSyncTokens: {},
 	// Google Calendar task export settings
 	googleCalendarExport: DEFAULT_GOOGLE_CALENDAR_EXPORT,
+	// Device identity settings (for shared vaults)
+	deviceUserMappings: [],
+	autoSetCreator: true,
+	creatorFieldName: "creator",
+	assigneeFieldName: "assignee",
+	// Person notes configuration
+	personNotesFolder: "",
+	personNotesTag: "",
 };
