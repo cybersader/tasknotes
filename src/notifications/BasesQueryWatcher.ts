@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 import { EventRef, TFile, parseYaml, WorkspaceLeaf } from "obsidian";
 import TaskNotesPlugin from "../main";
 import { EVENT_TASK_UPDATED } from "../types";
@@ -60,8 +59,9 @@ export class BasesQueryWatcher {
 
 	// Configuration
 	private readonly EVALUATION_DEBOUNCE_MS = 1000;
-	private readonly STARTUP_SCAN_DELAY_MS = 5000;
+	private readonly STARTUP_SCAN_DELAY_MS = 2000; // Reduced from 5s to minimize race condition window
 	private readonly PERIODIC_SCAN_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+	private readonly SAFETY_SCAN_DELAY_MS = 10000; // Safety scan if first scan found nothing
 
 	constructor(plugin: TaskNotesPlugin) {
 		this.plugin = plugin;
@@ -81,7 +81,16 @@ export class BasesQueryWatcher {
 			this.startPeriodicScan();
 		}, this.STARTUP_SCAN_DELAY_MS);
 
-		console.log("[BasesQueryWatcher] Initialized - will scan in 5s");
+		// Safety net scan: if first scan found nothing, try again
+		// This catches late-loading views and race conditions
+		window.setTimeout(async () => {
+			if (this.monitoredBases.size === 0) {
+				this.plugin.debugLog.log("BasesQueryWatcher", "Safety scan - no bases found in first scan, rescanning...");
+				await this.scanForMonitoredBases();
+			}
+		}, this.SAFETY_SCAN_DELAY_MS);
+
+		this.plugin.debugLog.log("BasesQueryWatcher", "Initialized - will scan in 2s (safety scan at 10s if needed)");
 	}
 
 	/**
@@ -122,7 +131,7 @@ export class BasesQueryWatcher {
 		this.pendingEvaluations.clear();
 		this.initialized = false;
 
-		console.log("[BasesQueryWatcher] Destroyed");
+		this.plugin.debugLog.log("BasesQueryWatcher", "Destroyed");
 	}
 
 	/**
@@ -132,13 +141,13 @@ export class BasesQueryWatcher {
 		const files = this.plugin.app.vault.getFiles();
 		const baseFiles = files.filter((f) => f.extension === "base");
 
-		console.log(`[BasesQueryWatcher] Scanning ${baseFiles.length} .base files`);
+		this.plugin.debugLog.log("BasesQueryWatcher", `Scanning ${baseFiles.length} .base files`);
 
 		for (const file of baseFiles) {
 			await this.checkAndRegisterBase(file);
 		}
 
-		console.log(`[BasesQueryWatcher] Monitoring ${this.monitoredBases.size} bases`);
+		this.plugin.debugLog.log("BasesQueryWatcher", `Monitoring ${this.monitoredBases.size} bases`);
 	}
 
 	/**
@@ -161,13 +170,13 @@ export class BasesQueryWatcher {
 					cachedPaths: existing?.cachedPaths || new Set(),
 				});
 
-				console.log(`[BasesQueryWatcher] Registered: ${file.path}`);
+				this.plugin.debugLog.log("BasesQueryWatcher", `Registered: ${file.path}`);
 			} else {
 				// Remove if notify was disabled
 				this.monitoredBases.delete(file.path);
 			}
 		} catch (error) {
-			console.warn(`[BasesQueryWatcher] Failed to parse ${file.path}:`, error);
+			this.plugin.debugLog.warn("BasesQueryWatcher", `Failed to parse ${file.path}`, error);
 		}
 	}
 
@@ -182,7 +191,7 @@ export class BasesQueryWatcher {
 			const parsed = parseYaml(content);
 
 			if (!parsed) {
-				console.warn(`[BasesQueryWatcher] parseYaml returned null/undefined for ${filePath || 'unknown file'}`);
+				this.plugin.debugLog.warn("BasesQueryWatcher", `parseYaml returned null/undefined for ${filePath || 'unknown file'}`);
 				return { notify: false };
 			}
 
@@ -193,13 +202,13 @@ export class BasesQueryWatcher {
 			if (!hasNotify && Array.isArray(parsed?.views)) {
 				hasNotify = parsed.views.some((v: any) => v?.notify === true);
 				if (hasNotify) {
-					console.log(`[BasesQueryWatcher] Found notify:true in views[] for ${filePath || 'unknown file'}`);
+					this.plugin.debugLog.log("BasesQueryWatcher", `Found notify:true in views[] for ${filePath || 'unknown file'}`);
 				}
 			}
 
 			// Debug: log what we found
 			if (filePath) {
-				console.log(`[BasesQueryWatcher] Parsed ${filePath}: notify=${hasNotify}, hasViews=${Array.isArray(parsed?.views)}, viewCount=${parsed?.views?.length || 0}`);
+				this.plugin.debugLog.log("BasesQueryWatcher", `Parsed ${filePath}: notify=${hasNotify}, hasViews=${Array.isArray(parsed?.views)}, viewCount=${parsed?.views?.length || 0}`);
 			}
 
 			return {
@@ -210,7 +219,7 @@ export class BasesQueryWatcher {
 				source: parsed?.source,
 			};
 		} catch (error) {
-			console.warn(`[BasesQueryWatcher] YAML parse error for ${filePath || 'unknown file'}:`, error);
+			this.plugin.debugLog.warn("BasesQueryWatcher", `YAML parse error for ${filePath || 'unknown file'}`, error);
 			return { notify: false };
 		}
 	}
@@ -276,7 +285,7 @@ export class BasesQueryWatcher {
 			}
 		);
 
-		console.log("[BasesQueryWatcher] Event listeners setup");
+		this.plugin.debugLog.log("BasesQueryWatcher", "Event listeners setup");
 	}
 
 	/**
@@ -331,7 +340,7 @@ export class BasesQueryWatcher {
 
 			// Check snooze
 			if (monitored.snoozedUntil > Date.now()) {
-				console.log(`[BasesQueryWatcher] ${basePath} is snoozed`);
+				this.plugin.debugLog.log("BasesQueryWatcher", `${basePath} is snoozed`);
 				continue;
 			}
 
@@ -349,7 +358,7 @@ export class BasesQueryWatcher {
 					monitored.lastResultCount = 0;
 				}
 			} catch (error) {
-				console.error(`[BasesQueryWatcher] Error evaluating ${basePath}:`, error);
+				this.plugin.debugLog.error("BasesQueryWatcher", `Error evaluating ${basePath}`, error);
 			}
 		}
 	}
@@ -422,7 +431,7 @@ export class BasesQueryWatcher {
 				});
 			}
 		} catch (error) {
-			console.error("[BasesQueryWatcher] Error extracting results:", error);
+			this.plugin.debugLog.error("BasesQueryWatcher", "Error extracting results", error);
 		}
 
 		return items;
@@ -449,7 +458,7 @@ export class BasesQueryWatcher {
 			// and scan that folder for matching notes
 			return await this.evaluateSourceFilter(config);
 		} catch (error) {
-			console.error(`[BasesQueryWatcher] Error evaluating ${file.path}:`, error);
+			this.plugin.debugLog.error("BasesQueryWatcher", `Error evaluating ${file.path}`, error);
 			return null;
 		}
 	}
@@ -497,9 +506,7 @@ export class BasesQueryWatcher {
 	 * Show the notification modal for a monitored base.
 	 */
 	private showNotification(monitored: MonitoredBase, items: NotificationItem[]): void {
-		console.log(
-			`[BasesQueryWatcher] Showing notification for ${monitored.name}: ${items.length} items`
-		);
+		this.plugin.debugLog.log("BasesQueryWatcher", `Showing notification for ${monitored.name}: ${items.length} items`);
 
 		const modal = new BasesNotificationModal(this.plugin.app, this.plugin, {
 			baseFilePath: monitored.path,
@@ -521,9 +528,7 @@ export class BasesQueryWatcher {
 		const monitored = this.monitoredBases.get(basePath);
 		if (monitored) {
 			monitored.snoozedUntil = Date.now() + durationMinutes * 60 * 1000;
-			console.log(
-				`[BasesQueryWatcher] Snoozed ${basePath} for ${durationMinutes} minutes`
-			);
+			this.plugin.debugLog.log("BasesQueryWatcher", `Snoozed ${basePath} for ${durationMinutes} minutes`);
 		}
 	}
 
@@ -595,7 +600,7 @@ export class BasesQueryWatcher {
 
 		// Check snooze
 		if (monitored.snoozedUntil > Date.now()) {
-			console.log(`[BasesQueryWatcher] ${basePath} is snoozed, skipping notification`);
+			this.plugin.debugLog.log("BasesQueryWatcher", `${basePath} is snoozed, skipping notification`);
 			return;
 		}
 
@@ -605,5 +610,40 @@ export class BasesQueryWatcher {
 
 		// Show the notification
 		this.showNotification(monitored, items);
+	}
+
+	/**
+	 * Register a view for notifications. Called by BasesViewBase when it loads
+	 * and detects `notify: true` in its .base file.
+	 *
+	 * This bypasses the race condition where the watcher's scan runs before
+	 * views have loaded. Views self-register when they have data.
+	 */
+	registerViewForNotifications(
+		filePath: string,
+		baseName: string,
+		items: NotificationItem[]
+	): void {
+		if (!filePath) {
+			this.plugin.debugLog.warn("BasesQueryWatcher", "registerViewForNotifications called with no filePath");
+			return;
+		}
+
+		// Add to monitored bases if not already there
+		if (!this.monitoredBases.has(filePath)) {
+			this.monitoredBases.set(filePath, {
+				path: filePath,
+				name: baseName,
+				snoozedUntil: 0,
+				lastResultCount: 0,
+				cachedPaths: new Set(),
+			});
+			this.plugin.debugLog.log("BasesQueryWatcher", `View self-registered: ${filePath} (total monitored: ${this.monitoredBases.size})`);
+		}
+
+		// If items are provided, trigger notification check
+		if (items && items.length > 0) {
+			this.showNotificationFromView(filePath, baseName, items);
+		}
 	}
 }

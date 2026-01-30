@@ -2284,6 +2284,9 @@ export const en: TranslationTree = {
 		startTimeTrackingWithSelector: "Start time tracking (select task)",
 		editTimeEntries: "Edit time entries (select task)",
 		createOrOpenTask: "Create or open task",
+		// Debug commands (for development)
+		toggleDebugLog: "Toggle debug logging to file",
+		clearDebugLog: "Clear debug log file",
 	},
 	modals: {
 		deviceCode: {

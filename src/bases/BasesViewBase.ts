@@ -147,7 +147,7 @@ export abstract class BasesViewBase extends Component {
 				this.rootElement.scrollTop = state.scrollTop;
 			}
 		} catch (e) {
-			console.debug("[TaskNotes][Bases] Failed to restore ephemeral state:", e);
+			this.plugin.debugLog.log("BasesViewBase", "Failed to restore ephemeral state", e);
 		}
 	}
 
@@ -160,7 +160,7 @@ export abstract class BasesViewBase extends Component {
 				this.rootElement.focus();
 			}
 		} catch (e) {
-			console.debug("[TaskNotes][Bases] Failed to focus view:", e);
+			this.plugin.debugLog.log("BasesViewBase", "Failed to focus view", e);
 		}
 	}
 
@@ -238,7 +238,7 @@ export abstract class BasesViewBase extends Component {
 		// Find the Bases view container
 		const basesViewEl = this.containerEl.closest(".bases-view");
 		if (!basesViewEl) {
-			console.debug("[TaskNotes][Bases] No .bases-view found");
+			this.plugin.debugLog.log("BasesViewBase", "No .bases-view found");
 			return;
 		}
 
@@ -246,7 +246,7 @@ export abstract class BasesViewBase extends Component {
 		// Look in the parent container for the toolbar
 		const parentEl = basesViewEl.parentElement;
 		if (!parentEl) {
-			console.debug("[TaskNotes][Bases] No parent element found");
+			this.plugin.debugLog.log("BasesViewBase", "No parent element found");
 			return;
 		}
 
@@ -258,7 +258,7 @@ export abstract class BasesViewBase extends Component {
 
 		const toolbarEl = parentEl.querySelector(".bases-toolbar");
 		if (!toolbarEl) {
-			console.debug("[TaskNotes][Bases] No .bases-toolbar found in parent");
+			this.plugin.debugLog.log("BasesViewBase", "No .bases-toolbar found in parent");
 			return;
 		}
 
@@ -304,7 +304,7 @@ export abstract class BasesViewBase extends Component {
 			toolbarEl.appendChild(newTaskBtn);
 		}
 
-		console.debug("[TaskNotes][Bases] Injected New Task button into toolbar");
+		this.plugin.debugLog.log("BasesViewBase", "Injected New Task button into toolbar");
 	}
 
 	/**
@@ -380,7 +380,7 @@ export abstract class BasesViewBase extends Component {
 			toolbarEl.appendChild(bulkBtn);
 		}
 
-		console.debug("[TaskNotes][Bases] Injected Bulk tasking button into toolbar");
+		this.plugin.debugLog.log("BasesViewBase", "Injected Bulk tasking button into toolbar");
 	}
 
 	/**
@@ -677,7 +677,7 @@ export abstract class BasesViewBase extends Component {
 				visibleProperties = this.getVisibleProperties();
 			}
 		} catch (e) {
-			console.debug(`[${this.type}] Could not get visible properties during search setup:`, e);
+			this.plugin.debugLog.log("BasesViewBase", `Could not get visible properties during search setup (${this.type})`, e);
 		}
 		this.searchFilter = new TaskSearchFilter(visibleProperties);
 
@@ -721,9 +721,7 @@ export abstract class BasesViewBase extends Component {
 
 		// Log slow searches for performance monitoring
 		if (filterTime > 200) {
-			console.warn(
-				`[${this.type}] Slow search: ${filterTime.toFixed(2)}ms for search term "${term}"`
-			);
+			this.plugin.debugLog.warn("BasesViewBase", `Slow search (${this.type}): ${filterTime.toFixed(2)}ms for search term "${term}"`);
 		}
 	}
 
@@ -742,9 +740,7 @@ export abstract class BasesViewBase extends Component {
 
 		// Log filter performance for monitoring
 		if (filterTime > 100) {
-			console.warn(
-				`[${this.type}] Filter operation took ${filterTime.toFixed(2)}ms for ${tasks.length} tasks`
-			);
+			this.plugin.debugLog.warn("BasesViewBase", `Filter operation (${this.type}) took ${filterTime.toFixed(2)}ms for ${tasks.length} tasks`);
 		}
 
 		return filtered;
@@ -1027,28 +1023,54 @@ export abstract class BasesViewBase extends Component {
 	/**
 	 * Check if this view's .base file has `notify: true` and trigger notification.
 	 * Only fires once per view session to avoid notification spam.
+	 *
+	 * IMPORTANT: The notifyChecked flag is set AFTER successful validation to allow
+	 * retry if initial checks fail (e.g., due to race conditions with view loading).
 	 */
 	private async checkAndTriggerNotification(): Promise<void> {
-		// Only check once per view session
+		// Only check once per view session (after successful completion)
 		if (this.notifyChecked) return;
-		this.notifyChecked = true;
 
 		// Ensure watcher is available
-		if (!this.plugin.basesQueryWatcher) return;
+		if (!this.plugin.basesQueryWatcher) {
+			this.plugin.debugLog.log("BasesViewBase", "No basesQueryWatcher available, will retry on next update");
+			return;
+		}
 
 		try {
 			// Find the .base file for this view
 			const baseFile = this.findBaseFile();
-			if (!baseFile) return;
+			if (!baseFile) {
+				this.plugin.debugLog.log("BasesViewBase", "findBaseFile() returned null, will retry on next update");
+				return; // Don't set notifyChecked - allow retry
+			}
 
-			// Read the file and check for notify: true
+			// Read the file and check for notify: true (either top-level or in views[])
 			const content = await this.plugin.app.vault.read(baseFile);
 			const parsed = parseYaml(content);
-			if (!parsed?.notify) return;
+
+			// Check both top-level notify and per-view notify
+			let hasNotify = parsed?.notify === true;
+			if (!hasNotify && Array.isArray(parsed?.views)) {
+				hasNotify = parsed.views.some((v: any) => v?.notify === true);
+			}
+
+			if (!hasNotify) {
+				// No notify setting - mark as checked so we don't keep re-reading the file
+				this.notifyChecked = true;
+				return;
+			}
 
 			// Extract data items from the view
 			const dataItems = this.dataAdapter.extractDataItems();
-			if (!dataItems || dataItems.length === 0) return;
+			if (!dataItems || dataItems.length === 0) {
+				this.plugin.debugLog.log("BasesViewBase", "No data items yet, will retry on next update");
+				return; // Don't set notifyChecked - allow retry when data arrives
+			}
+
+			// SUCCESS: We have a valid base file with notify:true and data
+			// Now we can set the flag to prevent duplicate notifications
+			this.notifyChecked = true;
 
 			// Build notification items from the Bases data
 			const items: NotificationItem[] = [];
@@ -1078,15 +1100,17 @@ export abstract class BasesViewBase extends Component {
 				});
 			}
 
-			// Tell the watcher to show the notification
+			// Register with watcher for background monitoring AND show notification
 			const baseName = parsed.name || baseFile.basename;
-			this.plugin.basesQueryWatcher.showNotificationFromView(
+			this.plugin.debugLog.log("BasesViewBase", `Registering view with watcher: ${baseFile.path} (${items.length} items)`);
+			this.plugin.basesQueryWatcher.registerViewForNotifications(
 				baseFile.path,
 				baseName,
 				items
 			);
 		} catch (error) {
-			console.debug("[BasesViewBase] Notification check failed:", error);
+			this.plugin.debugLog.log("BasesViewBase", "Notification check failed:", error);
+			// Don't set notifyChecked on error - allow retry
 		}
 	}
 
@@ -1096,20 +1120,38 @@ export abstract class BasesViewBase extends Component {
 	private findBaseFile(): TFile | null {
 		const app = this.app || this.plugin.app;
 		let foundFile: TFile | null = null;
+		let leafsChecked = 0;
+		const viewTypesFound: string[] = [];
 
 		app.workspace.iterateAllLeaves((leaf) => {
 			if (foundFile) return; // Already found
+			leafsChecked++;
 
-			if (leaf.view?.getViewType?.() === "bases") {
+			const viewType = leaf.view?.getViewType?.();
+			if (viewType) {
+				viewTypesFound.push(viewType);
+			}
+
+			// Check for bases view type
+			if (viewType === "bases") {
 				const view = leaf.view as any;
 				// Check if this leaf's DOM contains our container
 				if (view.containerEl?.contains(this.containerEl)) {
 					if (view.file instanceof TFile) {
 						foundFile = view.file;
+						this.plugin.debugLog.log("BasesViewBase", `Found base file: ${view.file.path}`);
+					} else {
+						this.plugin.debugLog.log("BasesViewBase", "Found bases view but no file attached");
 					}
 				}
 			}
 		});
+
+		if (!foundFile) {
+			// Log diagnostic info to help debug view type issues
+			const uniqueTypes = [...new Set(viewTypesFound)];
+			this.plugin.debugLog.log("BasesViewBase", `findBaseFile found no match. Checked ${leafsChecked} leaves. View types present: ${uniqueTypes.join(", ") || "none"}`);
+		}
 
 		return foundFile;
 	}

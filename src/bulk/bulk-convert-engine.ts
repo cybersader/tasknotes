@@ -59,7 +59,7 @@ export class BulkConvertEngine {
 		const nonMarkdownPaths = new Set<string>();
 		const fileTypeBreakdown = new Map<string, string[]>();
 
-		console.log("[BulkConvertEngine] preCheck:", {
+		this.plugin.debugLog.log("BulkConvertEngine", "preCheck", {
 			itemCount: items.length,
 			itemPaths: items.map((item) => item.path || "(no path)"),
 		});
@@ -94,7 +94,7 @@ export class BulkConvertEngine {
 		const nonMarkdown = nonMarkdownPaths.size;
 		const toConvert = items.length - alreadyTasks - nonMarkdown;
 
-		console.log("[BulkConvertEngine] preCheck result:", {
+		this.plugin.debugLog.log("BulkConvertEngine", "preCheck result", {
 			toConvert,
 			alreadyTasks,
 			nonMarkdown,
@@ -139,14 +139,14 @@ export class BulkConvertEngine {
 
 			// Skip non-markdown files (e.g., .xlsx, .pdf, .png)
 			if (preCheck.nonMarkdownPaths.has(sourcePath)) {
-				console.log("[BulkConvertEngine] Skipping (non-markdown):", sourcePath);
+				this.plugin.debugLog.log("BulkConvertEngine", `Skipping (non-markdown): ${sourcePath}`);
 				result.skipped++;
 				continue;
 			}
 
 			// Skip if already a task
 			if (preCheck.alreadyTaskPaths.has(sourcePath)) {
-				console.log("[BulkConvertEngine] Skipping (already task):", sourcePath);
+				this.plugin.debugLog.log("BulkConvertEngine", `Skipping (already task): ${sourcePath}`);
 				result.skipped++;
 				continue;
 			}
@@ -208,7 +208,7 @@ export class BulkConvertEngine {
 					}
 
 					frontmatter[propName] = newValue;
-					console.log(`[BulkConvertEngine] Set ${propName}: ${oldValue} → ${newValue} (${typeof newValue})`);
+					this.plugin.debugLog.log("BulkConvertEngine", `Set ${propName}: ${oldValue} → ${newValue} (${typeof newValue})`);
 				}
 			} else {
 				// Tag method: ensure tags array includes the task tag

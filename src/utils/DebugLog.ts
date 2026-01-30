@@ -1,0 +1,164 @@
+import { App, TFile } from "obsidian";
+
+/**
+ * Debug logging utility that writes to a file in the vault root.
+ * This allows Claude to read debug output when developing at the local machine.
+ *
+ * Usage:
+ *   plugin.debugLog.enable();
+ *   plugin.debugLog.log("TagName", "Something happened", { data: "here" });
+ *
+ * The log file (debug.log) can be read by Claude to diagnose issues.
+ */
+export class DebugLog {
+	private app: App;
+	private logPath = "debug.log";
+	public enabled = false;
+	private writeQueue: Promise<void> = Promise.resolve();
+
+	constructor(app: App) {
+		this.app = app;
+	}
+
+	enable(): void {
+		this.enabled = true;
+		console.log("[DebugLog] File logging enabled - writing to debug.log");
+	}
+
+	disable(): void {
+		this.enabled = false;
+		console.log("[DebugLog] File logging disabled");
+	}
+
+	toggle(): boolean {
+		if (this.enabled) {
+			this.disable();
+		} else {
+			this.enable();
+		}
+		return this.enabled;
+	}
+
+	/**
+	 * Log a debug message. Only outputs when debug mode is enabled.
+	 * Per Obsidian plugin guidelines: debug messages should not be shown by default.
+	 *
+	 * @param tag - Category tag (e.g., "BasesQueryWatcher", "BulkConvert")
+	 * @param message - Human-readable message
+	 * @param data - Optional structured data to include
+	 */
+	async log(tag: string, message: string, data?: unknown): Promise<void> {
+		// Only output when enabled (per Obsidian guidelines)
+		if (!this.enabled) return;
+
+		// Log to console when debug mode is on
+		if (data !== undefined) {
+			console.log(`[${tag}] ${message}`, data);
+		} else {
+			console.log(`[${tag}] ${message}`);
+		}
+
+		// Queue writes to avoid race conditions
+		this.writeQueue = this.writeQueue.then(() => this.writeToFile(tag, message, data));
+		await this.writeQueue;
+	}
+
+	/**
+	 * Log a warning. Only outputs when debug mode is enabled.
+	 * Per Obsidian plugin guidelines: debug messages should not be shown by default.
+	 */
+	async warn(tag: string, message: string, data?: unknown): Promise<void> {
+		// Only output when enabled (per Obsidian guidelines)
+		if (!this.enabled) return;
+
+		console.warn(`[${tag}] ${message}`, data);
+
+		this.writeQueue = this.writeQueue.then(() =>
+			this.writeToFile(tag, `⚠️ WARN: ${message}`, data)
+		);
+		await this.writeQueue;
+	}
+
+	/**
+	 * Log an error. ALWAYS outputs to console (errors are allowed per Obsidian guidelines).
+	 * Also writes to file when debug mode is enabled.
+	 */
+	async error(tag: string, message: string, error?: unknown): Promise<void> {
+		// Errors ALWAYS go to console (allowed per Obsidian guidelines)
+		console.error(`[${tag}] ${message}`, error);
+
+		// Only write to file if enabled
+		if (!this.enabled) return;
+
+		const errorData =
+			error instanceof Error
+				? { message: error.message, stack: error.stack }
+				: error;
+
+		this.writeQueue = this.writeQueue.then(() =>
+			this.writeToFile(tag, `❌ ERROR: ${message}`, errorData)
+		);
+		await this.writeQueue;
+	}
+
+	private async writeToFile(tag: string, message: string, data?: unknown): Promise<void> {
+		try {
+			const timestamp = new Date().toISOString();
+			let logLine = `[${timestamp}] [${tag}] ${message}`;
+
+			if (data !== undefined) {
+				try {
+					logLine += "\n" + JSON.stringify(data, null, 2);
+				} catch {
+					logLine += "\n[Unable to serialize data]";
+				}
+			}
+
+			logLine += "\n---\n";
+
+			const file = this.app.vault.getAbstractFileByPath(this.logPath);
+			if (file instanceof TFile) {
+				const existing = await this.app.vault.read(file);
+				await this.app.vault.modify(file, existing + logLine);
+			} else {
+				// Create file with header
+				const header = `# TaskNotes Debug Log\nCreated: ${timestamp}\n\n`;
+				await this.app.vault.create(this.logPath, header + logLine);
+			}
+		} catch (err) {
+			// Don't let logging errors break the plugin
+			console.error("[DebugLog] Failed to write to log file:", err);
+		}
+	}
+
+	/**
+	 * Clear the debug log file
+	 */
+	async clear(): Promise<void> {
+		try {
+			const file = this.app.vault.getAbstractFileByPath(this.logPath);
+			if (file instanceof TFile) {
+				const header = `# TaskNotes Debug Log\nCleared: ${new Date().toISOString()}\n\n`;
+				await this.app.vault.modify(file, header);
+				console.log("[DebugLog] Log file cleared");
+			}
+		} catch (err) {
+			console.error("[DebugLog] Failed to clear log file:", err);
+		}
+	}
+
+	/**
+	 * Delete the debug log file
+	 */
+	async delete(): Promise<void> {
+		try {
+			const file = this.app.vault.getAbstractFileByPath(this.logPath);
+			if (file instanceof TFile) {
+				await this.app.vault.delete(file);
+				console.log("[DebugLog] Log file deleted");
+			}
+		} catch (err) {
+			console.error("[DebugLog] Failed to delete log file:", err);
+		}
+	}
+}

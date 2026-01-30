@@ -2,10 +2,72 @@ import { Page, chromium, Browser } from '@playwright/test';
 import * as path from 'path';
 import * as fs from 'fs';
 import { spawn, ChildProcess } from 'child_process';
+import * as os from 'os';
 
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 const UNPACKED_DIR = path.join(PROJECT_ROOT, '.obsidian-unpacked');
 const E2E_VAULT_DIR = path.join(PROJECT_ROOT, 'tasknotes-e2e-vault');
+
+/**
+ * Find Obsidian executable based on platform.
+ * Returns the path to Obsidian binary/exe, or null if not found.
+ */
+function findObsidianBinary(): string | null {
+  const platform = os.platform();
+
+  if (platform === 'win32') {
+    // Windows: Check common installation locations
+    const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+    const candidates = [
+      path.join(localAppData, 'Obsidian', 'Obsidian.exe'),
+      path.join(localAppData, 'Programs', 'Obsidian', 'Obsidian.exe'),
+      'C:\\Program Files\\Obsidian\\Obsidian.exe',
+      'C:\\Program Files (x86)\\Obsidian\\Obsidian.exe',
+    ];
+
+    for (const candidate of candidates) {
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+    }
+    return null;
+  } else if (platform === 'darwin') {
+    // macOS: Check Applications folder
+    const candidates = [
+      '/Applications/Obsidian.app/Contents/MacOS/Obsidian',
+      path.join(os.homedir(), 'Applications', 'Obsidian.app', 'Contents', 'MacOS', 'Obsidian'),
+    ];
+
+    for (const candidate of candidates) {
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+    }
+    return null;
+  } else {
+    // Linux: Check for extracted AppImage first, then common locations
+    const unpackedBinary = path.join(UNPACKED_DIR, 'obsidian');
+    if (fs.existsSync(unpackedBinary)) {
+      return unpackedBinary;
+    }
+
+    // Check for AppImage in common locations (can be run directly)
+    const homeDir = os.homedir();
+    const candidates = [
+      path.join(homeDir, 'Applications', 'Obsidian.AppImage'),
+      path.join(homeDir, 'Applications', 'Obsidian-1.8.10.AppImage'),
+      '/usr/local/bin/obsidian',
+      '/usr/bin/obsidian',
+    ];
+
+    for (const candidate of candidates) {
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+}
 
 export interface ObsidianApp {
   browser?: Browser;
@@ -42,15 +104,30 @@ async function tryConnectExisting(remoteDebuggingPort: number): Promise<string |
 }
 
 export async function launchObsidian(): Promise<ObsidianApp> {
-  // Check that setup has been run
-  const obsidianBinary = path.join(UNPACKED_DIR, 'obsidian');
-  if (!fs.existsSync(obsidianBinary)) {
-    throw new Error(
-      'Obsidian unpacked directory not found. Run `npm run e2e:setup` first.'
-    );
+  // Find Obsidian binary (cross-platform)
+  const obsidianBinary = findObsidianBinary();
+  if (!obsidianBinary) {
+    const platform = os.platform();
+    if (platform === 'win32') {
+      throw new Error(
+        'Obsidian not found. Please install Obsidian from https://obsidian.md or check your installation path.'
+      );
+    } else if (platform === 'darwin') {
+      throw new Error(
+        'Obsidian not found. Please install Obsidian from https://obsidian.md or check /Applications/Obsidian.app'
+      );
+    } else {
+      throw new Error(
+        'Obsidian not found. Run `bun run e2e:setup` with your AppImage path, or install Obsidian.'
+      );
+    }
   }
 
-  const remoteDebuggingPort = 9222;
+  console.log(`Using Obsidian binary: ${obsidianBinary}`);
+
+  // Use a less common port to avoid conflicts with Chrome, other browsers, etc.
+  // 9222 is commonly used by Chrome DevTools, so we use 9333 instead
+  const remoteDebuggingPort = 9333;
 
   // First, try to connect to an already running instance
   const existingCdpUrl = await tryConnectExisting(remoteDebuggingPort);
@@ -68,37 +145,65 @@ export async function launchObsidian(): Promise<ObsidianApp> {
     // Pass the vault path directly as an argument
     // Use --user-data-dir to force a separate Electron instance (prevents single-instance detection)
     const userDataDir = path.join(PROJECT_ROOT, '.obsidian-config-e2e');
-    obsidianProcess = spawn(obsidianBinary, [
-      '--no-sandbox',
+    const platform = os.platform();
+
+    // Build args based on platform
+    const args = [
       `--remote-debugging-port=${remoteDebuggingPort}`,
       `--user-data-dir=${userDataDir}`,
       vaultUri,
-    ], {
-      cwd: UNPACKED_DIR,
+    ];
+
+    // Linux needs --no-sandbox for unpacked AppImages
+    if (platform === 'linux') {
+      args.unshift('--no-sandbox');
+    }
+
+    obsidianProcess = spawn(obsidianBinary, args, {
+      cwd: platform === 'linux' ? path.dirname(obsidianBinary) : PROJECT_ROOT,
       stdio: ['ignore', 'pipe', 'pipe'],
       env: {
         ...process.env,
         OBSIDIAN_CONFIG_DIR: userDataDir,
       },
+      detached: false,
     });
 
     // Wait for DevTools to be ready
+    // On Windows, the message might come on stdout or stderr
     await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('Timeout waiting for DevTools')), 30000);
+      const timeout = setTimeout(() => {
+        reject(new Error(
+          'Timeout waiting for DevTools. If Obsidian is already running, please close it first.'
+        ));
+      }, 30000);
 
-      obsidianProcess!.stderr?.on('data', (data: Buffer) => {
+      const handleOutput = (data: Buffer) => {
         const output = data.toString();
+        console.log('[Obsidian output]', output.trim());
         const match = output.match(/DevTools listening on (ws:\/\/[^\s]+)/);
         if (match) {
           cdpUrl = match[1];
           clearTimeout(timeout);
           resolve();
         }
-      });
+      };
+
+      obsidianProcess!.stdout?.on('data', handleOutput);
+      obsidianProcess!.stderr?.on('data', handleOutput);
 
       obsidianProcess!.on('error', (err) => {
         clearTimeout(timeout);
         reject(err);
+      });
+
+      obsidianProcess!.on('exit', (code) => {
+        if (!cdpUrl) {
+          clearTimeout(timeout);
+          reject(new Error(
+            `Obsidian exited with code ${code}. It may already be running - close it and try again.`
+          ));
+        }
       });
     });
   }

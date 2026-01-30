@@ -100,6 +100,7 @@ import { CalendarProviderRegistry } from "./services/CalendarProvider";
 import { TaskCalendarSyncService } from "./services/TaskCalendarSyncService";
 import { DeviceIdentityManager } from "./identity/DeviceIdentityManager";
 import { UserRegistry } from "./identity/UserRegistry";
+import { DebugLog } from "./utils/DebugLog";
 
 interface TranslatedCommandDefinition {
 	id: string;
@@ -227,6 +228,9 @@ export default class TaskNotesPlugin extends Plugin {
 	// Device identity services (for shared vaults)
 	deviceIdentityManager: DeviceIdentityManager;
 	userRegistry: UserRegistry;
+
+	// Debug logging utility (writes to debug.log file when enabled)
+	debugLog: DebugLog;
 
 	// Bases filter converter for exporting saved views
 	basesFilterConverter: import("./services/BasesFilterConverter").BasesFilterConverter;
@@ -380,6 +384,9 @@ export default class TaskNotesPlugin extends Plugin {
 		// Initialize device identity services (for shared vaults)
 		this.deviceIdentityManager = new DeviceIdentityManager();
 		this.userRegistry = new UserRegistry(this, this.deviceIdentityManager);
+
+		// Initialize debug logging utility (writes to debug.log when enabled)
+		this.debugLog = new DebugLog(this.app);
 
 		// Initialize Bases filter converter for saved view export
 		const { BasesFilterConverter } = await import("./services/BasesFilterConverter");
@@ -1706,6 +1713,23 @@ export default class TaskNotesPlugin extends Plugin {
 				nameKey: "commands.createOrOpenTask",
 				callback: async () => {
 					await this.openTaskSelectorWithCreate();
+				},
+			},
+			// Debug logging commands (for development)
+			{
+				id: "toggle-debug-log",
+				nameKey: "commands.toggleDebugLog" as TranslationKey,
+				callback: () => {
+					const enabled = this.debugLog.toggle();
+					new Notice(`Debug logging ${enabled ? "enabled" : "disabled"}`);
+				},
+			},
+			{
+				id: "clear-debug-log",
+				nameKey: "commands.clearDebugLog" as TranslationKey,
+				callback: async () => {
+					await this.debugLog.clear();
+					new Notice("Debug log cleared");
 				},
 			},
 		];

@@ -4,6 +4,19 @@ All notable changes to this TaskNotes fork will be documented in this file.
 
 This fork (`cybersader/tasknotes`) adds bulk tasking, notifications, and other enhancements to the upstream [TaskNotes](https://github.com/callumalpass/tasknotes) plugin.
 
+## [4.3.13] - 2026-01-30
+
+### Changed
+- **Opt-in debug logging**: Converted debug console statements to use DebugLog utility for Obsidian plugin guidelines compliance
+  - `BasesQueryWatcher.ts`, `bulk-convert-engine.ts`, `BasesViewBase.ts` now use `plugin.debugLog.*`
+  - Debug/log/warn messages only output when debug mode enabled (toggle via command)
+  - Error messages still always output (allowed per Obsidian guidelines)
+  - Logs written to both console and `debug.log` file when enabled
+
+### Fixed
+- **E2E cross-platform support**: Improved Obsidian binary detection for Windows/macOS/Linux in Playwright tests
+- **E2E port conflict**: Changed remote debugging port from 9222 to 9333 to avoid Chrome conflicts
+
 ## [4.3.12] - 2026-01-30
 
 ### Fixed
