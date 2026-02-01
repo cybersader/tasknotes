@@ -6,8 +6,21 @@
  */
 
 export { BasesQueryWatcher } from "./BasesQueryWatcher";
+export { VaultWideNotificationService } from "./VaultWideNotificationService";
 export {
 	BasesNotificationModal,
 	type NotificationItem,
 	type BasesNotificationModalOptions,
 } from "../modals/BasesNotificationModal";
+export { UnifiedNotificationModal } from "../modals/UnifiedNotificationModal";
+export { ToastNotification, type ToastConfig } from "./ToastNotification";
+export { BaseNotificationSyncService } from "./BaseNotificationSyncService";
+export {
+	type BaseNotificationSyncSettings,
+	type BaseNotificationTaskFrontmatter,
+	type SyncedBaseInfo,
+	type SyncResult,
+	type BaseNotificationMode,
+	type EmptyBaseBehavior,
+	DEFAULT_BASE_NOTIFICATION_SYNC_SETTINGS,
+} from "../types/base-notification";

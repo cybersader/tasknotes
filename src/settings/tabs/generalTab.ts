@@ -232,6 +232,11 @@ export function renderGeneralTab(
 			nameKey: 'relationships' as const,
 			defaultPath: 'TaskNotes/Views/relationships.base',
 		},
+		{
+			id: 'open-upcoming-view',
+			nameKey: 'upcoming' as const,
+			defaultPath: 'TaskNotes/Views/upcoming-default.base',
+		},
 	];
 
 	createSettingGroup(
@@ -501,6 +506,44 @@ export function renderGeneralTab(
 							.setCta()
 							.onClick(async () => {
 								await plugin.activateReleaseNotesView();
+							})
+					);
+			});
+		}
+	);
+
+	// Developer Options Section
+	createSettingGroup(
+		container,
+		{
+			heading: "Developer options",
+			description: "Settings for debugging and development. Enable debug logging to write diagnostics to debug.log in your vault root.",
+		},
+		(group) => {
+			group.addSetting((setting) =>
+				configureToggleSetting(setting, {
+					name: "Enable debug logging",
+					desc: "Write diagnostic logs to debug.log file. Useful for troubleshooting issues. This setting persists between restarts.",
+					getValue: () => plugin.settings.enableDebugLogging ?? false,
+					setValue: async (value: boolean) => {
+						plugin.settings.enableDebugLogging = value;
+						plugin.debugLog.setEnabled(value);
+						save();
+						new Notice(`Debug logging ${value ? "enabled" : "disabled"}`);
+					},
+				})
+			);
+
+			group.addSetting((setting) => {
+				setting
+					.setName("Clear debug log")
+					.setDesc("Clear the contents of the debug.log file")
+					.addButton((button) =>
+						button
+							.setButtonText("Clear log")
+							.onClick(async () => {
+								await plugin.debugLog.clear();
+								new Notice("Debug log cleared");
 							})
 					);
 			});

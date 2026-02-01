@@ -99,8 +99,9 @@ export abstract class BasesViewBase extends Component {
 			this.dataUpdateDebounceTimer = null;
 			try {
 				this.render();
-				// Check for notification trigger after data arrives
-				this.checkAndTriggerNotification();
+				// DISABLED: Old BasesNotificationModal auto-trigger
+				// Replaced by new Upcoming View + Toast system (see ADR-009)
+				// this.checkAndTriggerNotification();
 			} catch (error) {
 				console.error(`[TaskNotes][${this.type}] Render error:`, error);
 				this.renderError(error as Error);

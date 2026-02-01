@@ -7,6 +7,7 @@ import {
 	ProjectAutosuggestSettings,
 	NLPTriggersConfig,
 	GoogleCalendarExportSettings,
+	VaultWideNotificationSettings,
 } from "../types/settings";
 
 /**
@@ -223,6 +224,20 @@ export const DEFAULT_PROJECT_AUTOSUGGEST: ProjectAutosuggestSettings = {
 	propertyValue: "",
 };
 
+// Default vault-wide notification settings
+export const DEFAULT_VAULT_WIDE_NOTIFICATIONS: VaultWideNotificationSettings = {
+	enabled: true,
+	showOnStartup: false,
+	checkInterval: 5, // minutes
+	enabledSources: {
+		bases: true,
+		reminderViews: true,
+		upstreamReminders: true,
+		viewEntry: true,
+	},
+	defaultReminderTime: "09:00",
+};
+
 // Default NLP triggers configuration
 export const DEFAULT_NLP_TRIGGERS: NLPTriggersConfig = {
 	triggers: [
@@ -385,6 +400,7 @@ export const DEFAULT_SETTINGS: TaskNotesSettings = {
 		'open-advanced-calendar-view': 'TaskNotes/Views/calendar-default.base',
 		'open-agenda-view': 'TaskNotes/Views/agenda-default.base',
 		'relationships': 'TaskNotes/Views/relationships.base',
+		'open-upcoming-view': 'TaskNotes/Views/upcoming-default.base',
 	},
 	// Recurring task behavior defaults
 	maintainDueDateOffsetInRecurring: false,
@@ -417,4 +433,8 @@ export const DEFAULT_SETTINGS: TaskNotesSettings = {
 	// Person notes configuration
 	personNotesFolder: "",
 	personNotesTag: "",
+	// Vault-wide notification settings
+	vaultWideNotifications: DEFAULT_VAULT_WIDE_NOTIFICATIONS,
+	// Debug logging (off by default)
+	enableDebugLogging: false,
 };

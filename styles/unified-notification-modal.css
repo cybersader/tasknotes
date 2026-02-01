@@ -1,0 +1,287 @@
+/* ==========================================================================
+   Unified Notification Modal Styles
+   Todoist-style vault-wide notification view
+   ========================================================================== */
+
+.tn-unified-notification-modal {
+  max-width: 600px;
+  min-width: 400px;
+}
+
+/* Header */
+.tn-unified-modal__header {
+  text-align: center;
+  padding: var(--size-4-4) var(--size-4-4) var(--size-4-2);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.tn-unified-modal__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  margin-bottom: var(--size-4-2);
+}
+
+.tn-unified-modal__icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.tn-unified-modal__title {
+  margin: 0 0 var(--size-4-1);
+  font-size: var(--font-ui-large);
+  font-weight: var(--font-semibold);
+  color: var(--text-normal);
+}
+
+.tn-unified-modal__subtitle {
+  margin: 0;
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+}
+
+/* Sections container */
+.tn-unified-modal__sections {
+  max-height: 400px;
+  overflow-y: auto;
+  padding: var(--size-4-2) 0;
+}
+
+/* Empty state */
+.tn-unified-modal__empty {
+  text-align: center;
+  padding: var(--size-4-8);
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Section */
+.tn-unified-modal__section {
+  margin-bottom: var(--size-4-1);
+}
+
+.tn-unified-modal__section--overdue .tn-unified-modal__section-header {
+  color: var(--text-error);
+}
+
+.tn-unified-modal__section--overdue .tn-unified-modal__section-icon {
+  color: var(--text-error);
+}
+
+/* Section header */
+.tn-unified-modal__section-header {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-1);
+  padding: var(--size-4-2) var(--size-4-4);
+  background: var(--background-secondary);
+  cursor: pointer;
+  user-select: none;
+  font-weight: var(--font-medium);
+  font-size: var(--font-ui-small);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  transition: background-color 0.1s ease;
+}
+
+.tn-unified-modal__section-header:hover {
+  background: var(--background-modifier-hover);
+}
+
+.tn-unified-modal__section-chevron {
+  display: flex;
+  align-items: center;
+  color: var(--text-faint);
+}
+
+.tn-unified-modal__section-chevron svg {
+  width: 14px;
+  height: 14px;
+}
+
+.tn-unified-modal__section-icon {
+  display: flex;
+  align-items: center;
+}
+
+.tn-unified-modal__section-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.tn-unified-modal__section-label {
+  flex: 1;
+}
+
+/* Section items */
+.tn-unified-modal__section-items {
+  overflow: hidden;
+  transition: max-height 0.2s ease;
+}
+
+.tn-unified-modal__section-items.collapsed {
+  display: none;
+}
+
+/* Item */
+.tn-unified-modal__item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--size-4-2);
+  padding: var(--size-4-2) var(--size-4-4);
+  border-bottom: 1px solid var(--background-modifier-border-hover);
+  transition: background-color 0.1s ease, opacity 0.3s ease;
+}
+
+.tn-unified-modal__item:hover {
+  background: var(--background-modifier-hover);
+}
+
+.tn-unified-modal__item--completed {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+
+/* Item content */
+.tn-unified-modal__item-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.tn-unified-modal__item-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-1);
+}
+
+.tn-unified-modal__item-check {
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+}
+
+.tn-unified-modal__item-check svg {
+  width: 14px;
+  height: 14px;
+}
+
+.tn-unified-modal__item-bullet {
+  color: var(--text-muted);
+}
+
+.tn-unified-modal__item-title {
+  font-weight: var(--font-medium);
+  color: var(--text-normal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Item meta */
+.tn-unified-modal__item-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--size-4-1);
+  margin-top: var(--size-2-1);
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+.tn-unified-modal__item-time {
+  color: var(--text-faint);
+}
+
+.tn-unified-modal__item-sources {
+  color: var(--text-faint);
+}
+
+.tn-unified-modal__item-source {
+  color: var(--text-accent);
+  cursor: help;
+}
+
+/* Item actions */
+.tn-unified-modal__item-actions {
+  display: flex;
+  gap: var(--size-4-1);
+  opacity: 0;
+  transition: opacity 0.1s ease;
+}
+
+.tn-unified-modal__item:hover .tn-unified-modal__item-actions {
+  opacity: 1;
+}
+
+/* Buttons */
+.tn-unified-modal__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--size-2-2);
+  padding: var(--size-2-2) var(--size-4-2);
+  border: none;
+  border-radius: var(--radius-s);
+  font-size: var(--font-ui-small);
+  cursor: pointer;
+  transition: background-color 0.1s ease, color 0.1s ease;
+}
+
+.tn-unified-modal__btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.tn-unified-modal__btn--primary {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.tn-unified-modal__btn--primary:hover {
+  background: var(--interactive-accent-hover);
+}
+
+.tn-unified-modal__btn--secondary {
+  background: var(--background-modifier-border);
+  color: var(--text-normal);
+}
+
+.tn-unified-modal__btn--secondary:hover {
+  background: var(--background-modifier-border-hover);
+}
+
+/* Footer */
+.tn-unified-modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--size-4-2);
+  padding: var(--size-4-3) var(--size-4-4);
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+/* Responsive */
+@media (max-width: 500px) {
+  .tn-unified-notification-modal {
+    min-width: 300px;
+  }
+
+  .tn-unified-modal__item-actions {
+    opacity: 1;
+  }
+
+  .tn-unified-modal__item {
+    flex-wrap: wrap;
+  }
+
+  .tn-unified-modal__item-actions {
+    width: 100%;
+    justify-content: flex-end;
+    margin-top: var(--size-4-1);
+  }
+}

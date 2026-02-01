@@ -5,6 +5,7 @@ import { buildTaskListViewFactory } from "./TaskListView";
 import { buildKanbanViewFactory } from "./KanbanView";
 import { buildCalendarViewFactory } from "./CalendarView";
 import { buildMiniCalendarViewFactory } from "./MiniCalendarView";
+import { buildUpcomingViewFactory } from "./UpcomingView";
 import { registerBasesView, unregisterBasesView } from "./api";
 
 /**
@@ -540,8 +541,29 @@ export async function registerBasesTaskList(plugin: TaskNotesPlugin): Promise<vo
 				],
 			});
 
+			// Register Upcoming view using public API (Todoist-style aggregated view)
+			const upcomingSuccess = registerBasesView(plugin, "tasknotesUpcoming", {
+				name: "TaskNotes Upcoming",
+				icon: "bell",
+				factory: buildUpcomingViewFactory(plugin),
+				options: () => [
+					{
+						type: "toggle",
+						key: "showTodayTomorrow",
+						displayName: "Always show Today/Tomorrow sections",
+						default: true,
+					},
+					{
+						type: "toggle",
+						key: "includeAggregated",
+						displayName: "Include items from all notification-enabled bases",
+						default: true,
+					},
+				],
+			});
+
 			// Consider it successful if any view registered successfully
-			if (!taskListSuccess && !kanbanSuccess && !calendarSuccess && !miniCalendarSuccess) {
+			if (!taskListSuccess && !kanbanSuccess && !calendarSuccess && !miniCalendarSuccess && !upcomingSuccess) {
 				console.debug("[TaskNotes][Bases] Bases plugin not available for registration");
 				return false;
 			}
@@ -596,6 +618,7 @@ export function unregisterBasesViews(plugin: TaskNotesPlugin): void {
 		unregisterBasesView(plugin, "tasknotesKanban");
 		unregisterBasesView(plugin, "tasknotesCalendar");
 		unregisterBasesView(plugin, "tasknotesMiniCalendar");
+		unregisterBasesView(plugin, "tasknotesUpcoming");
 	} catch (error) {
 		console.error("[TaskNotes][Bases] Error during view unregistration:", error);
 	}

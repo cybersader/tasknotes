@@ -24,6 +24,7 @@ const CSS_FILES = [
     'styles/task-action-palette-modal.css', // TaskActionPaletteModal component with proper BEM scoping
     'styles/time-entry-editor-modal.css', // TimeEntryEditorModal component with proper BEM scoping
     'styles/notification-modal.css', // BasesNotificationModal component with proper BEM scoping
+    'styles/unified-notification-modal.css', // UnifiedNotificationModal component (vault-wide reminders)
     'styles/relationships.css',  // RelationshipsWidget component with proper BEM scoping
     'styles/task-card-note-widget.css',  // TaskCardNoteWidget component with proper BEM scoping
     
@@ -39,7 +40,9 @@ const CSS_FILES = [
     'styles/settings-view.css',      // SettingsView component with proper BEM scoping
     'styles/webhook-settings.css',   // Webhook settings UI with proper BEM scoping
     'styles/status-bar.css',         // StatusBar component with proper BEM scoping
-    'styles/bases-views.css'         // Bases integration views (list and kanban)
+    'styles/bases-views.css',        // Bases integration views (list and kanban)
+    'styles/upcoming-view.css',      // UpcomingView (Todoist-style aggregated notifications)
+    'styles/toast-notification.css'  // ToastNotification (compact bottom-right indicator)
 ];
 
 const MAIN_CSS_TEMPLATE = `/* TaskNotes Plugin Styles */

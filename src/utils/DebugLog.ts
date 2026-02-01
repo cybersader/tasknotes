@@ -15,19 +15,27 @@ export class DebugLog {
 	private logPath = "debug.log";
 	public enabled = false;
 	private writeQueue: Promise<void> = Promise.resolve();
+	private onEnabledChange?: (enabled: boolean) => void;
 
-	constructor(app: App) {
+	constructor(app: App, initialEnabled = false, onEnabledChange?: (enabled: boolean) => void) {
 		this.app = app;
+		this.enabled = initialEnabled;
+		this.onEnabledChange = onEnabledChange;
+		if (initialEnabled) {
+			console.log("[DebugLog] File logging enabled from settings - writing to debug.log");
+		}
 	}
 
 	enable(): void {
 		this.enabled = true;
 		console.log("[DebugLog] File logging enabled - writing to debug.log");
+		this.onEnabledChange?.(true);
 	}
 
 	disable(): void {
 		this.enabled = false;
 		console.log("[DebugLog] File logging disabled");
+		this.onEnabledChange?.(false);
 	}
 
 	toggle(): boolean {
@@ -37,6 +45,14 @@ export class DebugLog {
 			this.enable();
 		}
 		return this.enabled;
+	}
+
+	/**
+	 * Set enabled state without triggering callback (for sync from settings)
+	 */
+	setEnabled(enabled: boolean): void {
+		this.enabled = enabled;
+		console.log(`[DebugLog] File logging ${enabled ? "enabled" : "disabled"}`);
 	}
 
 	/**

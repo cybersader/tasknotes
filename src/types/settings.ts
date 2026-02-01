@@ -259,6 +259,68 @@ export interface TaskNotesSettings {
 	// Person notes configuration (for Team & Attribution)
 	personNotesFolder: string;
 	personNotesTag: string;
+	// Vault-wide notification settings
+	vaultWideNotifications: VaultWideNotificationSettings;
+	// Debug logging (persists between restarts)
+	enableDebugLogging: boolean;
+}
+
+/**
+ * Time category for grouping notification items in the unified modal.
+ */
+export type TimeCategory = 'overdue' | 'today' | 'tomorrow' | 'thisWeek' | 'thisMonth' | 'later';
+
+/**
+ * Source that triggered a notification item.
+ */
+export interface NotificationSource {
+	type: 'base' | 'reminder-view' | 'upstream' | 'view-entry';
+	path?: string;
+	name: string;
+}
+
+/**
+ * An aggregated notification item for the unified modal.
+ * Combines items from multiple notification sources (bases, reminders, view-entry tracking).
+ */
+export interface AggregatedNotificationItem {
+	path: string;
+	title: string;
+	isTask: boolean;
+	status?: string;
+	dueDate?: string;
+	scheduledDate?: string;
+	assignees?: string[];
+	/** Sources that triggered this notification (may come from multiple bases) */
+	sources: NotificationSource[];
+	/** Time-based grouping category */
+	timeCategory: TimeCategory;
+	/** Human-readable time context (e.g., "Due 2 days ago", "In queue for 3 days") */
+	timeContext?: string;
+	/** Whether this is a base notification task (type: base-notification) */
+	isBaseNotification?: boolean;
+	/** For base notifications: number of items matching the base filter */
+	matchCount?: number;
+	/** For base notifications: path to the source .base file */
+	sourceBasePath?: string;
+}
+
+/**
+ * Settings for the vault-wide notification system.
+ */
+export interface VaultWideNotificationSettings {
+	enabled: boolean;
+	showOnStartup: boolean;
+	checkInterval: number; // minutes
+	enabledSources: {
+		bases: boolean;
+		reminderViews: boolean;
+		upstreamReminders: boolean;
+		viewEntry: boolean;
+	};
+	defaultReminderTime: string; // HH:MM format
+	/** Path to the .base file to open when clicking toast (optional, uses convention if not set) */
+	upcomingViewPath?: string;
 }
 
 export interface DefaultReminder {

@@ -1535,6 +1535,7 @@ export const en: TranslationTree = {
 						advancedCalendar: "Open advanced calendar view",
 						agenda: "Open agenda view",
 						relationships: "Relationships widget",
+						upcoming: "Open upcoming view",
 					},
 					fileLabel: "File: {path}",
 					resetButton: "Reset",
@@ -2260,6 +2261,7 @@ export const en: TranslationTree = {
 		openKanbanView: "Open kanban board",
 		openPomodoroStats: "Open pomodoro statistics",
 		openStatisticsView: "Open task & project statistics",
+		showUpcomingReminders: "Show upcoming reminders",
 		createNewTask: "Create new task",
 		convertCurrentNoteToTask: {
 			name: "Convert current note to task",
@@ -2287,6 +2289,9 @@ export const en: TranslationTree = {
 		// Debug commands (for development)
 		toggleDebugLog: "Toggle debug logging to file",
 		clearDebugLog: "Clear debug log file",
+		// Notification commands
+		showNotificationToast: "Show notification toast",
+		syncBaseNotifications: "Sync base notifications",
 	},
 	modals: {
 		deviceCode: {

@@ -85,7 +85,7 @@ import { StatusBarService } from "./services/StatusBarService";
 import { ProjectSubtasksService } from "./services/ProjectSubtasksService";
 import { ExpandedProjectsService } from "./services/ExpandedProjectsService";
 import { NotificationService } from "./services/NotificationService";
-import { BasesQueryWatcher } from "./notifications";
+import { BasesQueryWatcher, VaultWideNotificationService, UnifiedNotificationModal, ToastNotification, BaseNotificationSyncService } from "./notifications";
 import { AutoExportService } from "./services/AutoExportService";
 // Type-only import for HTTPAPIService (actual import is dynamic on desktop only)
 import type { HTTPAPIService } from "./services/HTTPAPIService";
@@ -203,6 +203,15 @@ export default class TaskNotesPlugin extends Plugin {
 
 	// Bases query notification watcher
 	basesQueryWatcher: BasesQueryWatcher;
+
+	// Vault-wide notification service
+	vaultWideNotificationService: VaultWideNotificationService;
+
+	// Toast notification component (bottom-right indicator)
+	toastNotification: ToastNotification;
+
+	// Base notification sync service (creates TaskNote files for notification-enabled bases)
+	baseNotificationSyncService: BaseNotificationSyncService;
 
 	// HTTP API service
 	apiService?: HTTPAPIService;
@@ -379,6 +388,9 @@ export default class TaskNotesPlugin extends Plugin {
 		this.statusBarService = new StatusBarService(this);
 		this.notificationService = new NotificationService(this);
 		this.basesQueryWatcher = new BasesQueryWatcher(this);
+		this.vaultWideNotificationService = new VaultWideNotificationService(this);
+		this.toastNotification = new ToastNotification(this);
+		this.baseNotificationSyncService = new BaseNotificationSyncService(this);
 		this.viewPerformanceService = new ViewPerformanceService(this);
 
 		// Initialize device identity services (for shared vaults)
@@ -386,7 +398,17 @@ export default class TaskNotesPlugin extends Plugin {
 		this.userRegistry = new UserRegistry(this, this.deviceIdentityManager);
 
 		// Initialize debug logging utility (writes to debug.log when enabled)
-		this.debugLog = new DebugLog(this.app);
+		// Reads initial state from settings and persists changes back
+		this.debugLog = new DebugLog(
+			this.app,
+			this.settings?.enableDebugLogging ?? false,
+			async (enabled) => {
+				if (this.settings) {
+					this.settings.enableDebugLogging = enabled;
+					await this.saveSettings();
+				}
+			}
+		);
 
 		// Initialize Bases filter converter for saved view export
 		const { BasesFilterConverter } = await import("./services/BasesFilterConverter");
@@ -584,6 +606,38 @@ export default class TaskNotesPlugin extends Plugin {
 
 			// Initialize Bases query watcher for background notifications
 			await this.basesQueryWatcher.initialize();
+
+			// Initialize Base Notification Sync Service (creates TaskNote files for notification-enabled bases)
+			await this.baseNotificationSyncService.initialize();
+
+			// Show toast notification on startup if configured
+			this.debugLog.log("ToastNotification", "Checking startup settings", {
+				vaultWideNotifications: this.settings?.vaultWideNotifications,
+				enabled: this.settings?.vaultWideNotifications?.enabled,
+				showOnStartup: this.settings?.vaultWideNotifications?.showOnStartup
+			});
+
+			if (this.settings?.vaultWideNotifications?.enabled) {
+				// Delay slightly to let the UI settle
+				window.setTimeout(async () => {
+					if (this.settings?.vaultWideNotifications?.showOnStartup) {
+						this.debugLog.log("ToastNotification", "Startup timer fired - calling checkAndShow (with toast)");
+						await this.toastNotification.checkAndShow();
+					} else {
+						// Still update status bar even if toast isn't shown on startup
+						this.debugLog.log("ToastNotification", "Startup timer fired - updating status bar only");
+						try {
+							const items = await this.vaultWideNotificationService.getAggregatedItems();
+							this.toastNotification.updateStatusBar(items.length);
+							this.debugLog.log("ToastNotification", `Status bar updated: ${items.length} items`);
+						} catch (error) {
+							this.debugLog.error("ToastNotification", "Error updating status bar:", error);
+						}
+					}
+				}, 3000);
+			} else {
+				this.debugLog.log("ToastNotification", "Vault-wide notifications disabled");
+			}
 
 			// Warm up TaskManager indexes for better performance
 			await this.warmupProjectIndexes();
@@ -1125,6 +1179,11 @@ export default class TaskNotesPlugin extends Plugin {
 			this.viewPerformanceService.destroy();
 		}
 
+		// Clean up toast notification
+		if (this.toastNotification) {
+			this.toastNotification.destroy();
+		}
+
 		// Clean up task card reading mode handlers
 		if (this.taskCardReadingModeCleanup) {
 			this.taskCardReadingModeCleanup();
@@ -1204,6 +1263,11 @@ export default class TaskNotesPlugin extends Plugin {
 		// Clean up Bases query watcher
 		if (this.basesQueryWatcher) {
 			this.basesQueryWatcher.destroy();
+		}
+
+		// Clean up Base Notification Sync Service
+		if (this.baseNotificationSyncService) {
+			this.baseNotificationSyncService.destroy();
 		}
 
 		// Clean up task manager
@@ -1530,6 +1594,20 @@ export default class TaskNotesPlugin extends Plugin {
 				},
 			},
 			{
+				id: "show-upcoming-reminders",
+				nameKey: "commands.showUpcomingReminders",
+				callback: () => {
+					new UnifiedNotificationModal(this.app, this).open();
+				},
+			},
+			{
+				id: "open-upcoming-view",
+				nameKey: "commands.openUpcomingView" as TranslationKey,
+				callback: async () => {
+					await this.openBasesFileForCommand('open-upcoming-view');
+				},
+			},
+			{
 				id: "create-new-task",
 				nameKey: "commands.createNewTask",
 				callback: () => {
@@ -1732,6 +1810,23 @@ export default class TaskNotesPlugin extends Plugin {
 					new Notice("Debug log cleared");
 				},
 			},
+			// Toast notification test command
+			{
+				id: "show-notification-toast",
+				nameKey: "commands.showNotificationToast" as TranslationKey,
+				callback: async () => {
+					await this.toastNotification.checkAndShow();
+				},
+			},
+			// Sync base notifications command
+			{
+				id: "sync-base-notifications",
+				nameKey: "commands.syncBaseNotifications" as TranslationKey,
+				callback: async () => {
+					const result = await this.baseNotificationSyncService.manualSync();
+					new Notice(`Base notifications synced: ${result.created} created, ${result.updated} updated, ${result.completed} completed`);
+				},
+			},
 		];
 
 		this.registerCommands();
@@ -1923,8 +2018,25 @@ export default class TaskNotesPlugin extends Plugin {
 			return;
 		}
 
-		const leaf = this.app.workspace.getLeaf();
-		await leaf.openFile(file);
+		// Check if the file is already open in a tab - switch to it instead of opening duplicate
+		const existingLeaf = this.app.workspace.getLeavesOfType("markdown").find(leaf => {
+			const viewState = leaf.getViewState();
+			return viewState.state?.file === normalizedPath;
+		}) || this.app.workspace.getLeavesOfType("bases").find(leaf => {
+			// Bases files use their own view type
+			const viewState = leaf.getViewState();
+			return viewState.state?.file === normalizedPath;
+		});
+
+		if (existingLeaf) {
+			// Switch to existing tab
+			this.app.workspace.setActiveLeaf(existingLeaf, { focus: true });
+			this.app.workspace.revealLeaf(existingLeaf);
+		} else {
+			// Open in new/reused leaf
+			const leaf = this.app.workspace.getLeaf();
+			await leaf.openFile(file);
+		}
 	}
 
 	/**
