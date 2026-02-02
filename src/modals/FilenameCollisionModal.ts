@@ -4,10 +4,11 @@ import { App, Modal, Setting } from "obsidian";
  * Result from the filename collision recovery modal
  */
 export interface CollisionRecoveryResult {
-	action: "retry" | "change-format" | "open-settings" | "cancel";
+	action: "retry" | "change-format" | "open-settings" | "edit-task" | "cancel";
 	newFormat?: "title" | "zettel" | "zettel-title" | "timestamp" | "custom";
 	customTemplate?: string;
 	retrySuffix?: string; // The suffix to append when retrying
+	useDueDateForZettel?: boolean; // Whether to use due date for zettel ID
 }
 
 /**
@@ -17,14 +18,19 @@ export interface CollisionRecoveryResult {
 export class FilenameCollisionModal extends Modal {
 	private result: CollisionRecoveryResult = { action: "cancel" };
 	private resolvePromise: ((result: CollisionRecoveryResult) => void) | null = null;
+	private useDueDateForZettel = false;
 
 	constructor(
 		app: App,
 		private filename: string,
 		private currentFormat: string,
-		private retrySuffixFormat: "timestamp" | "random" | "zettel" = "timestamp"
+		private retrySuffixFormat: "timestamp" | "random" | "zettel" = "timestamp",
+		private dueDate?: string, // Optional due date (YYYY-MM-DD) for zettel date source option
+		private currentZettelDateSource: "creation" | "due" = "creation"
 	) {
 		super(app);
+		// Default to current setting
+		this.useDueDateForZettel = currentZettelDateSource === "due" && !!dueDate;
 	}
 
 	/**
@@ -36,11 +42,20 @@ export class FilenameCollisionModal extends Modal {
 			case "random":
 				return Math.floor(Math.random() * 46656).toString(36).padStart(3, "0");
 			case "zettel": {
-				const datePart = now.toISOString().slice(2, 10).replace(/-/g, "").slice(0, 6);
+				// Determine which date to use for the date portion
+				let dateForZettel = now;
+				if (this.useDueDateForZettel && this.dueDate) {
+					const [year, month, day] = this.dueDate.split("-").map(Number);
+					if (year && month && day) {
+						dateForZettel = new Date(year, month - 1, day);
+					}
+				}
+				const datePart = dateForZettel.toISOString().slice(2, 10).replace(/-/g, "").slice(0, 6);
+				// Use milliseconds since midnight for uniqueness
 				const midnight = new Date(now);
 				midnight.setHours(0, 0, 0, 0);
-				const secondsSinceMidnight = Math.floor((now.getTime() - midnight.getTime()) / 1000);
-				return `${datePart}${secondsSinceMidnight.toString(36)}`;
+				const msSinceMidnight = now.getTime() - midnight.getTime();
+				return `${datePart}${msSinceMidnight.toString(36)}`;
 			}
 			case "timestamp":
 			default:
@@ -144,24 +159,53 @@ export class FilenameCollisionModal extends Modal {
 		onetimeSection.style.marginTop = "1.5em";
 		onetimeSection.createEl("h4", { text: "One-time fix (keeps current format):" });
 
-		// Option 4: Retry this one time only (append suffix without changing settings)
-		const suffix = this.generateSuffix();
-		const previewFilename = `${this.filename}-${suffix}`;
-		new Setting(onetimeSection)
-			.setName("Retry with suffix")
-			.setDesc(`Creates: ${previewFilename}.md`)
-			.addButton((btn) =>
-				btn.setButtonText("Retry once").onClick(() => {
-					this.result = { action: "retry", retrySuffix: suffix };
-					this.close();
-				})
-			);
+		// Date source option for zettel formats (only show if using zettel-based suffix)
+		if (this.retrySuffixFormat === "zettel") {
+			const dateSourceSetting = new Setting(onetimeSection)
+				.setName("Use task date for zettel ID")
+				.setDesc(this.dueDate
+					? `Use ${this.dueDate} (due/scheduled) instead of today for the YYMMDD portion`
+					: "No due/scheduled date set - will use creation date");
+
+			if (this.dueDate) {
+				dateSourceSetting.addToggle((toggle) =>
+					toggle
+						.setValue(this.useDueDateForZettel)
+						.onChange((value) => {
+							this.useDueDateForZettel = value;
+							// Re-render the retry preview
+							this.renderRetryPreview(onetimeSection);
+						})
+				);
+			} else {
+				// Show disabled toggle when no due date
+				dateSourceSetting.addToggle((toggle) =>
+					toggle
+						.setValue(false)
+						.setDisabled(true)
+				);
+			}
+		}
+
+		// Preview container for retry option
+		this.renderRetryPreview(onetimeSection);
 
 		// Section: Other options
 		const otherSection = contentEl.createDiv({ cls: "tasknotes-collision-section" });
 		otherSection.style.marginTop = "1.5em";
 
-		// Option 5: Open settings
+		// Edit task button - return to edit the task
+		new Setting(otherSection)
+			.setName("Edit task")
+			.setDesc("Go back to edit the task title or other details")
+			.addButton((btn) =>
+				btn.setButtonText("Edit task").onClick(() => {
+					this.result = { action: "edit-task" };
+					this.close();
+				})
+			);
+
+		// Open settings
 		new Setting(otherSection)
 			.setName("Open settings")
 			.setDesc("Configure filename format in plugin settings")
@@ -179,6 +223,35 @@ export class FilenameCollisionModal extends Modal {
 				this.close();
 			})
 		);
+	}
+
+	/**
+	 * Render the retry preview with current date source setting
+	 */
+	private retryPreviewEl: HTMLElement | null = null;
+	private renderRetryPreview(container: HTMLElement): void {
+		// Remove existing preview if any
+		if (this.retryPreviewEl) {
+			this.retryPreviewEl.remove();
+		}
+
+		const suffix = this.generateSuffix();
+		const previewFilename = `${this.filename}-${suffix}`;
+
+		this.retryPreviewEl = container.createDiv();
+		new Setting(this.retryPreviewEl)
+			.setName("Retry with suffix")
+			.setDesc(`Creates: ${previewFilename}.md`)
+			.addButton((btn) =>
+				btn.setButtonText("Retry once").onClick(() => {
+					this.result = {
+						action: "retry",
+						retrySuffix: suffix,
+						useDueDateForZettel: this.useDueDateForZettel,
+					};
+					this.close();
+				})
+			);
 	}
 
 	onClose(): void {

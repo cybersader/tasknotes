@@ -288,6 +288,8 @@ export const DEFAULT_SETTINGS: TaskNotesSettings = {
 	customFilenameTemplate: "{title}", // Simple title template
 	filenameCollisionBehavior: "silent", // Auto-resolve silently by default
 	collisionRetrySuffix: "timestamp", // Base36 timestamp suffix when retrying
+	zettelDateSource: "creation", // Legacy - kept for backwards compatibility
+	zettelDateChain: ["creation"], // Default: just use creation date
 	// Task creation defaults
 	taskCreationDefaults: DEFAULT_TASK_CREATION_DEFAULTS,
 	// Calendar view defaults
@@ -446,4 +448,9 @@ export const DEFAULT_SETTINGS: TaskNotesSettings = {
 	// Note UUID settings (for persistent identity across renames)
 	noteUuidPropertyName: "tnId",
 	noteUuidAutoGenerate: true,
+	// Upcoming View date format settings
+	upcomingViewDateFormat: "us",
+	upcomingViewCustomDateFormat: "MMM d, yyyy",
+	upcomingViewUseRelativeDates: true,
+	upcomingViewRelativeDateThreshold: 7,
 };

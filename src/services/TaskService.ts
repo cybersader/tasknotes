@@ -349,11 +349,15 @@ export class TaskService {
 				if (wouldCollide) {
 					// Show modal immediately instead of auto-resolving
 					const retrySuffixFormat = this.plugin.settings.collisionRetrySuffix || "timestamp";
+					// Get effective due date for zettel: due → scheduled → undefined (creation)
+					const effectiveDueDate = taskData.due || taskData.scheduled || undefined;
 					const modal = new FilenameCollisionModal(
 						this.plugin.app,
 						baseFilename,
 						this.plugin.settings.taskFilenameFormat,
-						retrySuffixFormat
+						retrySuffixFormat,
+						effectiveDueDate,
+						this.plugin.settings.zettelDateSource
 					);
 					const result = await modal.waitForResult();
 
@@ -375,6 +379,12 @@ export class TaskService {
 						(this.plugin.app as any).setting?.open();
 						(this.plugin.app as any).setting?.openTabById?.("tasknotes");
 						throw new Error("Task creation cancelled - opening settings");
+					} else if (result.action === "edit-task") {
+						// User wants to go back and edit the task - throw special error
+						const editError = new Error("EDIT_TASK_REQUESTED");
+						(editError as any).isEditRequest = true;
+						(editError as any).taskData = taskData;
+						throw editError;
 					} else {
 						throw new Error("Task creation cancelled by user");
 					}
@@ -499,11 +509,15 @@ export class TaskService {
 				if (errorMsg.toLowerCase().includes("already exists")) {
 					// Show collision recovery modal
 					const retrySuffixFormat = this.plugin.settings.collisionRetrySuffix || "timestamp";
+					// Get effective due date for zettel: due → scheduled → undefined (creation)
+					const effectiveDueDate = taskData.due || taskData.scheduled || undefined;
 					const modal = new FilenameCollisionModal(
 						this.plugin.app,
 						uniqueFilename,
 						this.plugin.settings.taskFilenameFormat,
-						retrySuffixFormat
+						retrySuffixFormat,
+						effectiveDueDate,
+						this.plugin.settings.zettelDateSource
 					);
 					const result = await modal.waitForResult();
 
@@ -528,6 +542,12 @@ export class TaskService {
 						(this.plugin.app as any).setting?.open();
 						(this.plugin.app as any).setting?.openTabById?.("tasknotes");
 						throw new Error("Task creation cancelled - opening settings");
+					} else if (result.action === "edit-task") {
+						// User wants to go back and edit the task
+						const editError = new Error("EDIT_TASK_REQUESTED");
+						(editError as any).isEditRequest = true;
+						(editError as any).taskData = taskData;
+						throw editError;
 					} else {
 						// User cancelled
 						throw new Error("Task creation cancelled by user");

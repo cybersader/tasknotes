@@ -1280,6 +1280,13 @@ export class TaskCreationModal extends TaskModal {
 
 			this.close();
 		} catch (error) {
+			// Check if user requested to edit the task (from collision modal)
+			if ((error as any)?.isEditRequest) {
+				// Don't close the modal - user wants to edit
+				new Notice("Edit your task and try again");
+				return;
+			}
+
 			console.error("Failed to create task:", error);
 			const message = error instanceof Error && error.message ? error.message : String(error);
 			new Notice(this.t("modals.taskCreation.notices.failure", { message }));

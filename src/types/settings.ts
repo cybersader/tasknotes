@@ -150,6 +150,8 @@ export interface TaskNotesSettings {
 	customFilenameTemplate: string; // Template for custom format
 	filenameCollisionBehavior: "silent" | "notify" | "ask"; // How to handle filename collisions
 	collisionRetrySuffix: "timestamp" | "random" | "zettel"; // What to append when retrying
+	zettelDateSource: "creation" | "due"; // Legacy - kept for backwards compatibility
+	zettelDateChain: ("due" | "scheduled" | "creation")[]; // Fallback chain for zettel date
 	// Task creation defaults
 	taskCreationDefaults: TaskCreationDefaults;
 	// Calendar view settings
@@ -302,6 +304,11 @@ export interface TaskNotesSettings {
 	// Note UUID settings (for persistent identity across renames)
 	noteUuidPropertyName: string; // Empty = feature disabled
 	noteUuidAutoGenerate: boolean;
+	// Upcoming View date format settings
+	upcomingViewDateFormat: "iso" | "us" | "eu" | "relative" | "rich" | "custom";
+	upcomingViewCustomDateFormat: string; // date-fns format string when "custom"
+	upcomingViewUseRelativeDates: boolean; // "2 days ago" vs "Jan 29, 2026"
+	upcomingViewRelativeDateThreshold: number; // Days within which to use relative (default: 7)
 }
 
 /**

@@ -9,8 +9,9 @@ import {
 	TimeCategory,
 } from "../types/settings";
 import { showTaskContextMenu } from "../ui/TaskCard";
-import { hasTimeComponent, formatTime, parseDate, parseDateAsLocal, getDatePart, combineDateAndTime } from "../utils/dateUtils";
+import { hasTimeComponent, formatTime, parseDate, parseDateAsLocal, getDatePart, combineDateAndTime, formatDateForUpcomingView, UpcomingViewDateSettings } from "../utils/dateUtils";
 import { DueDateModal } from "../modals/DueDateModal";
+import { BulkOperationEngine, BulkItem, formatResultNotice } from "../bulk";
 
 /**
  * Extended time category that includes "noDueDate" for items without dates.
@@ -362,13 +363,52 @@ export class UpcomingView extends BasesViewBase {
 	}
 
 	/**
+	 * Get the Upcoming View date settings.
+	 * Checks view-specific config first (from .base file), falls back to plugin defaults.
+	 */
+	private getDateSettings(): UpcomingViewDateSettings {
+		// Try to get view-specific settings from .base file config
+		let viewDateFormat: string | undefined;
+		let viewUseRelativeDates: boolean | undefined;
+
+		if (this.config && typeof this.config.get === "function") {
+			try {
+				viewDateFormat = this.config.get("dateFormat") as string;
+				const viewRelative = this.config.get("useRelativeDates");
+				// Bases API may return toggle values as strings ("true"/"false") or booleans
+				if (viewRelative !== undefined) {
+					viewUseRelativeDates = viewRelative === true || viewRelative === "true";
+				}
+			} catch {
+				// Config not available, use defaults
+			}
+		}
+
+		// Use view override if set and not "default", otherwise use plugin defaults
+		const dateFormat = (viewDateFormat && viewDateFormat !== "default")
+			? viewDateFormat as "iso" | "us" | "eu" | "relative" | "rich" | "custom"
+			: this.plugin.settings.upcomingViewDateFormat;
+
+		const useRelativeDates = viewUseRelativeDates ?? this.plugin.settings.upcomingViewUseRelativeDates;
+
+		return {
+			upcomingViewDateFormat: dateFormat,
+			upcomingViewCustomDateFormat: this.plugin.settings.upcomingViewCustomDateFormat,
+			upcomingViewUseRelativeDates: useRelativeDates,
+			upcomingViewRelativeDateThreshold: this.plugin.settings.upcomingViewRelativeDateThreshold,
+		};
+	}
+
+	/**
 	 * Get human-readable time context for an item.
+	 * Uses the date format settings to determine display format.
 	 */
 	private getTimeContext(dueDate?: string): string | undefined {
 		if (!dueDate) {
 			return undefined;
 		}
 
+		const settings = this.getDateSettings();
 		const now = new Date();
 		const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 		// Use timezone-safe parsing to avoid off-by-one errors in non-UTC timezones
@@ -376,15 +416,25 @@ export class UpcomingView extends BasesViewBase {
 		const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate());
 
 		const diffDays = Math.floor((dueDay.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+		const absDays = Math.abs(diffDays);
 
-		// For overdue items, show just the relative date without "Due" prefix
-		// (they're already in the red Overdue section, so "Due" is redundant)
-		if (diffDays < -1) return `${Math.abs(diffDays)} days ago`;
-		if (diffDays === -1) return "Yesterday";
-		if (diffDays === 0) return "Due today";
-		if (diffDays === 1) return "Due tomorrow";
-		if (diffDays <= 7) return `Due in ${diffDays} days`;
-		return `Due ${due.toLocaleDateString()}`;
+		// Check if within relative date threshold
+		const withinThreshold = absDays <= settings.upcomingViewRelativeDateThreshold;
+
+		// If using relative dates and within threshold, show relative
+		if (settings.upcomingViewUseRelativeDates && withinThreshold) {
+			// For overdue items, show just the relative date without "Due" prefix
+			// (they're already in the red Overdue section, so "Due" is redundant)
+			if (diffDays < -1) return `${absDays} days ago`;
+			if (diffDays === -1) return "Yesterday";
+			if (diffDays === 0) return "Due today";
+			if (diffDays === 1) return "Due tomorrow";
+			if (diffDays > 1) return `Due in ${diffDays} days`;
+		}
+
+		// Use date format based on user settings (respects relative dates toggle)
+		const formattedDate = formatDateForUpcomingView(due, settings, false);
+		return diffDays < 0 ? formattedDate : `Due ${formattedDate}`;
 	}
 
 	/**
@@ -728,23 +778,54 @@ export class UpcomingView extends BasesViewBase {
 	/**
 	 * Get formatted date string for section header (Todoist style).
 	 * Returns "Jan 31 • Friday" or "Jan 31 • Today • Friday" etc.
+	 * Note: Section headers manually add Today/Tomorrow labels, so we use
+	 * a simple date format here, not the rich format which includes labels.
 	 */
 	private getSectionDateLabel(category: ExtendedTimeCategory): string {
 		const now = new Date();
-		const options: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
+		const settings = this.getDateSettings();
 		const dayOptions: Intl.DateTimeFormatOptions = { weekday: "long" };
+
+		// For section headers, use a simple date format (not rich) to avoid
+		// duplicating Today/Tomorrow labels which are added manually below
+		const getSimpleDateStr = (date: Date): string => {
+			const currentYear = date.getFullYear();
+			const dateYear = date.getFullYear();
+			const sameYear = new Date().getFullYear() === dateYear;
+
+			// Use the format preference but without Today/Tomorrow labels
+			switch (settings.upcomingViewDateFormat) {
+				case "iso":
+					return sameYear
+						? date.toLocaleDateString("en-CA").slice(5) // "02-02"
+						: date.toLocaleDateString("en-CA"); // "2026-02-02"
+				case "eu":
+					return sameYear
+						? date.toLocaleDateString("en-GB", { day: "numeric", month: "short" })
+						: date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+				case "us":
+				case "rich":
+				case "relative":
+				case "custom":
+				default:
+					// US-style date portion (no year if same year)
+					return sameYear
+						? date.toLocaleDateString("en-US", { month: "short", day: "numeric" })
+						: date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+			}
+		};
 
 		switch (category) {
 			case "overdue":
 				return "Overdue";
 			case "today": {
-				const dateStr = now.toLocaleDateString("en-US", options);
+				const dateStr = getSimpleDateStr(now);
 				const dayStr = now.toLocaleDateString("en-US", dayOptions);
 				return `${dateStr} • Today • ${dayStr}`;
 			}
 			case "tomorrow": {
 				const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-				const dateStr = tomorrow.toLocaleDateString("en-US", options);
+				const dateStr = getSimpleDateStr(tomorrow);
 				const dayStr = tomorrow.toLocaleDateString("en-US", dayOptions);
 				return `${dateStr} • Tomorrow • ${dayStr}`;
 			}
@@ -946,14 +1027,16 @@ export class UpcomingView extends BasesViewBase {
 
 		itemEl.appendChild(mainRow);
 
-		// Secondary row: Todoist-style - only show when meaningful
-		// - If item has TIME component: show time with clock icon (e.g., "🕐 2:30 PM")
-		// - If item is OVERDUE: show relative date (e.g., "Yesterday", "2 days ago")
-		// - Otherwise: no date row (section header already shows the date)
+		// Secondary row: Todoist-style date display
+		// - Date-specific sections (Today, Tomorrow): show time only if present (no date needed - header has it)
+		// - Category sections (Overdue, This week, This month, Later): show actual date (header doesn't have specific date)
 		const itemHasTime = item.dueDate && hasTimeComponent(item.dueDate);
-		const isOverdue = item.timeCategory === "overdue";
+		const isDateSpecificSection = item.timeCategory === "today" || item.timeCategory === "tomorrow";
+		const isCategorySection = item.timeCategory === "overdue" || item.timeCategory === "thisWeek" ||
+			item.timeCategory === "thisMonth" || item.timeCategory === "later";
+		const needsDateDisplay = isCategorySection && item.dueDate;
 
-		if (itemHasTime || isOverdue) {
+		if (itemHasTime || needsDateDisplay) {
 			const dateRow = doc.createElement("div");
 			dateRow.className = `tn-upcoming-item__date tn-upcoming-item__date--${item.timeCategory}`;
 
@@ -969,9 +1052,18 @@ export class UpcomingView extends BasesViewBase {
 				const parsedDate = parseDate(item.dueDate!);
 				const timeStr = formatTime(parsedDate, timeFormat as "12" | "24");
 				dateRow.appendChild(doc.createTextNode(` ${timeStr}`));
-			} else if (isOverdue && item.timeContext) {
-				// Show relative date for overdue items (e.g., "Yesterday", "Due 3 days ago")
-				dateRow.textContent = item.timeContext;
+
+				// For category sections with time, also show the date after the time
+				if (!isDateSpecificSection && item.dueDate) {
+					const settings = this.getDateSettings();
+					const formattedDate = formatDateForUpcomingView(item.dueDate, settings, false);
+					dateRow.appendChild(doc.createTextNode(` • ${formattedDate}`));
+				}
+			} else if (needsDateDisplay) {
+				// Show formatted date for items in category sections (Overdue, This week, etc.)
+				const settings = this.getDateSettings();
+				const formattedDate = formatDateForUpcomingView(item.dueDate, settings, false);
+				dateRow.textContent = formattedDate;
 			}
 
 			itemEl.appendChild(dateRow);
@@ -1600,14 +1692,23 @@ class BulkRescheduleModal extends Modal {
 
 		const taskList = previewContainer.createEl("ul", { cls: "bulk-reschedule-modal__task-list" });
 		const maxPreview = 5;
+		const dateSettings: UpcomingViewDateSettings = {
+			upcomingViewDateFormat: this.plugin.settings.upcomingViewDateFormat,
+			upcomingViewCustomDateFormat: this.plugin.settings.upcomingViewCustomDateFormat,
+			upcomingViewUseRelativeDates: this.plugin.settings.upcomingViewUseRelativeDates,
+			upcomingViewRelativeDateThreshold: this.plugin.settings.upcomingViewRelativeDateThreshold,
+		};
 		this.items.slice(0, maxPreview).forEach(item => {
 			const li = taskList.createEl("li");
 			li.createSpan({ text: item.title, cls: "bulk-reschedule-modal__task-title" });
 			if (item.dueDate) {
-				li.createSpan({
-					text: ` (was: ${getDatePart(item.dueDate)})`,
-					cls: "bulk-reschedule-modal__task-old-date",
-				});
+				const formattedDate = formatDateForUpcomingView(item.dueDate, dateSettings, true);
+				if (formattedDate) {
+					li.createSpan({
+						text: ` (was: ${formattedDate})`,
+						cls: "bulk-reschedule-modal__task-old-date",
+					});
+				}
 			}
 		});
 		if (this.items.length > maxPreview) {
@@ -1654,30 +1755,28 @@ class BulkRescheduleModal extends Modal {
 		// Build the final date value
 		const finalValue = timeValue ? combineDateAndTime(dateValue, timeValue) : dateValue;
 
-		// Update all tasks
-		let successCount = 0;
-		let errorCount = 0;
+		// Convert items to BulkItem format
+		const bulkItems: BulkItem[] = this.items.map(item => ({
+			path: item.path,
+			itemType: item.isBaseNotification ? "base-notification" : "tasknote",
+			title: item.title,
+			dueDate: item.dueDate,
+			sourceBase: item.sourceBasePath,
+		}));
 
-		for (const item of this.items) {
-			try {
-				const task = await this.plugin.cacheManager.getTaskByPath(item.path);
-				if (task) {
-					await this.plugin.taskService.updateProperty(task, "due", finalValue);
-					successCount++;
-				} else {
-					errorCount++;
-				}
-			} catch (error) {
-				this.plugin.debugLog.error("BulkReschedule", `Failed to reschedule ${item.path}:`, error);
-				errorCount++;
-			}
-		}
+		// Use unified bulk engine for reschedule
+		const engine = new BulkOperationEngine(this.plugin);
+		const result = await engine.reschedule(bulkItems, {
+			newDueDate: finalValue,
+		});
 
-		// Show result
-		if (errorCount === 0) {
-			new Notice(`Rescheduled ${successCount} task${successCount > 1 ? "s" : ""} to ${dateValue}`);
-		} else {
-			new Notice(`Rescheduled ${successCount} tasks, ${errorCount} failed`);
+		// Show result using unified format
+		const message = `Rescheduled to ${dateValue}: ${formatResultNotice(result)}`;
+		new Notice(message);
+
+		// Log any errors for debugging
+		if (result.errors.length > 0) {
+			this.plugin.debugLog.warn("BulkReschedule", `Errors: ${result.errors.join(", ")}`);
 		}
 
 		this.close();

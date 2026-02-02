@@ -137,16 +137,42 @@ export function generateTaskFilename(
 		return sanitizeForFilename(context.title);
 	}
 
+	// Determine the date to use for zettel ID based on fallback chain
+	// Chain is an ordered array like ["due", "scheduled", "creation"]
+	let dateForZettelId: Date | undefined;
+	const chain = settings.zettelDateChain || (settings.zettelDateSource === "due" ? ["due", "scheduled", "creation"] : ["creation"]);
+
+	for (const source of chain) {
+		let dateStr: string | undefined;
+
+		if (source === "due" && context.dueDate) {
+			dateStr = context.dueDate;
+		} else if (source === "scheduled" && context.scheduledDate) {
+			dateStr = context.scheduledDate;
+		} else if (source === "creation") {
+			// Creation date uses "now" - no need to set dateForZettelId
+			break;
+		}
+
+		if (dateStr) {
+			const [year, month, day] = dateStr.split("-").map(Number);
+			if (year && month && day) {
+				dateForZettelId = new Date(year, month - 1, day);
+				break; // Found a valid date, stop the chain
+			}
+		}
+	}
+
 	try {
 		switch (settings.taskFilenameFormat) {
 			case "title":
 				return sanitizeForFilename(context.title);
 
 			case "zettel":
-				return generateZettelId(now);
+				return generateZettelId(now, dateForZettelId);
 
 			case "zettel-title":
-				return `${generateZettelId(now)}-${sanitizeForFilename(context.title)}`;
+				return `${generateZettelId(now, dateForZettelId)}-${sanitizeForFilename(context.title)}`;
 
 			case "timestamp":
 				return generateTimestampFilename(now);
@@ -156,30 +182,36 @@ export function generateTaskFilename(
 
 			default:
 				// Fallback to zettel format
-				return generateZettelId(now);
+				return generateZettelId(now, dateForZettelId);
 		}
 	} catch (error) {
 		console.error("Error generating filename:", error);
 		// Fallback to safe zettel format
-		return generateZettelId(now);
+		return generateZettelId(now, dateForZettelId);
 	}
 }
 
 /**
- * Generates the traditional zettelkasten ID (YYMMDD + base36 seconds since midnight)
+ * Generates the zettelkasten ID with options for date source and millisecond precision.
+ * Format: YYMMDD + base36 time component
+ *
+ * @param creationDate - The current date/time (always used for time component for uniqueness)
+ * @param dateForId - Optional date to use for YYMMDD portion (e.g., due date). Falls back to creationDate.
  */
-function generateZettelId(date: Date): string {
-	const datePart = format(date, "yyMMdd");
+function generateZettelId(creationDate: Date, dateForId?: Date): string {
+	// Use dateForId (e.g., due date) for the date portion if provided, otherwise use creation date
+	const dateSource = dateForId || creationDate;
+	const datePart = format(dateSource, "yyMMdd");
 
-	// Calculate seconds since midnight
-	const midnight = new Date(date);
+	// Calculate milliseconds since midnight for better uniqueness (fixes sub-second collision)
+	const midnight = new Date(creationDate);
 	midnight.setHours(0, 0, 0, 0);
-	const secondsSinceMidnight = Math.floor((date.getTime() - midnight.getTime()) / 1000);
+	const msSinceMidnight = creationDate.getTime() - midnight.getTime();
 
-	// Convert to base36 for compactness
-	const randomPart = secondsSinceMidnight.toString(36);
+	// Convert to base36 for compactness (ms gives more precision than seconds)
+	const timePart = msSinceMidnight.toString(36);
 
-	return `${datePart}${randomPart}`;
+	return `${datePart}${timePart}`;
 }
 
 /**
