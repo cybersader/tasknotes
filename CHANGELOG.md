@@ -4,6 +4,53 @@ All notable changes to this TaskNotes fork will be documented in this file.
 
 This fork (`cybersader/tasknotes`) adds bulk tasking, notifications, and other enhancements to the upstream [TaskNotes](https://github.com/callumalpass/tasknotes) plugin.
 
+## [4.3.15] - 2026-02-02
+
+### Added
+- **New "zettel-title" filename format**: Combines sortable date ID with readable title
+  - Format: `260202abc-My Task Title.md` (zettel ID + dash + title)
+  - Short, sortable, readable, and collision-proof
+  - Available in Settings → Task Properties → Title → Filename format
+- **Filename collision behavior setting**: Control how duplicate filenames are handled
+  - "Auto-resolve silently" - append -2, -3, etc. without notification (default)
+  - "Auto-resolve and notify" - append suffix and show a notice
+  - "Always ask me" - show recovery modal to choose action
+  - Located in Settings → Task Properties → Title → Filename settings
+- **Retry suffix format setting**: Configure what suffix to append when retrying
+  - Timestamp (m5abc123) - base36 timestamp (default)
+  - Random (k3f) - 3-character random suffix
+  - Zettel ID (260202abc) - full zettel identifier
+- **Filename collision recovery modal**: User-friendly recovery when file creation fails
+  - TaskNotes branding in modal header
+  - Clear sections: "Change format for all future tasks" vs "One-time fix"
+  - All 5 format options available: zettel-title (recommended), zettel, timestamp, title, custom
+  - Preview of exact filename when using "Retry once"
+  - Quick access to settings
+- **New custom template variables**: For collision-proof filenames
+  - `{{millisecondsPadded}}`: Zero-padded milliseconds (000-999) for proper sorting
+  - `{{random}}`: 2-character base36 suffix (00-zz)
+  - `{{randomLong}}`: 3-character base36 suffix (000-zzz)
+  - Recommended collision-proof template: `{{year}}{{month}}{{day}}{{hour}}{{minute}}{{second}}{{millisecondsPadded}}{{random}}`
+- **Note UUID system**: Persistent unique identifiers for notes that survive renames/moves
+  - `NoteUuidService` generates and manages UUIDs in frontmatter (`tnId` by default)
+  - Configurable property name in Settings → Task Properties → Metadata Properties
+  - Auto-generates on task creation (TaskService, BulkTaskEngine, BulkConvertEngine)
+  - Foundation for future state tracking (snooze, view-entry timestamps, duplicate detection)
+- **Groups system**: Group notes (`type: group`) with nested group resolution
+  - `GroupRegistry` discovers groups and resolves members recursively
+  - Cycle detection prevents infinite loops (max depth: 10)
+  - Settings UI section for group notes folder and tag filter
+- **Person preferences**: `PersonNoteService` reads reminder preferences from person note frontmatter
+  - Configurable `reminderTime`, `reminderLeadTimes`, `notificationEnabled`
+- **Bulk operation types**: Unified `BulkOperationResult` interface for consistent result handling
+  - Helper functions: `createEmptyResult`, `mergeResults`, `formatResultNotice`
+  - Conversion functions: `fromCreationResult`, `fromConvertResult`
+- **Device identity integration**: Creator field auto-populated in bulk task creation and conversion
+
+### Fixed
+- **Case-insensitive filename collision on Windows**: `generateUniqueFilename()` now uses case-insensitive comparison to prevent "File already exists" errors when filenames differ only by case (e.g., "Test" vs "test")
+- **Folder autocomplete drill-down**: Selecting a folder with subfolders now keeps the dropdown open to show subfolders, instead of requiring manual re-entry
+
 ## [4.3.14] - 2026-02-01
 
 ### Added

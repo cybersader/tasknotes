@@ -108,6 +108,64 @@ function renderFilenameSettingsContent(
 ): void {
 	container.empty();
 
+	// Group 1: Collision behavior
+	const collisionGroup = container.createDiv();
+	collisionGroup.style.marginBottom = "1em";
+
+	const collisionContainer = collisionGroup.createDiv("tasknotes-settings__card-config-row");
+	collisionContainer.createSpan({
+		text: "On filename collision",
+		cls: "tasknotes-settings__card-config-label",
+	});
+
+	const collisionSelect = createCardSelect(
+		[
+			{ value: "silent", label: "Auto-resolve silently" },
+			{ value: "notify", label: "Auto-resolve and notify" },
+			{ value: "ask", label: "Always ask me" },
+		],
+		plugin.settings.filenameCollisionBehavior || "silent"
+	);
+	collisionSelect.addEventListener("change", () => {
+		plugin.settings.filenameCollisionBehavior = collisionSelect.value as "silent" | "notify" | "ask";
+		save();
+	});
+	collisionContainer.appendChild(collisionSelect);
+
+	collisionGroup.createDiv({
+		text: "How to handle filename collisions (e.g., when creating 'test' but 'Test.md' exists)",
+		cls: "setting-item-description",
+	});
+
+	// Group 2: Retry suffix format
+	const suffixGroup = container.createDiv();
+	suffixGroup.style.marginBottom = "1em";
+
+	const suffixContainer = suffixGroup.createDiv("tasknotes-settings__card-config-row");
+	suffixContainer.createSpan({
+		text: "Retry suffix format",
+		cls: "tasknotes-settings__card-config-label",
+	});
+
+	const suffixSelect = createCardSelect(
+		[
+			{ value: "timestamp", label: "Timestamp (m5abc123)" },
+			{ value: "random", label: "Random (k3f)" },
+			{ value: "zettel", label: "Zettel ID (260202abc)" },
+		],
+		plugin.settings.collisionRetrySuffix || "timestamp"
+	);
+	suffixSelect.addEventListener("change", () => {
+		plugin.settings.collisionRetrySuffix = suffixSelect.value as "timestamp" | "random" | "zettel";
+		save();
+	});
+	suffixContainer.appendChild(suffixSelect);
+
+	suffixGroup.createDiv({
+		text: "What to append when using 'Retry once' in the collision modal",
+		cls: "setting-item-description",
+	});
+
 	// Only show filename format settings when storeTitleInFilename is off
 	if (plugin.settings.storeTitleInFilename) {
 		container.createDiv({
@@ -128,13 +186,14 @@ function renderFilenameSettingsContent(
 		[
 			{ value: "title", label: translate("settings.appearance.taskFilenames.filenameFormat.options.title") },
 			{ value: "zettel", label: translate("settings.appearance.taskFilenames.filenameFormat.options.zettel") },
+			{ value: "zettel-title", label: "Zettel + title (260202abc-My Task)" },
 			{ value: "timestamp", label: translate("settings.appearance.taskFilenames.filenameFormat.options.timestamp") },
 			{ value: "custom", label: translate("settings.appearance.taskFilenames.filenameFormat.options.custom") },
 		],
 		plugin.settings.taskFilenameFormat
 	);
 	formatSelect.addEventListener("change", () => {
-		plugin.settings.taskFilenameFormat = formatSelect.value as "title" | "zettel" | "timestamp" | "custom";
+		plugin.settings.taskFilenameFormat = formatSelect.value as "title" | "zettel" | "zettel-title" | "timestamp" | "custom";
 		save();
 		renderFilenameSettingsContent(container, plugin, save, translate);
 	});

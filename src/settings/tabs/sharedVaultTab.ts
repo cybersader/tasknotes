@@ -44,6 +44,9 @@ export function renderSharedVaultTab(
 	// Section 3: Person Notes Source - Configure folder and tag filtering
 	renderPersonNotesSourceSection(container, plugin, save, t);
 
+	// Section 3.5: Group Notes - Configure group notes for team assignment
+	renderGroupNotesSection(container, plugin, save, t);
+
 	// Section 4: Your Identity - Device registration
 	renderYourIdentitySection(container, plugin, save, t);
 
@@ -258,6 +261,120 @@ function renderPersonNotesSourceSection(
 					plugin.settings.personNotesTag = cleaned;
 					save();
 				});
+			});
+		}
+	);
+}
+
+/**
+ * Section 3.5: Group Notes
+ * Configure where group notes live for team assignment
+ */
+function renderGroupNotesSection(
+	container: HTMLElement,
+	plugin: TaskNotesPlugin,
+	save: () => void,
+	t: (key: TranslationKey) => string
+): void {
+	createSettingGroup(
+		container,
+		{
+			heading: "Group notes",
+			description: "Groups allow assigning tasks to teams. Group notes have type: group in frontmatter with a members array.",
+		},
+		(group) => {
+			// Group notes folder - with autocomplete
+			group.addSetting((setting) => {
+				setting
+					.setName("Group notes folder")
+					.setDesc("Folder containing group notes. Leave empty to use same folder as person notes.");
+
+				// Create text input with folder suggest
+				const inputEl = setting.controlEl.createEl("input", {
+					type: "text",
+					cls: "tasknotes-settings__card-input folder-suggest-input",
+					attr: {
+						placeholder: "User-DB/Groups",
+					},
+				});
+				inputEl.value = plugin.settings.groupNotesFolder;
+
+				// Attach folder suggester
+				new FolderSuggest(plugin.app, inputEl);
+
+				// Handle value changes
+				inputEl.addEventListener("input", () => {
+					plugin.settings.groupNotesFolder = inputEl.value.trim();
+					save();
+				});
+			});
+
+			// Group tag filter (optional) - with autocomplete
+			group.addSetting((setting) => {
+				setting
+					.setName("Group notes tag (optional)")
+					.setDesc("Only include notes with this tag as groups");
+
+				// Create text input with tag suggest
+				const inputEl = setting.controlEl.createEl("input", {
+					type: "text",
+					cls: "tasknotes-settings__card-input tag-suggest-input",
+					attr: {
+						placeholder: "group",
+					},
+				});
+				inputEl.value = plugin.settings.groupNotesTag;
+
+				// Attach tag suggester
+				new TagSuggest(plugin.app, inputEl);
+
+				// Handle value changes (strip # if user types it)
+				inputEl.addEventListener("input", () => {
+					const cleaned = inputEl.value.trim().replace(/^#/, "");
+					if (inputEl.value !== cleaned) {
+						inputEl.value = cleaned;
+					}
+					plugin.settings.groupNotesTag = cleaned;
+					save();
+				});
+			});
+
+			// Discovered groups display
+			group.addSetting((setting) => {
+				setting
+					.setName("Discovered groups")
+					.setDesc("Groups found in the configured folder");
+
+				const listEl = setting.controlEl.createDiv({ cls: "tasknotes-group-list" });
+
+				const refreshGroups = async () => {
+					listEl.empty();
+					const groups = await plugin.groupRegistry.discoverGroups();
+
+					if (groups.length === 0) {
+						listEl.createSpan({
+							text: "No groups found. Create a note with type: group in frontmatter.",
+							cls: "tasknotes-group-list__empty"
+						});
+					} else {
+						for (const grp of groups) {
+							const itemEl = listEl.createDiv({ cls: "tasknotes-group-list__item" });
+							itemEl.createSpan({
+								text: `${grp.displayName} (${grp.memberPaths.length} members)`,
+								cls: "tasknotes-group-list__name"
+							});
+						}
+					}
+				};
+
+				// Refresh button
+				setting.addButton((btn) => {
+					btn.setButtonText("Refresh")
+						.onClick(refreshGroups);
+				});
+
+				// Initial load
+				refreshGroups();
 			});
 		}
 	);

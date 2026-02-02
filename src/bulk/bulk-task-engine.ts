@@ -186,6 +186,15 @@ export class BulkTaskEngine {
 			taskData.contexts = props.contexts.map(String);
 		}
 
+		// Auto-set creator from device identity (if configured)
+		if (this.plugin.userRegistry?.shouldAutoSetCreator()) {
+			const creator = this.plugin.userRegistry.getCreatorValueForNewTask();
+			if (creator) {
+				const creatorField = this.plugin.userRegistry.getCreatorFieldName();
+				(taskData as Record<string, unknown>)[creatorField] = creator;
+			}
+		}
+
 		// Create the task using TaskService
 		const result = await this.plugin.taskService.createTask(taskData);
 		return result.file;

@@ -237,6 +237,25 @@ export class BulkConvertEngine {
 				if (frontmatter[dateCreatedField] === undefined) {
 					frontmatter[dateCreatedField] = getCurrentTimestamp();
 				}
+
+				// Auto-set creator from device identity (if configured)
+				if (this.plugin.userRegistry?.shouldAutoSetCreator()) {
+					const creatorField = this.plugin.userRegistry.getCreatorFieldName();
+					if (frontmatter[creatorField] === undefined) {
+						const creatorValue = this.plugin.userRegistry.getCreatorValueForNewTask();
+						if (creatorValue) {
+							frontmatter[creatorField] = creatorValue;
+						}
+					}
+				}
+
+				// Auto-generate note UUID (if enabled and missing)
+				if (this.plugin.noteUuidService?.shouldAutoGenerate()) {
+					const uuidPropName = this.plugin.noteUuidService.getPropertyName();
+					if (frontmatter[uuidPropName] === undefined) {
+						frontmatter[uuidPropName] = this.plugin.noteUuidService.generateUuid();
+					}
+				}
 			}
 
 			// Step 2.5: Link to base view if requested

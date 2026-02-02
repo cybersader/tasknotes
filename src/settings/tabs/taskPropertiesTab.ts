@@ -247,6 +247,71 @@ function createCardDescription(text: string): HTMLElement {
 }
 
 /**
+ * Render the Note UUID property card - for persistent note identity across renames
+ */
+function renderNoteUuidPropertyCard(
+	container: HTMLElement,
+	plugin: TaskNotesPlugin,
+	save: () => void,
+	translate: (key: TranslationKey, params?: Record<string, string | number>) => string
+): void {
+	const propName = plugin.settings.noteUuidPropertyName || "";
+	const isEnabled = !!propName.trim();
+
+	// Create description element
+	const descriptionEl = createCardDescription(
+		"Unique identifier that persists across renames and moves. Used for state tracking."
+	);
+
+	// Property key input
+	const propertyKeyInput = createCardInput("text", "tnId", propName);
+	propertyKeyInput.addEventListener("change", () => {
+		const cleaned = propertyKeyInput.value.trim().replace(/\s+/g, "");
+		plugin.settings.noteUuidPropertyName = cleaned;
+
+		// Update header badge and secondary text
+		const card = container.querySelector('[data-card-id="property-noteUuid"]');
+		if (card) {
+			const secondaryText = card.querySelector(".tasknotes-settings__card-header-secondary");
+			if (secondaryText) {
+				secondaryText.textContent = cleaned || "(disabled)";
+			}
+		}
+
+		save();
+	});
+
+	// Auto-generate toggle
+	const autoGenToggle = createCardToggle(
+		plugin.settings.noteUuidAutoGenerate,
+		(value) => {
+			plugin.settings.noteUuidAutoGenerate = value;
+			save();
+		}
+	);
+
+	createCard(container, {
+		id: "property-noteUuid",
+		collapsible: true,
+		defaultCollapsed: true,
+		header: {
+			primaryText: "Note UUID",
+			secondaryText: propName || "(disabled)",
+			meta: [createStatusBadge(isEnabled ? "Enabled" : "Disabled", isEnabled ? "default" : "inactive")],
+		},
+		content: {
+			sections: [{
+				rows: [
+					{ label: "", input: descriptionEl, fullWidth: true },
+					{ label: translate("settings.taskProperties.propertyCard.propertyKey" as TranslationKey), input: propertyKeyInput },
+					{ label: "Auto-generate for new tasks", input: autoGenToggle },
+				],
+			}],
+		},
+	});
+}
+
+/**
  * Convert property values between text and list types across all task files
  */
 async function convertPropertyType(
@@ -772,6 +837,9 @@ export function renderTaskPropertiesTab(
 	renderMetadataPropertyCard(container, plugin, save, translate, "blockedBy",
 		translate("settings.taskProperties.properties.blockedBy.name"),
 		translate("settings.taskProperties.properties.blockedBy.description"));
+
+	// Note UUID Property Card (special - not in fieldMapping, uses separate settings)
+	renderNoteUuidPropertyCard(container, plugin, save, translate);
 
 	// ===== FEATURE PROPERTIES SECTION =====
 	createSectionHeader(container, translate("settings.taskProperties.sections.featureProperties"));

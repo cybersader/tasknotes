@@ -46,6 +46,7 @@ import { processFolderTemplate, TaskTemplateData } from "../utils/folderTemplate
 
 import TaskNotesPlugin from "../main";
 import { TranslationKey } from "../i18n";
+import { FilenameCollisionModal } from "../modals/FilenameCollisionModal";
 
 export class TaskService {
 	private webhookNotifier?: IWebhookNotifier;
@@ -94,6 +95,30 @@ export class TaskService {
 			console.error("Error sanitizing title:", error);
 			return "untitled";
 		}
+	}
+
+	/**
+	 * Check if a filename would collide with an existing file (case-insensitive)
+	 * Used when filenameCollisionBehavior is "ask" to detect collisions before auto-resolving
+	 */
+	private async checkFilenameCollision(filename: string, folderPath: string): Promise<boolean> {
+		const vault = this.plugin.app.vault;
+		const folder = vault.getAbstractFileByPath(folderPath);
+
+		if (!folder || !("children" in folder)) {
+			return false; // Folder doesn't exist or has no children
+		}
+
+		const targetLower = filename.toLowerCase();
+		const children = (folder as any).children as any[];
+		for (const child of children) {
+			if ("extension" in child && child.extension === "md") {
+				if (child.basename.toLowerCase() === targetLower) {
+					return true; // Collision detected
+				}
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -312,12 +337,60 @@ export class TaskService {
 				await ensureFolderExists(this.plugin.app.vault, folder);
 			}
 
-			// Generate unique filename
-			const uniqueFilename = await generateUniqueFilename(
-				baseFilename,
-				folder,
-				this.plugin.app.vault
-			);
+			// Generate unique filename (handling collision behavior setting)
+			const collisionBehavior = this.plugin.settings.filenameCollisionBehavior || "silent";
+			let uniqueFilename: string;
+			let collisionResolved = false;
+
+			// Check for collision first if user wants to be asked
+			if (collisionBehavior === "ask") {
+				// Check if base filename would collide (case-insensitive)
+				const wouldCollide = await this.checkFilenameCollision(baseFilename, folder);
+				if (wouldCollide) {
+					// Show modal immediately instead of auto-resolving
+					const retrySuffixFormat = this.plugin.settings.collisionRetrySuffix || "timestamp";
+					const modal = new FilenameCollisionModal(
+						this.plugin.app,
+						baseFilename,
+						this.plugin.settings.taskFilenameFormat,
+						retrySuffixFormat
+					);
+					const result = await modal.waitForResult();
+
+					if (result.action === "retry") {
+						// User wants to retry with configured suffix
+						uniqueFilename = `${baseFilename}-${result.retrySuffix || Date.now().toString(36)}`;
+					} else if (result.action === "change-format") {
+						// Update setting and retry with new format
+						if (result.newFormat) {
+							this.plugin.settings.taskFilenameFormat = result.newFormat;
+							if (result.newFormat === "custom" && result.customTemplate) {
+								this.plugin.settings.customFilenameTemplate = result.customTemplate;
+							}
+							await this.plugin.saveSettings();
+						}
+						// Recursive retry with new format
+						return this.createTask(taskData);
+					} else if (result.action === "open-settings") {
+						(this.plugin.app as any).setting?.open();
+						(this.plugin.app as any).setting?.openTabById?.("tasknotes");
+						throw new Error("Task creation cancelled - opening settings");
+					} else {
+						throw new Error("Task creation cancelled by user");
+					}
+				} else {
+					uniqueFilename = baseFilename;
+				}
+			} else {
+				// Auto-resolve (silent or notify mode)
+				uniqueFilename = await generateUniqueFilename(
+					baseFilename,
+					folder,
+					this.plugin.app.vault
+				);
+				collisionResolved = uniqueFilename !== baseFilename;
+			}
+
 			const fullPath = folder ? `${folder}/${uniqueFilename}.md` : `${uniqueFilename}.md`;
 
 			// Create complete TaskInfo object with all the data
@@ -400,6 +473,14 @@ export class TaskService {
 				finalFrontmatter = { ...finalFrontmatter, ...taskData.customFrontmatter };
 			}
 
+			// Add note UUID if enabled and auto-generate is on
+			if (this.plugin.noteUuidService?.shouldAutoGenerate()) {
+				const uuidPropName = this.plugin.noteUuidService.getPropertyName();
+				if (!finalFrontmatter[uuidPropName]) {
+					finalFrontmatter[uuidPropName] = this.plugin.noteUuidService.generateUuid();
+				}
+			}
+
 			// Prepare file content
 			const yamlHeader = stringifyYaml(finalFrontmatter);
 			let content = `---\n${yamlHeader}---\n\n`;
@@ -408,8 +489,59 @@ export class TaskService {
 				content += `${normalizedBody}\n`;
 			}
 
-			// Create the file
-			const file = await this.plugin.app.vault.create(fullPath, content);
+			// Create the file (with collision recovery)
+			let file: TFile;
+			try {
+				file = await this.plugin.app.vault.create(fullPath, content);
+			} catch (createError) {
+				// Check if this is a filename collision error
+				const errorMsg = createError instanceof Error ? createError.message : String(createError);
+				if (errorMsg.toLowerCase().includes("already exists")) {
+					// Show collision recovery modal
+					const retrySuffixFormat = this.plugin.settings.collisionRetrySuffix || "timestamp";
+					const modal = new FilenameCollisionModal(
+						this.plugin.app,
+						uniqueFilename,
+						this.plugin.settings.taskFilenameFormat,
+						retrySuffixFormat
+					);
+					const result = await modal.waitForResult();
+
+					if (result.action === "retry") {
+						// Retry with configured suffix
+						const retryFilename = `${uniqueFilename}-${result.retrySuffix || Date.now().toString(36)}`;
+						const retryPath = folder ? `${folder}/${retryFilename}.md` : `${retryFilename}.md`;
+						file = await this.plugin.app.vault.create(retryPath, content);
+					} else if (result.action === "change-format") {
+						// Update setting and retry with new format
+						if (result.newFormat) {
+							this.plugin.settings.taskFilenameFormat = result.newFormat;
+							if (result.newFormat === "custom" && result.customTemplate) {
+								this.plugin.settings.customFilenameTemplate = result.customTemplate;
+							}
+							await this.plugin.saveSettings();
+						}
+						// Recursive retry with new format
+						return this.createTask(taskData);
+					} else if (result.action === "open-settings") {
+						// Open settings tab
+						(this.plugin.app as any).setting?.open();
+						(this.plugin.app as any).setting?.openTabById?.("tasknotes");
+						throw new Error("Task creation cancelled - opening settings");
+					} else {
+						// User cancelled
+						throw new Error("Task creation cancelled by user");
+					}
+				} else {
+					// Re-throw non-collision errors
+					throw createError;
+				}
+			}
+
+			// Show notice if collision was auto-resolved and user wants to be notified
+			if (collisionResolved && collisionBehavior === "notify") {
+				new Notice(`Created "${uniqueFilename}.md" (filename adjusted to avoid collision)`);
+			}
 
 			// Create final TaskInfo object for cache and events
 			// Ensure required fields are present by using the complete task data as base

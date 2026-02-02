@@ -101,6 +101,36 @@ export interface DeviceUserMapping {
 	userDisplayName?: string;
 }
 
+/**
+ * Mapping for a discovered group note in the vault.
+ * Used by GroupRegistry for caching group membership.
+ */
+export interface GroupNoteMapping {
+	notePath: string;
+	displayName: string;
+	memberPaths: string[]; // Direct members (before recursive resolution)
+	lastUpdated: number;
+}
+
+/**
+ * Lead time configuration for reminder notifications.
+ * Specifies how far in advance to notify before a task is due.
+ */
+export interface LeadTime {
+	value: number;
+	unit: "minutes" | "hours" | "days" | "weeks";
+}
+
+/**
+ * Preferences for a person note, used for per-assignee notifications.
+ * Read from frontmatter of person notes with type: person.
+ */
+export interface PersonPreferences {
+	reminderTime: string; // "09:00" format, default notification time
+	reminderLeadTimes: LeadTime[];
+	notificationEnabled: boolean;
+}
+
 export interface TaskNotesSettings {
 	tasksFolder: string; // Now just a default location for new tasks
 	moveArchivedTasks: boolean; // Whether to move tasks to archive folder when archived
@@ -115,9 +145,11 @@ export interface TaskNotesSettings {
 	defaultTaskStatus: string; // Changed to string to support custom statuses
 	taskOrgFiltersCollapsed: boolean; // Save collapse state of task organization filters
 	// Task filename settings
-	taskFilenameFormat: "title" | "zettel" | "timestamp" | "custom";
+	taskFilenameFormat: "title" | "zettel" | "zettel-title" | "timestamp" | "custom";
 	storeTitleInFilename: boolean;
 	customFilenameTemplate: string; // Template for custom format
+	filenameCollisionBehavior: "silent" | "notify" | "ask"; // How to handle filename collisions
+	collisionRetrySuffix: "timestamp" | "random" | "zettel"; // What to append when retrying
 	// Task creation defaults
 	taskCreationDefaults: TaskCreationDefaults;
 	// Calendar view settings
@@ -259,10 +291,17 @@ export interface TaskNotesSettings {
 	// Person notes configuration (for Team & Attribution)
 	personNotesFolder: string;
 	personNotesTag: string;
+	// Group notes configuration (for team assignment)
+	groupNotesFolder: string; // Can be same as personNotesFolder
+	groupNotesTag: string; // Optional filter tag
+	groupNoteMappings: GroupNoteMapping[]; // Cached discovered groups
 	// Vault-wide notification settings
 	vaultWideNotifications: VaultWideNotificationSettings;
 	// Debug logging (persists between restarts)
 	enableDebugLogging: boolean;
+	// Note UUID settings (for persistent identity across renames)
+	noteUuidPropertyName: string; // Empty = feature disabled
+	noteUuidAutoGenerate: boolean;
 }
 
 /**

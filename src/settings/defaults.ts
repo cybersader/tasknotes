@@ -286,6 +286,8 @@ export const DEFAULT_SETTINGS: TaskNotesSettings = {
 	taskFilenameFormat: "zettel", // Keep existing behavior as default
 	storeTitleInFilename: true,
 	customFilenameTemplate: "{title}", // Simple title template
+	filenameCollisionBehavior: "silent", // Auto-resolve silently by default
+	collisionRetrySuffix: "timestamp", // Base36 timestamp suffix when retrying
 	// Task creation defaults
 	taskCreationDefaults: DEFAULT_TASK_CREATION_DEFAULTS,
 	// Calendar view defaults
@@ -433,8 +435,15 @@ export const DEFAULT_SETTINGS: TaskNotesSettings = {
 	// Person notes configuration
 	personNotesFolder: "",
 	personNotesTag: "",
+	// Group notes configuration
+	groupNotesFolder: "", // Defaults to same as personNotesFolder when empty
+	groupNotesTag: "",
+	groupNoteMappings: [],
 	// Vault-wide notification settings
 	vaultWideNotifications: DEFAULT_VAULT_WIDE_NOTIFICATIONS,
 	// Debug logging (off by default)
 	enableDebugLogging: false,
+	// Note UUID settings (for persistent identity across renames)
+	noteUuidPropertyName: "tnId",
+	noteUuidAutoGenerate: true,
 };

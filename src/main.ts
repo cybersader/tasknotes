@@ -100,6 +100,9 @@ import { CalendarProviderRegistry } from "./services/CalendarProvider";
 import { TaskCalendarSyncService } from "./services/TaskCalendarSyncService";
 import { DeviceIdentityManager } from "./identity/DeviceIdentityManager";
 import { UserRegistry } from "./identity/UserRegistry";
+import { GroupRegistry } from "./identity/GroupRegistry";
+import { PersonNoteService } from "./identity/PersonNoteService";
+import { NoteUuidService } from "./identity/NoteUuidService";
 import { DebugLog } from "./utils/DebugLog";
 
 interface TranslatedCommandDefinition {
@@ -237,6 +240,9 @@ export default class TaskNotesPlugin extends Plugin {
 	// Device identity services (for shared vaults)
 	deviceIdentityManager: DeviceIdentityManager;
 	userRegistry: UserRegistry;
+	groupRegistry: GroupRegistry;
+	personNoteService: PersonNoteService;
+	noteUuidService: NoteUuidService;
 
 	// Debug logging utility (writes to debug.log file when enabled)
 	debugLog: DebugLog;
@@ -396,6 +402,9 @@ export default class TaskNotesPlugin extends Plugin {
 		// Initialize device identity services (for shared vaults)
 		this.deviceIdentityManager = new DeviceIdentityManager();
 		this.userRegistry = new UserRegistry(this, this.deviceIdentityManager);
+		this.groupRegistry = new GroupRegistry(this);
+		this.personNoteService = new PersonNoteService(this);
+		this.noteUuidService = new NoteUuidService(this);
 
 		// Initialize debug logging utility (writes to debug.log when enabled)
 		// Reads initial state from settings and persists changes back

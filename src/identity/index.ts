@@ -1,19 +1,27 @@
 /**
- * Device Identity Module
+ * Identity Module
  *
- * Provides device identification and user registry for shared vault scenarios.
+ * Provides device identification, user registry, group management, and
+ * person preferences for shared vault scenarios.
  *
  * Usage:
- *   import { DeviceIdentityManager, UserRegistry } from './identity';
+ *   import { DeviceIdentityManager, UserRegistry, GroupRegistry, PersonNoteService } from './identity';
  *
  *   const deviceManager = new DeviceIdentityManager();
  *   const userRegistry = new UserRegistry(plugin, deviceManager);
+ *   const groupRegistry = new GroupRegistry(plugin);
+ *   const personNoteService = new PersonNoteService(plugin);
  *
  *   // Check if device is registered
  *   if (userRegistry.isDeviceRegistered()) {
  *     const creator = userRegistry.getCreatorValueForNewTask();
- *     // Use creator when creating tasks
  *   }
+ *
+ *   // Resolve group to persons
+ *   const persons = groupRegistry.resolveAssignee("[[Frontend Team]]");
+ *
+ *   // Get person preferences
+ *   const prefs = personNoteService.getPreferences("User-DB/Alice.md");
  */
 
 export { DeviceIdentityManager } from "./DeviceIdentityManager";
@@ -22,4 +30,15 @@ export {
 	type DeviceUserSettings,
 	DEFAULT_DEVICE_USER_SETTINGS,
 } from "./UserRegistry";
-export type { DeviceUserMapping } from "../types/settings";
+export { GroupRegistry } from "./GroupRegistry";
+export {
+	PersonNoteService,
+	DEFAULT_PERSON_PREFERENCES,
+} from "./PersonNoteService";
+export { NoteUuidService } from "./NoteUuidService";
+export type {
+	DeviceUserMapping,
+	GroupNoteMapping,
+	PersonPreferences,
+	LeadTime,
+} from "../types/settings";

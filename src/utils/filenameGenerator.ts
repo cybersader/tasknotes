@@ -145,6 +145,9 @@ export function generateTaskFilename(
 			case "zettel":
 				return generateZettelId(now);
 
+			case "zettel-title":
+				return `${generateZettelId(now)}-${sanitizeForFilename(context.title)}`;
+
 			case "timestamp":
 				return generateTimestampFilename(now);
 
@@ -293,6 +296,14 @@ function generateCustomFilename(
 			// Date-based identifiers
 			zettel: generateZettelId(date),
 			nano: Date.now().toString() + Math.random().toString(36).substring(2, 7),
+
+			// Collision-proof variables (for custom templates)
+			// Zero-padded milliseconds for proper chronological sorting
+			millisecondsPadded: date.getMilliseconds().toString().padStart(3, "0"),
+			msPadded: date.getMilliseconds().toString().padStart(3, "0"),
+			// Random suffixes for same-millisecond uniqueness (base36)
+			random: Math.floor(Math.random() * 1296).toString(36).padStart(2, "0"), // 00-zz (2 chars)
+			randomLong: Math.floor(Math.random() * 46656).toString(36).padStart(3, "0"), // 000-zzz (3 chars)
 
 			// Merge any additional variables
 			...(additionalVariables || {}),
@@ -443,7 +454,8 @@ export function validateFilename(filename: string): {
 }
 
 /**
- * Generates a unique filename by appending a number if needed
+ * Generates a unique filename by appending a number if needed.
+ * Uses case-insensitive comparison to handle Windows NTFS filesystem behavior.
  */
 export async function generateUniqueFilename(
 	baseFilename: string,
@@ -473,16 +485,34 @@ export async function generateUniqueFilename(
 	const sanitizedFolderPath = folderPath.replace(/\.\./g, "").trim();
 
 	try {
-		const basePath = normalizePath(`${sanitizedFolderPath}/${sanitizedFilename}.md`);
+		// Build a set of existing filenames (lowercase) for case-insensitive comparison
+		// This handles Windows NTFS where "Test.md" and "test.md" are the same file
+		const existingNames = new Set<string>();
+		const folder = vault.getAbstractFileByPath(sanitizedFolderPath);
+
+		if (folder && "children" in folder) {
+			for (const child of folder.children) {
+				if ("extension" in child && child.extension === "md") {
+					// Store lowercase basename (without extension) for comparison
+					existingNames.add(child.basename.toLowerCase());
+				}
+			}
+		}
+
+		// Helper to check if name exists (case-insensitive)
+		const nameExists = (name: string): boolean => {
+			return existingNames.has(name.toLowerCase());
+		};
 
 		// Validate path length
+		const basePath = normalizePath(`${sanitizedFolderPath}/${sanitizedFilename}.md`);
 		if (basePath.length > 260) {
 			// Windows path limit
 			throw new Error("Generated path too long");
 		}
 
-		// Check if the base filename is available
-		if (!vault.getAbstractFileByPath(basePath)) {
+		// Check if the base filename is available (case-insensitive)
+		if (!nameExists(sanitizedFilename)) {
 			return sanitizedFilename;
 		}
 
@@ -496,7 +526,7 @@ export async function generateUniqueFilename(
 				break; // Stop if paths become too long
 			}
 
-			if (!vault.getAbstractFileByPath(candidatePath)) {
+			if (!nameExists(candidateFilename)) {
 				return candidateFilename;
 			}
 		}

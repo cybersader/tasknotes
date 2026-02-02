@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
-import { TFile, setIcon, Notice, Menu } from "obsidian";
+import { TFile, setIcon, Notice, Menu, Modal, Setting } from "obsidian";
+import { format, add } from "date-fns";
 import TaskNotesPlugin from "../main";
 import { BasesViewBase } from "./BasesViewBase";
 import { TaskInfo } from "../types";
@@ -8,7 +9,8 @@ import {
 	TimeCategory,
 } from "../types/settings";
 import { showTaskContextMenu } from "../ui/TaskCard";
-import { hasTimeComponent, formatTime, parseDate, parseDateAsLocal } from "../utils/dateUtils";
+import { hasTimeComponent, formatTime, parseDate, parseDateAsLocal, getDatePart, combineDateAndTime } from "../utils/dateUtils";
+import { DueDateModal } from "../modals/DueDateModal";
 
 /**
  * Extended time category that includes "noDueDate" for items without dates.
@@ -801,7 +803,14 @@ export class UpcomingView extends BasesViewBase {
 			rescheduleLink.textContent = "Reschedule";
 			rescheduleLink.addEventListener("click", (e) => {
 				e.stopPropagation();
-				this.handleRescheduleAll(items);
+				this.plugin.debugLog.log("UpcomingView", "=== RESCHEDULE BUTTON CLICKED ===");
+				this.plugin.debugLog.log("UpcomingView", `Category: ${category}, Items count: ${items.length}`);
+				try {
+					this.handleRescheduleAll(items);
+				} catch (error) {
+					this.plugin.debugLog.error("UpcomingView", "Error in handleRescheduleAll:", error);
+					new Notice(`Reschedule error: ${error}`);
+				}
 			});
 			header.appendChild(rescheduleLink);
 		}
@@ -980,7 +989,7 @@ export class UpcomingView extends BasesViewBase {
 
 	/**
 	 * Show context menu for an item.
-	 * TaskNotes items get the full task context menu.
+	 * TaskNotes items get the full upstream task context menu.
 	 * Base notification items get a specialized menu.
 	 */
 	private async showItemContextMenu(event: MouseEvent, item: AggregatedNotificationItem): Promise<void> {
@@ -988,13 +997,108 @@ export class UpcomingView extends BasesViewBase {
 			// Base notification tasks get a specialized menu (not the full task menu)
 			this.showBaseNotificationTaskContextMenu(event, item);
 		} else if (item.isTask) {
-			// Regular tasks get the full TaskNotes context menu
-			const targetDate = item.dueDate ? new Date(item.dueDate) : new Date();
-			await showTaskContextMenu(event, item.path, this.plugin, targetDate);
+			// Regular tasks get the full upstream context menu (includes due date, status, priority, etc.)
+			this.plugin.debugLog.log("UpcomingView", `Showing upstream task context menu for: ${item.title}`);
+			await showTaskContextMenu(event, item.path, this.plugin, new Date());
 		} else {
 			// Non-task items get a simplified menu
 			this.showBaseNotificationContextMenu(event, item);
 		}
+	}
+
+	/**
+	 * Show context menu for regular task items in Upcoming view.
+	 * Includes reschedule option that the upstream menu doesn't have.
+	 */
+	private showTaskItemContextMenu(event: MouseEvent, item: AggregatedNotificationItem): void {
+		this.plugin.debugLog.log("UpcomingView", `showTaskItemContextMenu for: ${item.title}`);
+		const menu = new Menu();
+
+		// Open the task
+		menu.addItem((menuItem) => {
+			menuItem
+				.setTitle("Open task")
+				.setIcon("file-text")
+				.onClick(() => {
+					this.handleOpen(item);
+				});
+		});
+
+		menu.addSeparator();
+
+		// Complete the task
+		menu.addItem((menuItem) => {
+			menuItem
+				.setTitle("Complete")
+				.setIcon("check")
+				.onClick(async () => {
+					try {
+						await this.handleComplete(item);
+					} catch (error) {
+						this.plugin.debugLog.error("UpcomingView", "Error completing task:", error);
+						new Notice(`Error: ${error}`);
+					}
+				});
+		});
+
+		// Reschedule (change due date) - for regular tasks
+		menu.addItem((menuItem) => {
+			menuItem
+				.setTitle("Reschedule")
+				.setIcon("calendar")
+				.onClick(async () => {
+					this.plugin.debugLog.log("UpcomingView", "=== TASK CONTEXT MENU RESCHEDULE CLICKED ===");
+					this.plugin.debugLog.log("UpcomingView", `Item: ${item.title}, isTask: ${item.isTask}, path: ${item.path}`);
+					try {
+						await this.handleReschedule(item);
+					} catch (error) {
+						this.plugin.debugLog.error("UpcomingView", "Error in handleReschedule:", error);
+						new Notice(`Reschedule error: ${error}`);
+					}
+				});
+		});
+
+		menu.addSeparator();
+
+		// Snooze options
+		menu.addItem((menuItem) => {
+			menuItem
+				.setTitle("Snooze 1 hour")
+				.setIcon("clock")
+				.onClick(() => {
+					this.handleSnooze(item, 60);
+				});
+		});
+
+		menu.addItem((menuItem) => {
+			menuItem
+				.setTitle("Snooze until tomorrow")
+				.setIcon("clock")
+				.onClick(() => {
+					// Calculate minutes until tomorrow 9am
+					const now = new Date();
+					const tomorrow9am = new Date(now);
+					tomorrow9am.setDate(tomorrow9am.getDate() + 1);
+					tomorrow9am.setHours(9, 0, 0, 0);
+					const minutes = Math.round((tomorrow9am.getTime() - now.getTime()) / (1000 * 60));
+					this.handleSnooze(item, minutes);
+				});
+		});
+
+		menu.addSeparator();
+
+		// Copy link
+		menu.addItem((menuItem) => {
+			menuItem
+				.setTitle("Copy link")
+				.setIcon("link")
+				.onClick(() => {
+					navigator.clipboard.writeText(`[[${item.path}]]`);
+					new Notice("Link copied to clipboard");
+				});
+		});
+
+		menu.showAtMouseEvent(event);
 	}
 
 	/**
@@ -1032,20 +1136,22 @@ export class UpcomingView extends BasesViewBase {
 			menuItem
 				.setTitle("Mark resolved")
 				.setIcon("check")
-				.onClick(() => {
-					this.handleComplete(item);
+				.onClick(async () => {
+					try {
+						await this.handleComplete(item);
+					} catch (error) {
+						this.plugin.debugLog.error("UpcomingView", "Error completing base notification:", error);
+						new Notice(`Error: ${error}`);
+					}
 				});
 		});
 
-		// Reschedule (change due date)
-		menu.addItem((menuItem) => {
-			menuItem
-				.setTitle("Reschedule")
-				.setIcon("calendar")
-				.onClick(() => {
-					this.handleReschedule(item);
-				});
-		});
+		// NOTE: "Reschedule" removed for base notifications - see knowledge-base/01-working/upcoming-view-deferred-items.md
+		// Base notification timing is based on "X days after items appear", not a simple due date.
+		// Implementing reschedule for base notifications requires:
+		// - UUID-based tracking of when items first appeared
+		// - Persistence across restarts
+		// - Different UI (adjust delay, not pick a date)
 
 		menu.addSeparator();
 
@@ -1276,17 +1382,58 @@ export class UpcomingView extends BasesViewBase {
 		}
 	}
 
-	private handleReschedule(item: AggregatedNotificationItem): void {
-		// TODO: Open date picker for rescheduling
-		// For now, just open the file
-		this.handleOpen(item);
+	private async handleReschedule(item: AggregatedNotificationItem): Promise<void> {
+		this.plugin.debugLog.log("UpcomingView", `handleReschedule called for: ${item.title}, isTask=${item.isTask}, path=${item.path}`);
+
+		// Only tasks can be rescheduled
+		if (!item.isTask) {
+			this.plugin.debugLog.log("UpcomingView", "Item is not a task, cannot reschedule");
+			new Notice("Only tasks can be rescheduled");
+			return;
+		}
+
+		// Get the TaskInfo from cache
+		this.plugin.debugLog.log("UpcomingView", `Getting TaskInfo from cache for: ${item.path}`);
+		const task = await this.plugin.cacheManager.getTaskByPath(item.path);
+		if (!task) {
+			this.plugin.debugLog.log("UpcomingView", "Could not find task in cache");
+			new Notice("Could not find task information");
+			return;
+		}
+
+		this.plugin.debugLog.log("UpcomingView", `Found task: ${task.title}, opening DueDateModal`);
+		// Open the standard DueDateModal
+		// Use this.app if available (set by Bases), otherwise fall back to plugin.app
+		const app = (this as any).app || this.plugin.app;
+		new DueDateModal(app, task, this.plugin).open();
 	}
 
 	private handleRescheduleAll(items: AggregatedNotificationItem[]): void {
-		// TODO: Open bulk reschedule modal
-		// For now, notify user
-		const count = items.length;
-		new Notice(`Reschedule ${count} overdue item${count > 1 ? "s" : ""} - coming soon!`);
+		this.plugin.debugLog.log("UpcomingView", `handleRescheduleAll called with ${items.length} items`);
+
+		// Log each item for debugging
+		items.forEach((item, i) => {
+			this.plugin.debugLog.log("UpcomingView", `  Item ${i}: ${item.title}, isTask=${item.isTask}, path=${item.path}`);
+		});
+
+		// Filter to only regular tasks (exclude base notifications - their timing works differently)
+		// Base notification "rescheduling" would mean adjusting "X days after appears", not a due date
+		const taskItems = items.filter(item => item.isTask && !item.isBaseNotification);
+		this.plugin.debugLog.log("UpcomingView", `Filtered to ${taskItems.length} regular task items (excluded base notifications)`);
+
+		if (taskItems.length === 0) {
+			new Notice("No tasks to reschedule");
+			return;
+		}
+
+		// Open bulk reschedule modal
+		this.plugin.debugLog.log("UpcomingView", "Opening BulkRescheduleModal");
+		// Use this.app if available (set by Bases), otherwise fall back to plugin.app
+		const app = (this as any).app || this.plugin.app;
+		new BulkRescheduleModal(app, taskItems, this.plugin, () => {
+			// Refresh the view after rescheduling
+			this.renderContent();
+		}).open();
 	}
 
 	private handleAddTask(category: ExtendedTimeCategory): void {
@@ -1324,6 +1471,222 @@ export class UpcomingView extends BasesViewBase {
 				? `${dueDate.getFullYear()}-${String(dueDate.getMonth() + 1).padStart(2, "0")}-${String(dueDate.getDate()).padStart(2, "0")}`
 				: undefined,
 		});
+	}
+}
+
+/**
+ * Modal for bulk rescheduling multiple tasks at once.
+ * Shows a date picker and applies the selected date to all provided tasks.
+ *
+ * TECHNICAL DEBT: This is a standalone implementation that does NOT use the
+ * unified BulkOperationEngine. It directly calls taskService.updateProperty()
+ * in a loop. When the bulk engine is implemented, this should be refactored.
+ *
+ * Known limitations:
+ * - Only handles regular TaskNotes (base notifications filtered out upstream)
+ * - No weekend-aware quick date options (Next Monday, End of week, etc.)
+ * - No mixed item type handling with appropriate per-type actions
+ *
+ * See: knowledge-base/01-working/bulk-engine-unified-operations.md
+ */
+class BulkRescheduleModal extends Modal {
+	private items: AggregatedNotificationItem[];
+	private plugin: TaskNotesPlugin;
+	private onComplete: () => void;
+	private dueDateInput: HTMLInputElement;
+	private dueTimeInput: HTMLInputElement;
+
+	constructor(
+		app: any,
+		items: AggregatedNotificationItem[],
+		plugin: TaskNotesPlugin,
+		onComplete: () => void
+	) {
+		super(app);
+		this.items = items;
+		this.plugin = plugin;
+		this.onComplete = onComplete;
+	}
+
+	onOpen() {
+		this.plugin.debugLog.log("BulkRescheduleModal", `=== MODAL OPENED with ${this.items.length} items ===`);
+		this.items.forEach((item, i) => {
+			this.plugin.debugLog.log("BulkRescheduleModal", `  Item ${i}: ${item.title}, path: ${item.path}`);
+		});
+
+		const { contentEl } = this;
+		contentEl.empty();
+		contentEl.addClass("tasknotes-plugin");
+
+		// Title
+		this.titleEl.setText(`Reschedule ${this.items.length} task${this.items.length > 1 ? "s" : ""}`);
+
+		// Description
+		contentEl.createEl("p", {
+			text: `Select a new due date for ${this.items.length} overdue task${this.items.length > 1 ? "s" : ""}.`,
+			cls: "bulk-reschedule-modal__description",
+		});
+
+		// Date and time inputs
+		const dateTimeSetting = new Setting(contentEl)
+			.setName("New due date")
+			.setDesc("All selected tasks will be rescheduled to this date");
+
+		const dateTimeContainer = dateTimeSetting.controlEl.createDiv({
+			cls: "modal-form__datetime-container",
+		});
+
+		// Date input
+		this.dueDateInput = dateTimeContainer.createEl("input", {
+			type: "date",
+			cls: "modal-form__input modal-form__input--date",
+		});
+		// Default to today
+		this.dueDateInput.value = format(new Date(), "yyyy-MM-dd");
+
+		// Time input (optional)
+		this.dueTimeInput = dateTimeContainer.createEl("input", {
+			type: "time",
+			cls: "modal-form__input modal-form__input--time",
+		});
+
+		// Quick date buttons
+		const quickDatesContainer = contentEl.createDiv({ cls: "modal-form__group" });
+		new Setting(quickDatesContainer).setName("Quick options").setHeading();
+
+		const buttonsContainer = quickDatesContainer.createDiv({
+			cls: "modal-form__quick-actions",
+		});
+
+		// Today button
+		const todayBtn = buttonsContainer.createEl("button", {
+			text: "Today",
+			cls: "modal-form__button modal-form__button--quick-date",
+		});
+		todayBtn.addEventListener("click", () => {
+			this.dueDateInput.value = format(new Date(), "yyyy-MM-dd");
+		});
+
+		// Tomorrow button
+		const tomorrowBtn = buttonsContainer.createEl("button", {
+			text: "Tomorrow",
+			cls: "modal-form__button modal-form__button--quick-date",
+		});
+		tomorrowBtn.addEventListener("click", () => {
+			this.dueDateInput.value = format(add(new Date(), { days: 1 }), "yyyy-MM-dd");
+		});
+
+		// Next week button
+		const nextWeekBtn = buttonsContainer.createEl("button", {
+			text: "Next week",
+			cls: "modal-form__button modal-form__button--quick-date",
+		});
+		nextWeekBtn.addEventListener("click", () => {
+			this.dueDateInput.value = format(add(new Date(), { weeks: 1 }), "yyyy-MM-dd");
+		});
+
+		// Next month button
+		const nextMonthBtn = buttonsContainer.createEl("button", {
+			text: "Next month",
+			cls: "modal-form__button modal-form__button--quick-date",
+		});
+		nextMonthBtn.addEventListener("click", () => {
+			this.dueDateInput.value = format(add(new Date(), { months: 1 }), "yyyy-MM-dd");
+		});
+
+		// Preview of tasks to be rescheduled
+		const previewContainer = contentEl.createDiv({ cls: "bulk-reschedule-modal__preview" });
+		new Setting(previewContainer).setName("Tasks to reschedule").setHeading();
+
+		const taskList = previewContainer.createEl("ul", { cls: "bulk-reschedule-modal__task-list" });
+		const maxPreview = 5;
+		this.items.slice(0, maxPreview).forEach(item => {
+			const li = taskList.createEl("li");
+			li.createSpan({ text: item.title, cls: "bulk-reschedule-modal__task-title" });
+			if (item.dueDate) {
+				li.createSpan({
+					text: ` (was: ${getDatePart(item.dueDate)})`,
+					cls: "bulk-reschedule-modal__task-old-date",
+				});
+			}
+		});
+		if (this.items.length > maxPreview) {
+			taskList.createEl("li", {
+				text: `...and ${this.items.length - maxPreview} more`,
+				cls: "bulk-reschedule-modal__task-overflow",
+			});
+		}
+
+		// Action buttons
+		const buttonContainer = contentEl.createDiv({ cls: "modal-form__buttons" });
+
+		const saveButton = buttonContainer.createEl("button", {
+			text: `Reschedule ${this.items.length} task${this.items.length > 1 ? "s" : ""}`,
+			cls: "modal-form__button modal-form__button--primary",
+		});
+		saveButton.addEventListener("click", () => this.save());
+
+		const cancelButton = buttonContainer.createEl("button", {
+			text: "Cancel",
+			cls: "modal-form__button modal-form__button--secondary",
+		});
+		cancelButton.addEventListener("click", () => this.close());
+
+		// Focus date input
+		setTimeout(() => this.dueDateInput.focus(), 100);
+
+		// Enter key to save
+		this.dueDateInput.addEventListener("keydown", (e) => {
+			if (e.key === "Enter") this.save();
+			if (e.key === "Escape") this.close();
+		});
+	}
+
+	private async save() {
+		const dateValue = this.dueDateInput.value.trim();
+		const timeValue = this.dueTimeInput.value.trim();
+
+		if (!dateValue) {
+			new Notice("Please select a date");
+			return;
+		}
+
+		// Build the final date value
+		const finalValue = timeValue ? combineDateAndTime(dateValue, timeValue) : dateValue;
+
+		// Update all tasks
+		let successCount = 0;
+		let errorCount = 0;
+
+		for (const item of this.items) {
+			try {
+				const task = await this.plugin.cacheManager.getTaskByPath(item.path);
+				if (task) {
+					await this.plugin.taskService.updateProperty(task, "due", finalValue);
+					successCount++;
+				} else {
+					errorCount++;
+				}
+			} catch (error) {
+				this.plugin.debugLog.error("BulkReschedule", `Failed to reschedule ${item.path}:`, error);
+				errorCount++;
+			}
+		}
+
+		// Show result
+		if (errorCount === 0) {
+			new Notice(`Rescheduled ${successCount} task${successCount > 1 ? "s" : ""} to ${dateValue}`);
+		} else {
+			new Notice(`Rescheduled ${successCount} tasks, ${errorCount} failed`);
+		}
+
+		this.close();
+		this.onComplete();
+	}
+
+	onClose() {
+		const { contentEl } = this;
+		contentEl.empty();
 	}
 }
 

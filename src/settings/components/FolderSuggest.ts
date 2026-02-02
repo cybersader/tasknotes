@@ -71,9 +71,29 @@ export class FolderSuggest extends AbstractInputSuggest<TFolder> {
 	public selectSuggestion(folder: TFolder): void {
 		// Add trailing slash for clarity (indicates it's a folder path)
 		this.input.value = folder.path + "/";
-		this.input.dispatchEvent(new Event("input", { bubbles: true }));
 		this.input.dispatchEvent(new Event("change", { bubbles: true }));
-		this.close();
+
+		// Check if selected folder has subfolders
+		const hasSubfolders = this.app.vault
+			.getAllLoadedFiles()
+			.some(
+				(f) =>
+					f instanceof TFolder &&
+					f.path.startsWith(folder.path + "/") &&
+					f.path !== folder.path
+			);
+
+		if (hasSubfolders) {
+			// Keep dropdown open and refresh suggestions to show subfolders
+			// Use setTimeout to allow the value to update first
+			setTimeout(() => {
+				this.input.dispatchEvent(new Event("input", { bubbles: true }));
+			}, 0);
+		} else {
+			// No subfolders, close the dropdown
+			this.input.dispatchEvent(new Event("input", { bubbles: true }));
+			this.close();
+		}
 	}
 }
 
