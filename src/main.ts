@@ -213,6 +213,9 @@ export default class TaskNotesPlugin extends Plugin {
 	// Toast notification component (bottom-right indicator)
 	toastNotification: ToastNotification;
 
+	// Periodic toast check interval ID
+	private toastCheckIntervalId?: number;
+
 	// Base notification sync service (creates TaskNote files for notification-enabled bases)
 	baseNotificationSyncService: BaseNotificationSyncService;
 
@@ -644,6 +647,32 @@ export default class TaskNotesPlugin extends Plugin {
 						}
 					}
 				}, 3000);
+
+				// Set up periodic toast check interval
+				const checkIntervalMinutes = this.settings?.vaultWideNotifications?.checkInterval || 5;
+				const checkIntervalMs = checkIntervalMinutes * 60 * 1000;
+				this.debugLog.log("ToastNotification", `Setting up periodic check every ${checkIntervalMinutes} minutes`);
+
+				this.toastCheckIntervalId = window.setInterval(async () => {
+					this.debugLog.log("ToastNotification", "Periodic check triggered");
+					try {
+						const items = await this.vaultWideNotificationService.getAggregatedItems();
+						this.toastNotification.updateStatusBar(items.length);
+
+						// Only show toast if there are overdue or today items (don't spam)
+						const hasUrgent = items.some(i => i.timeCategory === 'overdue' || i.timeCategory === 'today');
+						if (hasUrgent) {
+							this.debugLog.log("ToastNotification", `Periodic check found ${items.length} items with urgent items - showing toast`);
+							await this.toastNotification.checkAndShow();
+						} else {
+							this.debugLog.log("ToastNotification", `Periodic check found ${items.length} items - status bar only (no urgent)`);
+						}
+					} catch (error) {
+						this.debugLog.error("ToastNotification", "Error in periodic check:", error);
+					}
+				}, checkIntervalMs);
+
+				this.registerInterval(this.toastCheckIntervalId);
 			} else {
 				this.debugLog.log("ToastNotification", "Vault-wide notifications disabled");
 			}

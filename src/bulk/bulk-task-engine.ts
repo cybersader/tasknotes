@@ -16,6 +16,8 @@ export interface BulkCreationOptions {
 	useParentAsProject: boolean;
 	/** Callback for progress updates */
 	onProgress?: (current: number, total: number, status: string) => void;
+	/** Paths to person or group notes to assign all tasks to (will be formatted as wikilinks) */
+	assignees?: string[];
 }
 
 export interface BulkCreationResult {
@@ -87,6 +89,7 @@ export class BulkTaskEngine {
 
 	/**
 	 * Create tasks for all provided Bases data items.
+	 * Uses parallel execution with concurrency limit for better performance.
 	 *
 	 * @param items - Array of Bases data items to create tasks from
 	 * @param options - Creation options
@@ -116,33 +119,58 @@ export class BulkTaskEngine {
 			duplicateCheck = await this.duplicateDetector.checkForDuplicates(sourcePaths);
 		}
 
-		const total = items.length;
-
-		for (let i = 0; i < items.length; i++) {
-			const item = items[i];
+		// Filter items to create (excluding duplicates)
+		const itemsToCreate: BasesDataItem[] = [];
+		for (const item of items) {
 			const sourcePath = item.path || "";
-
-			options.onProgress?.(i + 1, total, `Creating task ${i + 1} of ${total}...`);
-
-			// Skip if already has a task
 			if (options.skipExisting && duplicateCheck?.existingTaskPaths.has(sourcePath)) {
 				result.skipped++;
-				continue;
+			} else {
+				itemsToCreate.push(item);
 			}
+		}
 
-			try {
-				const taskFile = await this.createTaskForItem(item, options);
-				if (taskFile) {
+		const total = itemsToCreate.length;
+		if (total === 0) {
+			return result;
+		}
+
+		// Parallel execution with concurrency limit
+		const CONCURRENCY_LIMIT = 5;
+		let completed = 0;
+
+		// Process in batches with concurrency limit
+		for (let i = 0; i < itemsToCreate.length; i += CONCURRENCY_LIMIT) {
+			const batch = itemsToCreate.slice(i, i + CONCURRENCY_LIMIT);
+
+			const batchPromises = batch.map(async (item) => {
+				const sourcePath = item.path || "";
+				try {
+					const taskFile = await this.createTaskForItem(item, options);
+					return { success: true as const, path: taskFile?.path, sourcePath };
+				} catch (error) {
+					const errorMsg = error instanceof Error ? error.message : String(error);
+					return { success: false as const, error: errorMsg, sourcePath };
+				}
+			});
+
+			const batchResults = await Promise.all(batchPromises);
+
+			// Process batch results
+			for (const batchResult of batchResults) {
+				completed++;
+				options.onProgress?.(completed, total, `Creating task ${completed} of ${total}...`);
+
+				if (batchResult.success && batchResult.path) {
 					result.created++;
-					result.createdPaths.push(taskFile.path);
+					result.createdPaths.push(batchResult.path);
+				} else if (batchResult.success) {
+					result.failed++;
+					result.errors.push(`Failed to create task for: ${batchResult.sourcePath}`);
 				} else {
 					result.failed++;
-					result.errors.push(`Failed to create task for: ${sourcePath}`);
+					result.errors.push(`Error for ${batchResult.sourcePath}: ${batchResult.error}`);
 				}
-			} catch (error) {
-				result.failed++;
-				const errorMsg = error instanceof Error ? error.message : String(error);
-				result.errors.push(`Error for ${sourcePath}: ${errorMsg}`);
 			}
 		}
 
@@ -195,9 +223,27 @@ export class BulkTaskEngine {
 			}
 		}
 
+		// Set assignees if provided
+		if (options.assignees && options.assignees.length > 0) {
+			const assigneeFieldName = this.plugin.settings.assigneeFieldName || "assignee";
+			const assigneeLinks = options.assignees.map(path => this.formatAsWikilink(path));
+			// Store as single value if only one, otherwise as array
+			(taskData as Record<string, unknown>)[assigneeFieldName] =
+				assigneeLinks.length === 1 ? assigneeLinks[0] : assigneeLinks;
+		}
+
 		// Create the task using TaskService
 		const result = await this.plugin.taskService.createTask(taskData);
 		return result.file;
+	}
+
+	/**
+	 * Format a path as a wikilink.
+	 */
+	private formatAsWikilink(path: string): string {
+		const filename = path.split("/").pop() || path;
+		const linkText = filename.replace(/\.md$/, "");
+		return `[[${linkText}]]`;
 	}
 
 	/**

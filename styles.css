@@ -7877,6 +7877,11 @@
     padding-top: var(--size-4-3);
 }
 
+/* Field groups in modal */
+.tasknotes-plugin .task-modal__field-group {
+    margin-top: var(--size-4-2);
+}
+
 /* Section separator between field groups */
 .tasknotes-plugin .task-modal__section-separator {
     border: none;
@@ -10424,6 +10429,38 @@ body:not(.is-mobile) .modal.mod-tasknotes .modal-button-container .mod-cta {
 .file-selector-suggestion__path {
     font-size: var(--tn-font-size-xs);
     color: var(--text-faint);
+}
+
+/* ================================================
+   AVATAR-ENABLED SUGGESTIONS (Person/Group notes)
+   ================================================ */
+
+.file-selector-suggestion--with-avatar {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--tn-spacing-sm);
+}
+
+.file-selector-suggestion--with-avatar .file-selector-suggestion__text {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0; /* Allow text truncation */
+    flex: 1;
+}
+
+.file-selector-suggestion--with-avatar .file-selector-suggestion__name {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.file-selector-suggestion__subtitle {
+    font-size: var(--tn-font-size-sm);
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* ================================================
@@ -19031,6 +19068,59 @@ select.tasknotes-settings__card-input {
     }
 }
 
+/* ================================================
+   IDENTITY AVATAR ROW (Team & Attribution settings)
+   ================================================ */
+
+.tasknotes-identity-avatar-row {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--tn-spacing-sm);
+    padding: var(--tn-spacing-xs) var(--tn-spacing-sm);
+    border-radius: var(--radius-m);
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+    margin-right: var(--tn-spacing-sm);
+}
+
+.tasknotes-identity-avatar-row:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+.tasknotes-identity-avatar-row:focus-visible {
+    outline: 2px solid var(--text-accent);
+    outline-offset: 2px;
+}
+
+.tasknotes-identity-name {
+    font-weight: 500;
+    color: var(--text-normal);
+    white-space: nowrap;
+}
+
+/* Identity edit section (expandable) */
+.tasknotes-identity-edit {
+    margin-top: var(--tn-spacing-sm);
+    padding: var(--tn-spacing-md);
+    background: var(--background-secondary);
+    border-radius: var(--radius-m);
+    border: 1px solid var(--background-modifier-border);
+}
+
+.tasknotes-identity-edit .setting-item {
+    border-top: none;
+    padding-top: var(--tn-spacing-xs);
+}
+
+.tasknotes-identity-edit .setting-item:first-child {
+    padding-top: 0;
+}
+
+.tasknotes-identity-edit .setting-item:last-child {
+    padding-bottom: 0;
+    border-bottom: none;
+}
+
 /* ===== WEBHOOK-SETTINGS.CSS ===== */
 /* 
  * Webhook Settings UI Styles
@@ -20152,16 +20242,16 @@ select.tasknotes-settings__card-input {
 .tn-bulk-summary {
     font-size: var(--tn-font-size-sm);
     color: var(--tn-text-muted);
-    margin-bottom: var(--tn-spacing-sm);
+    margin-bottom: var(--tn-spacing-xs);
 }
 
 /* Preview section */
 .tn-bulk-preview-section {
-    margin-bottom: var(--tn-spacing-sm);
+    margin-bottom: var(--tn-spacing-xs);
 }
 
 .tn-bulk-preview {
-    padding: var(--tn-spacing-xs) 0;
+    padding: 0;
     max-height: 160px;
     overflow-y: auto;
 }
@@ -20365,6 +20455,25 @@ select.tasknotes-settings__card-input {
     margin-top: 8px;
     font-size: 0.9em;
     color: var(--text-error);
+}
+
+/* ================================================
+   ASSIGNEE DROPDOWN (Bulk Task Modal)
+   ================================================ */
+
+.tn-assignee-dropdown-container {
+    display: flex;
+    align-items: center;
+    gap: var(--tn-spacing-sm);
+}
+
+.tn-assignee-dropdown {
+    min-width: 180px;
+}
+
+.tn-assignee-avatar-preview {
+    display: flex;
+    align-items: center;
 }
 
 
@@ -20587,7 +20696,7 @@ select.tasknotes-settings__card-input {
 
 /* Individual items - Todoist style */
 .tn-upcoming-item {
-	padding: 8px 0;
+	padding: 12px 0;
 	border-bottom: 1px solid var(--background-modifier-border-hover);
 	transition: background 0.1s ease;
 }
@@ -20595,16 +20704,26 @@ select.tasknotes-settings__card-input {
 .tn-upcoming-item:hover {
 	background: var(--background-secondary);
 	margin: 0 -8px;
-	padding: 8px;
+	padding: 12px 8px;
 	border-radius: var(--radius-s);
 	border-bottom-color: transparent;
 }
 
-/* Main row: checkbox + title + project */
-.tn-upcoming-item__main {
+/* Row 1: indicator + title + avatars */
+.tn-upcoming-item__row1 {
 	display: flex;
 	align-items: center;
 	gap: 8px;
+}
+
+/* Row 2: date/time (left) + context/project (right) */
+.tn-upcoming-item__row2 {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding-left: 26px; /* Align with title (past indicator) */
+	margin-top: 3px;
+	min-height: 18px;
 }
 
 /* Checkbox/indicator */
@@ -20655,19 +20774,28 @@ select.tasknotes-settings__card-input {
 	color: var(--text-accent);
 }
 
-/* Project/source on right */
-.tn-upcoming-item__project {
+/* Avatars container in row 1 (right-aligned) */
+.tn-upcoming-item__avatars {
+	flex-shrink: 0;
+	margin-left: auto;
+}
+
+/* Context/project - right side of row 2 */
+.tn-upcoming-item__context {
 	color: var(--text-faint);
 	font-size: var(--font-ui-smaller);
 	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	max-width: 40%;
+	text-align: right;
+	margin-left: auto;
 }
 
-/* Date row below title (Todoist-style: time only or relative date for overdue) */
+/* Date/time - left side of row 2 */
 .tn-upcoming-item__date {
-	padding-left: 26px; /* Align with title */
-	margin-top: 2px;
 	font-size: var(--font-ui-smaller);
-	color: var(--text-muted); /* Default color */
+	color: var(--text-muted);
 	display: flex;
 	align-items: center;
 	gap: 2px;
@@ -20811,7 +20939,7 @@ select.tasknotes-settings__card-input {
 	/* Remove gray background, keep transparent */
 	background: transparent;
 	/* Consistent padding to prevent jitter */
-	padding: 8px 0;
+	padding: 12px 0;
 	/* Right-side accent border for visual delineation - subtle color */
 	border-right: 3px solid var(--text-accent);
 	padding-right: 12px;
@@ -20826,7 +20954,7 @@ select.tasknotes-settings__card-input {
 	/* Keep same margins/padding as non-hover to prevent jitter */
 	margin: 0;
 	margin-right: -4px;
-	padding: 8px 0;
+	padding: 12px 0;
 	padding-right: 12px;
 	border-radius: 0;
 	/* Brighten the right accent on hover */
@@ -20859,10 +20987,7 @@ select.tasknotes-settings__card-input {
 	font-weight: 500;
 }
 
-/* Hide default project label for base notifications (we use base-indicator instead) */
-.tn-upcoming-item--base-notification .tn-upcoming-item__project {
-	display: none;
-}
+/* Base indicator in row 2 acts as context for base notifications */
 
 
 /* ===== TOAST-NOTIFICATION.CSS ===== */
@@ -21019,5 +21144,328 @@ select.tasknotes-settings__card-input {
 	font-size: var(--font-ui-smaller);
 	font-weight: 600;
 	color: var(--text-accent);
+}
+
+
+/* ===== PERSON-AVATAR.CSS ===== */
+/**
+ * PersonAvatar - Circular avatar with initials
+ */
+
+/* Base avatar styles */
+.tn-avatar {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 50%;
+	color: white;
+	font-weight: 600;
+	text-transform: uppercase;
+	flex-shrink: 0;
+	position: relative;
+	user-select: none;
+	cursor: default;
+	letter-spacing: -0.02em;
+	font-family: var(--font-interface);
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+/* Ring for better visibility on light backgrounds */
+.tn-avatar::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	border-radius: 50%;
+	box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.1);
+	pointer-events: none;
+}
+
+/* Size variants */
+.tn-avatar--xs {
+	width: 20px;
+	height: 20px;
+	font-size: 10px;
+}
+
+.tn-avatar--sm {
+	width: 24px;
+	height: 24px;
+	font-size: 11px;
+}
+
+.tn-avatar--md {
+	width: 32px;
+	height: 32px;
+	font-size: 13px;
+}
+
+.tn-avatar--lg {
+	width: 40px;
+	height: 40px;
+	font-size: 16px;
+}
+
+/* Group indicator (folder icon in corner) */
+.tn-avatar--group .tn-avatar__group-indicator {
+	position: absolute;
+	bottom: -2px;
+	right: -2px;
+	width: 14px;
+	height: 14px;
+	background: var(--background-primary);
+	border-radius: 50%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+
+.tn-avatar--group .tn-avatar__group-indicator svg {
+	color: var(--text-muted);
+}
+
+/* Overflow indicator (+N) */
+.tn-avatar--overflow {
+	background: var(--background-modifier-border) !important;
+	color: var(--text-muted) !important;
+	font-size: 10px !important;
+	font-weight: 500;
+}
+
+/* Avatar stack (overlapping avatars) */
+.tn-avatar-stack {
+	display: inline-flex;
+	flex-direction: row-reverse; /* For correct z-index stacking */
+}
+
+.tn-avatar-stack .tn-avatar {
+	margin-left: -8px;
+	border: 2px solid var(--background-primary);
+}
+
+.tn-avatar-stack .tn-avatar:last-child {
+	margin-left: 0;
+}
+
+/* Avatar row (avatar + name + subtitle) */
+.tn-avatar-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 4px 0;
+}
+
+.tn-avatar-row__text {
+	display: flex;
+	flex-direction: column;
+	min-width: 0; /* Allow text truncation */
+}
+
+.tn-avatar-row__name {
+	font-size: var(--font-ui-small);
+	font-weight: 500;
+	color: var(--text-normal);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.tn-avatar-row__subtitle {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+/* Hover effect for clickable avatars */
+.tn-avatar[role="button"],
+.tn-avatar-row[role="button"] {
+	cursor: pointer;
+}
+
+.tn-avatar[role="button"]:hover {
+	transform: scale(1.05);
+	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+}
+
+.tn-avatar-row[role="button"]:hover {
+	background: var(--background-modifier-hover);
+	border-radius: var(--radius-s);
+}
+
+/* In suggestion/dropdown lists */
+.suggestion-item .tn-avatar-row,
+.dropdown-item .tn-avatar-row {
+	padding: 2px 0;
+}
+
+/* Settings display */
+.setting-item .tn-avatar {
+	margin-right: 8px;
+}
+
+.setting-item .tn-avatar-row {
+	padding: 0;
+}
+
+
+/* ===== PERSON-GROUP-PICKER.CSS ===== */
+/* ================================================
+   PERSON GROUP PICKER
+   Reusable multi-select component for people and groups
+   ================================================ */
+
+.tn-person-group-picker {
+    position: relative;
+    width: 100%;
+}
+
+/* Selected pills container */
+.tn-pgp-selected {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 6px;
+    min-height: 0;
+}
+
+.tn-pgp-selected:empty {
+    display: none;
+}
+
+/* Individual pill */
+.tn-pgp-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 6px 2px 2px;
+    background: var(--background-modifier-hover);
+    border-radius: var(--radius-m);
+    font-size: var(--font-ui-small);
+    cursor: default;
+}
+
+.tn-pgp-pill-name {
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tn-pgp-pill-remove {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    cursor: pointer;
+    opacity: 0.6;
+    transition: opacity 0.15s, background 0.15s;
+}
+
+.tn-pgp-pill-remove:hover {
+    opacity: 1;
+    background: var(--background-modifier-hover);
+}
+
+.tn-pgp-pill-remove svg {
+    width: 10px;
+    height: 10px;
+}
+
+/* Search input */
+.tn-pgp-input-container {
+    position: relative;
+}
+
+.tn-pgp-search {
+    width: 100%;
+    padding: 6px 10px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    background: var(--background-primary);
+    font-size: var(--font-ui-small);
+}
+
+.tn-pgp-search:focus {
+    outline: none;
+    border-color: var(--interactive-accent);
+    box-shadow: 0 0 0 2px var(--background-modifier-border-focus);
+}
+
+/* Dropdown - uses fixed positioning to escape modal overflow */
+.tn-pgp-dropdown {
+    position: fixed;
+    max-height: 200px;
+    min-width: 200px;
+    overflow-y: auto;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    box-shadow: var(--shadow-s);
+    z-index: 10000;
+}
+
+/* Section headers */
+.tn-pgp-section {
+    padding: 4px 0;
+}
+
+.tn-pgp-section:not(:last-child) {
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.tn-pgp-section-header {
+    padding: 4px 10px;
+    font-size: var(--font-ui-smaller);
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* Dropdown items */
+.tn-pgp-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    cursor: pointer;
+    transition: background 0.1s;
+}
+
+.tn-pgp-item:hover {
+    background: var(--background-modifier-hover);
+}
+
+.tn-pgp-item-text {
+    flex: 1;
+    min-width: 0;
+}
+
+.tn-pgp-item-name {
+    font-size: var(--font-ui-small);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tn-pgp-item-subtitle {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Empty state */
+.tn-pgp-empty {
+    padding: 12px 10px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    font-style: italic;
 }
 

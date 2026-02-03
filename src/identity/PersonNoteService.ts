@@ -194,4 +194,70 @@ export class PersonNoteService {
 		};
 		return leadTime.value * multipliers[leadTime.unit];
 	}
+
+	/**
+	 * Discover all person notes in the vault.
+	 * Looks for notes with `type: person` in frontmatter.
+	 * Respects personNotesFolder and personNotesTag settings.
+	 */
+	discoverPersons(): PersonNoteInfo[] {
+		const folder = this.plugin.settings.personNotesFolder || "";
+		const tag = this.plugin.settings.personNotesTag || "";
+		const persons: PersonNoteInfo[] = [];
+
+		const files = this.plugin.app.vault.getMarkdownFiles();
+
+		for (const file of files) {
+			// Check folder filter
+			if (folder && !file.path.startsWith(folder)) {
+				continue;
+			}
+
+			// Check if it's a person note
+			const cache = this.plugin.app.metadataCache.getFileCache(file);
+			const frontmatter = cache?.frontmatter;
+
+			if (!frontmatter || frontmatter.type !== "person") {
+				continue;
+			}
+
+			// Check optional tag filter
+			if (tag) {
+				const fmTags = frontmatter.tags;
+				const hasFmTag = Array.isArray(fmTags)
+					? fmTags.some((t: string) => t === tag || t === `#${tag}`)
+					: typeof fmTags === "string" && (fmTags === tag || fmTags === `#${tag}`);
+
+				const inlineTags = cache.tags?.map((t) => t.tag.replace(/^#/, "")) || [];
+				const hasInlineTag = inlineTags.includes(tag);
+
+				if (!hasFmTag && !hasInlineTag) {
+					continue;
+				}
+			}
+
+			// Get display name from title field or filename
+			const titleField = this.plugin.fieldMapper.toUserField("title");
+			const displayName = frontmatter[titleField] || file.basename;
+
+			persons.push({
+				path: file.path,
+				displayName,
+				role: frontmatter.role,
+				department: frontmatter.department,
+			});
+		}
+
+		return persons;
+	}
+}
+
+/**
+ * Information about a discovered person note.
+ */
+export interface PersonNoteInfo {
+	path: string;
+	displayName: string;
+	role?: string;
+	department?: string;
 }

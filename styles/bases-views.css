@@ -472,16 +472,16 @@
 .tn-bulk-summary {
     font-size: var(--tn-font-size-sm);
     color: var(--tn-text-muted);
-    margin-bottom: var(--tn-spacing-sm);
+    margin-bottom: var(--tn-spacing-xs);
 }
 
 /* Preview section */
 .tn-bulk-preview-section {
-    margin-bottom: var(--tn-spacing-sm);
+    margin-bottom: var(--tn-spacing-xs);
 }
 
 .tn-bulk-preview {
-    padding: var(--tn-spacing-xs) 0;
+    padding: 0;
     max-height: 160px;
     overflow-y: auto;
 }
@@ -685,4 +685,23 @@
     margin-top: 8px;
     font-size: 0.9em;
     color: var(--text-error);
+}
+
+/* ================================================
+   ASSIGNEE DROPDOWN (Bulk Task Modal)
+   ================================================ */
+
+.tn-assignee-dropdown-container {
+    display: flex;
+    align-items: center;
+    gap: var(--tn-spacing-sm);
+}
+
+.tn-assignee-dropdown {
+    min-width: 180px;
+}
+
+.tn-assignee-avatar-preview {
+    display: flex;
+    align-items: center;
 }

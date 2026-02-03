@@ -33,6 +33,9 @@ import {
 import { openTaskSelector } from "./TaskSelectorWithCreateModal";
 import { generateLink, generateLinkWithDisplay, parseLinkToPath } from "../utils/linkUtils";
 import { EmbeddableMarkdownEditor } from "../editor/EmbeddableMarkdownEditor";
+import { createPersonGroupPicker } from "../ui/PersonGroupPicker";
+import { PersonNoteInfo } from "../identity/PersonNoteService";
+import { GroupNoteMapping } from "../identity/GroupRegistry";
 
 interface DependencyItem {
 	dependency: TaskDependency;
@@ -412,6 +415,9 @@ export abstract class TaskModal extends Modal {
 
 	// User-defined fields (dynamic based on settings)
 	protected userFields: Record<string, any> = {};
+
+	// Assignee picker instance (for cleanup)
+	private assigneePicker: { getSelection: () => string[]; setSelection: (paths: string[]) => void; destroy: () => void } | null = null;
 
 	// Dependency fields
 	protected blockedByItems: DependencyItem[] = [];
@@ -1028,7 +1034,27 @@ export abstract class TaskModal extends Modal {
 		const userField = this.plugin.settings.userFields?.find(
 			(f: any) => f.id === fieldConfig.id
 		);
-		if (!userField) return;
+		if (!userField) {
+			console.debug("[TaskModal] No userField found for fieldConfig.id:", fieldConfig.id);
+			return;
+		}
+
+		// Skip ghost fields with no key configured
+		if (!userField.key?.trim()) {
+			console.debug("[TaskModal] Skipping user field with empty key, id:", fieldConfig.id);
+			return;
+		}
+
+		// Special handling: assignee and creator fields get PersonGroupPicker
+		const assigneeFieldName = this.plugin.settings.assigneeFieldName || "assignee";
+		const creatorFieldName = this.plugin.settings.creatorFieldName || "creator";
+		const fieldKey = userField.key?.toLowerCase().trim();
+		console.debug("[TaskModal] Checking user field:", userField.key, "vs assignee:", assigneeFieldName, "/ creator:", creatorFieldName);
+		if (fieldKey === assigneeFieldName.toLowerCase().trim() ||
+			fieldKey === creatorFieldName.toLowerCase().trim()) {
+			this.createAssigneePickerField(container, userField);
+			return;
+		}
 
 		// Create the field based on its type (existing logic from createUserFields)
 		const setting = new Setting(container).setName(userField.displayName);
@@ -1089,6 +1115,123 @@ export abstract class TaskModal extends Modal {
 				break;
 			}
 		}
+	}
+
+	/**
+	 * Render the assignee field using PersonGroupPicker instead of plain text input.
+	 */
+	protected createAssigneePickerField(container: HTMLElement, userField: any): void {
+		const setting = new Setting(container).setName(userField.displayName);
+
+		// Create a container for the picker inside the setting control area
+		const pickerContainer = setting.controlEl.createDiv({ cls: "tn-task-modal-assignee" });
+
+		// Parse current assignee value to paths for initial selection
+		const currentValue = this.userFields[userField.key];
+		const initialSelection = this.parseAssigneesToPaths(currentValue);
+
+		// Discover persons (synchronous)
+		const persons: PersonNoteInfo[] = this.plugin.personNoteService?.discoverPersons() || [];
+
+		// Create picker with persons immediately, add groups async
+		this.assigneePicker = createPersonGroupPicker({
+			container: pickerContainer,
+			persons,
+			groups: [],
+			multiSelect: true,
+			placeholder: "Search people or groups...",
+			initialSelection,
+			onChange: (selectedPaths) => {
+				// Convert paths to shortest wikilinks for storage
+				const wikilinks = this.pathsToShortestWikilinks(selectedPaths);
+				if (wikilinks.length === 0) {
+					this.userFields[userField.key] = null;
+				} else if (wikilinks.length === 1) {
+					this.userFields[userField.key] = wikilinks[0];
+				} else {
+					this.userFields[userField.key] = wikilinks;
+				}
+			},
+		});
+
+		// Discover groups async, then update picker
+		this.discoverGroupsForPicker(persons);
+	}
+
+	/**
+	 * Async group discovery for the assignee picker.
+	 */
+	private async discoverGroupsForPicker(persons: PersonNoteInfo[]): Promise<void> {
+		if (!this.plugin.groupRegistry) return;
+		try {
+			const groups = await this.plugin.groupRegistry.discoverGroups();
+			if (groups.length > 0 && this.assigneePicker) {
+				// Recreate the picker with groups included
+				const currentSelection = this.assigneePicker.getSelection();
+				const pickerContainer = this.containerEl.querySelector(".tn-task-modal-assignee");
+				if (pickerContainer) {
+					this.assigneePicker.destroy();
+					this.assigneePicker = createPersonGroupPicker({
+						container: pickerContainer as HTMLElement,
+						persons,
+						groups,
+						multiSelect: true,
+						placeholder: "Search people or groups...",
+						initialSelection: currentSelection,
+						onChange: (selectedPaths) => {
+							const assigneeFieldName = this.plugin.settings.assigneeFieldName || "assignee";
+							const wikilinks = this.pathsToShortestWikilinks(selectedPaths);
+							if (wikilinks.length === 0) {
+								this.userFields[assigneeFieldName] = null;
+							} else if (wikilinks.length === 1) {
+								this.userFields[assigneeFieldName] = wikilinks[0];
+							} else {
+								this.userFields[assigneeFieldName] = wikilinks;
+							}
+						},
+					});
+				}
+			}
+		} catch (error) {
+			console.error("Failed to discover groups for assignee picker:", error);
+		}
+	}
+
+	/**
+	 * Parse assignee value (string, string[], or wikilink) to file paths for picker selection.
+	 */
+	/**
+	 * Convert file paths to shortest possible wikilinks using Obsidian's link resolution.
+	 */
+	private pathsToShortestWikilinks(paths: string[]): string[] {
+		return paths.map(p => {
+			const file = this.app.vault.getAbstractFileByPath(p);
+			if (file instanceof TFile) {
+				const linktext = this.app.metadataCache.fileToLinktext(file, "", true);
+				return `[[${linktext}]]`;
+			}
+			return `[[${p.replace(/\.md$/, "")}]]`;
+		});
+	}
+
+	private parseAssigneesToPaths(value: any): string[] {
+		if (!value) return [];
+		const values = Array.isArray(value) ? value : [value];
+		return values.map((v: string) => {
+			// Extract path from wikilink: [[Cybersader]] or [[User-DB/People/Cybersader]]
+			const match = v.match(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/);
+			if (match) {
+				const linkpath = match[1];
+				// Use Obsidian's link resolution to handle shortest-path wikilinks
+				const resolved = this.app.metadataCache.getFirstLinkpathDest(linkpath, "");
+				if (resolved) return resolved.path;
+				// Fallback: try direct path with .md
+				const withMd = linkpath.endsWith(".md") ? linkpath : `${linkpath}.md`;
+				const file = this.app.vault.getAbstractFileByPath(withMd);
+				return file ? withMd : linkpath;
+			}
+			return v;
+		}).filter((p: string) => p);
 	}
 
 	protected createUserFields(container: HTMLElement): void {
@@ -2074,6 +2217,13 @@ export abstract class TaskModal extends Modal {
 			this.detailsMarkdownEditor.destroy();
 			this.detailsMarkdownEditor = null;
 		}
+
+		// Clean up assignee picker
+		if (this.assigneePicker) {
+			this.assigneePicker.destroy();
+			this.assigneePicker = null;
+		}
+
 		super.onClose();
 	}
 }

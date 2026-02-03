@@ -248,6 +248,11 @@
     padding-top: var(--size-4-3);
 }
 
+/* Field groups in modal */
+.tasknotes-plugin .task-modal__field-group {
+    margin-top: var(--size-4-2);
+}
+
 /* Section separator between field groups */
 .tasknotes-plugin .task-modal__section-separator {
     border: none;

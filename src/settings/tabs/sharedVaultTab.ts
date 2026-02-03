@@ -4,8 +4,10 @@ import { createSettingGroup } from "../components/settingHelpers";
 import { FolderSuggest } from "../components/FolderSuggest";
 import { TagSuggest } from "../components/TagSuggest";
 import { openFileSelector } from "../../modals/FileSelectorModal";
+import { createAvatar } from "../../ui/PersonAvatar";
 import type { TranslationKey } from "../../i18n";
-import type { UserMappedField } from "../../types/settings";
+import type { UserMappedField, DeviceUserMapping } from "../../types/settings";
+import { getColorFromName } from "../../ui/PersonAvatar";
 
 /**
  * Check if the creator User Field exists in settings
@@ -52,6 +54,9 @@ export function renderSharedVaultTab(
 
 	// Section 5: Registered Team Members - All device mappings
 	renderTeamMembersSection(container, plugin, save, t);
+
+	// Section 6: Notification Filtering - Filter notifications by assignee
+	renderNotificationFilteringSection(container, plugin, save, t);
 }
 
 /**
@@ -416,18 +421,90 @@ function renderYourIdentitySection(
 			const isRegistered = currentMapping !== null;
 
 			if (isRegistered && currentMapping) {
-				// Show current registration
+				// Check if person note file still exists
+				let personFile = plugin.app.vault.getAbstractFileByPath(currentMapping.userNotePath);
+				if (!personFile) {
+					const linkPath = currentMapping.userNotePath.replace(/\.md$/, "");
+					personFile = plugin.app.metadataCache.getFirstLinkpathDest(linkPath, "");
+				}
+				const fileExists = personFile instanceof TFile;
+
+				// Show current registration with avatar
 				const displayName =
 					currentMapping.userDisplayName ||
 					currentMapping.userNotePath.split("/").pop()?.replace(/\.md$/, "") ||
 					"Unknown";
 
 				group.addSetting((setting) => {
+					const descText = fileExists
+						? currentMapping.userNotePath
+						: `⚠️ File not found: ${currentMapping.userNotePath}`;
 					setting
 						.setName(t("settings.teamAttribution.yourIdentity.registered" as TranslationKey))
-						.setDesc(currentMapping.userNotePath)
+						.setDesc(descText);
+
+					// Create clickable avatar + name container
+					const avatarContainer = setting.controlEl.createDiv({
+						cls: "tasknotes-identity-avatar-row",
+					});
+
+					if (fileExists) {
+						avatarContainer.setAttribute("role", "button");
+						avatarContainer.setAttribute("tabindex", "0");
+						avatarContainer.title = "Click to open person note";
+					}
+
+					// Add avatar (with custom color if set)
+					const avatar = createAvatar({
+						name: displayName,
+						size: "md",
+						tooltip: fileExists ? `Open ${displayName}` : `${displayName} (file missing)`,
+						color: currentMapping.avatarColor,
+					});
+					avatar.style.cursor = fileExists ? "pointer" : "default";
+					if (!fileExists) {
+						avatar.style.opacity = "0.6";
+					}
+					avatarContainer.appendChild(avatar);
+
+					// Add name text
+					const nameEl = avatarContainer.createSpan({
+						cls: "tasknotes-identity-name",
+						text: displayName,
+					});
+					if (!fileExists) {
+						nameEl.style.color = "var(--text-warning)";
+					}
+
+					// Click handler to open the person note (only if file exists)
+					if (fileExists) {
+						const openPersonNote = async () => {
+							await plugin.app.workspace.getLeaf().openFile(personFile as TFile);
+						};
+
+						avatarContainer.addEventListener("click", openPersonNote);
+						avatarContainer.addEventListener("keydown", (e: KeyboardEvent) => {
+							if (e.key === "Enter" || e.key === " ") {
+								e.preventDefault();
+								openPersonNote();
+							}
+						});
+					}
+
+					// Add action buttons
+					setting
 						.addButton((button) => {
-							button.setButtonText(displayName).setDisabled(true);
+							button.setButtonText("Edit").onClick(() => {
+								// Toggle edit section visibility
+								const parentEl = setting.settingEl.parentElement;
+								if (!parentEl) return;
+								const existingEdit = parentEl.querySelector(".tasknotes-identity-edit");
+								if (existingEdit) {
+									existingEdit.remove();
+								} else {
+									renderIdentityEditSection(parentEl, plugin, currentMapping, save, container);
+								}
+							});
 						})
 						.addButton((button) => {
 							button.setButtonText("Change").onClick(() => {
@@ -445,6 +522,23 @@ function renderYourIdentitySection(
 								});
 						});
 				});
+
+				// Show warning if file is missing
+				if (!fileExists) {
+					group.addSetting((setting) => {
+						setting
+							.setName("⚠️ Person note missing")
+							.setDesc("The linked person note was deleted or moved. Select a new one or the avatar data will be preserved from settings.")
+							.addButton((button) => {
+								button
+									.setButtonText("Select new person note")
+									.setCta()
+									.onClick(() => {
+										openPersonNoteSelector(plugin, save, container);
+									});
+							});
+					});
+				}
 			} else {
 				// Show registration button
 				group.addSetting((setting) => {
@@ -559,6 +653,82 @@ function renderTeamMembersSection(
 }
 
 /**
+ * Section 6: Notification Filtering
+ * Filter notifications based on task assignee
+ */
+function renderNotificationFilteringSection(
+	container: HTMLElement,
+	plugin: TaskNotesPlugin,
+	save: () => void,
+	t: (key: TranslationKey) => string
+): void {
+	createSettingGroup(
+		container,
+		{
+			heading: "Notification filtering",
+			description: "Filter notifications based on who tasks are assigned to. Useful in shared vaults where you only want to see tasks assigned to you.",
+		},
+		(group) => {
+			// Only notify if assigned to me toggle
+			group.addSetting((setting) => {
+				setting
+					.setName("Only notify for my tasks")
+					.setDesc("Only show notifications for tasks assigned to you (or groups you belong to). When disabled, you'll see notifications for all tasks.")
+					.addToggle((toggle) =>
+						toggle
+							.setValue(plugin.settings.vaultWideNotifications?.onlyNotifyIfAssignedToMe ?? false)
+							.onChange(async (value) => {
+								if (!plugin.settings.vaultWideNotifications) {
+									plugin.settings.vaultWideNotifications = {} as any;
+								}
+								plugin.settings.vaultWideNotifications.onlyNotifyIfAssignedToMe = value;
+								save();
+								// Re-render to show/hide dependent settings
+								renderSharedVaultTab(container, plugin, save);
+							})
+					);
+			});
+
+			// Show dependent settings only when filtering is enabled
+			if (plugin.settings.vaultWideNotifications?.onlyNotifyIfAssignedToMe) {
+				// Include unassigned tasks toggle
+				group.addSetting((setting) => {
+					setting
+						.setName("Include unassigned tasks")
+						.setDesc("Also show notifications for tasks that have no assignee. Disable to only see tasks explicitly assigned to you.")
+						.addToggle((toggle) =>
+							toggle
+								.setValue(plugin.settings.vaultWideNotifications?.notifyForUnassignedTasks ?? true)
+								.onChange(async (value) => {
+									plugin.settings.vaultWideNotifications.notifyForUnassignedTasks = value;
+									save();
+								})
+						);
+				});
+
+				// Current identity status
+				const currentUser = plugin.userRegistry?.getCurrentUser();
+				const currentUserDisplay = plugin.userRegistry?.getCurrentUserDisplayName();
+
+				if (currentUser) {
+					group.addSetting((setting) => {
+						setting
+							.setName("Your identity")
+							.setDesc(`Filtering notifications for: ${currentUserDisplay || currentUser}`);
+					});
+				} else {
+					group.addSetting((setting) => {
+						setting
+							.setName("⚠️ No identity registered")
+							.setDesc("Register your device in 'Your Identity' above to enable assignee filtering. Until then, you'll see all notifications.");
+					});
+				}
+			}
+		}
+	);
+}
+
+/**
  * Opens the file selector modal for choosing a person note
  * Filtered by personNotesFolder and personNotesTag settings
  */
@@ -623,6 +793,86 @@ function openPersonNoteSelector(
 
 				return true;
 			},
+			showAvatars: true,
+			avatarSize: "sm",
 		}
 	);
+}
+
+/**
+ * Renders the identity edit section with display name and color picker
+ */
+function renderIdentityEditSection(
+	parentEl: HTMLElement,
+	plugin: TaskNotesPlugin,
+	mapping: DeviceUserMapping,
+	save: () => void,
+	container: HTMLElement
+): void {
+	const editSection = parentEl.createDiv({
+		cls: "tasknotes-identity-edit",
+	});
+
+	// Display name input
+	new Setting(editSection)
+		.setName("Display name")
+		.setDesc("Override the name shown in the avatar")
+		.addText((text) => {
+			text
+				.setPlaceholder("Leave empty to use file name")
+				.setValue(mapping.userDisplayName || "")
+				.onChange(async (value) => {
+					await plugin.userRegistry.updateMapping(mapping.deviceId, {
+						userDisplayName: value || undefined,
+					});
+					save();
+				});
+		});
+
+	// Color picker
+	const defaultColor = getColorFromName(
+		mapping.userDisplayName ||
+		mapping.userNotePath.split("/").pop()?.replace(/\.md$/, "") ||
+		"Unknown"
+	);
+
+	new Setting(editSection)
+		.setName("Avatar color")
+		.setDesc("Choose a custom color for the avatar")
+		.addColorPicker((picker) => {
+			picker
+				.setValue(mapping.avatarColor || defaultColor)
+				.onChange(async (value) => {
+					await plugin.userRegistry.updateMapping(mapping.deviceId, {
+						avatarColor: value,
+					});
+					save();
+					// Re-render to show new color
+					renderSharedVaultTab(container, plugin, save);
+				});
+		})
+		.addButton((button) => {
+			button
+				.setButtonText("Reset")
+				.onClick(async () => {
+					await plugin.userRegistry.updateMapping(mapping.deviceId, {
+						avatarColor: undefined,
+					});
+					save();
+					renderSharedVaultTab(container, plugin, save);
+				});
+		});
+
+	// Done button
+	new Setting(editSection)
+		.addButton((button) => {
+			button
+				.setButtonText("Done")
+				.setCta()
+				.onClick(() => {
+					editSection.remove();
+					// Re-render to apply changes
+					renderSharedVaultTab(container, plugin, save);
+				});
+		});
 }

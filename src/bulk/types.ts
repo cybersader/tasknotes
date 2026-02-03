@@ -149,3 +149,127 @@ export function fromConvertResult(result: {
 		affectedPaths: result.convertedPaths,
 	};
 }
+
+// ============================================================================
+// Unified Bulk Engine Types (Phase 1+2)
+// ============================================================================
+
+/**
+ * Progress callback signature for all bulk operations.
+ */
+export type ProgressCallback = (
+	current: number,
+	total: number,
+	status: string
+) => void;
+
+/**
+ * Default values that can be applied to bulk-created/converted tasks.
+ */
+export interface BulkDefaults {
+	status?: string;
+	priority?: string;
+	dueDate?: string;
+	scheduledDate?: string;
+	contexts?: string[];
+	tags?: string[];
+	assignee?: string;
+	reminders?: any[]; // Reminder type from TaskInfo
+	timeEstimate?: number;
+	customFields?: Record<string, any>;
+}
+
+/**
+ * Options for bulk update operations (reschedule, status change, etc.)
+ */
+export interface BulkUpdateOptions {
+	/** Property to update */
+	property: string;
+	/** New value for the property */
+	value: any;
+	/** Progress callback */
+	onProgress?: ProgressCallback;
+}
+
+/**
+ * Options specific to bulk reschedule operations.
+ */
+export interface BulkRescheduleOptions {
+	/** New due date (YYYY-MM-DD or YYYY-MM-DDTHH:mm) */
+	newDueDate?: string;
+	/** New scheduled date (YYYY-MM-DDTHH:mm) */
+	newScheduledDate?: string;
+	/** Whether to clear time component */
+	clearTime?: boolean;
+	/** Progress callback */
+	onProgress?: ProgressCallback;
+}
+
+/**
+ * Item types that bulk operations can handle.
+ */
+export type BulkItemType = "tasknote" | "base-notification" | "generic";
+
+/**
+ * A generic item that can be processed by bulk operations.
+ */
+export interface BulkItem {
+	/** File path */
+	path: string;
+	/** Item type for operation routing */
+	itemType: BulkItemType;
+	/** Title for display */
+	title?: string;
+	/** Current due date (for reschedule preview) */
+	dueDate?: string;
+	/** Source base file (for base notifications) */
+	sourceBase?: string;
+}
+
+/**
+ * Union type for all bulk operations.
+ */
+export type BulkOperation =
+	| { type: "create"; items: any[]; options: any }
+	| { type: "convert"; items: any[]; options: any }
+	| { type: "update"; items: BulkItem[]; options: BulkUpdateOptions }
+	| { type: "reschedule"; items: BulkItem[]; options: BulkRescheduleOptions }
+	| { type: "archive"; items: BulkItem[] }
+	| { type: "delete"; items: BulkItem[] }
+	| { type: "complete"; items: BulkItem[] };
+
+/**
+ * Pre-check result before executing a bulk operation.
+ */
+export interface BulkPreCheckResult {
+	/** Number of items that will be processed */
+	willProcess: number;
+	/** Number of items that will be skipped */
+	willSkip: number;
+	/** Reasons for skipping (for UI display) */
+	skipReasons: string[];
+	/** Warnings to show user */
+	warnings: string[];
+	/** Whether operation can proceed */
+	canProceed: boolean;
+}
+
+/**
+ * Convert BulkUpdateResult to unified BulkOperationResult.
+ */
+export function fromUpdateResult(result: {
+	updated: number;
+	skipped: number;
+	failed: number;
+	errors: string[];
+	updatedPaths: string[];
+}, operationType: BulkOperationResult["operationType"] = "update"): BulkOperationResult {
+	return {
+		operationType,
+		succeeded: result.updated,
+		skipped: result.skipped,
+		failed: result.failed,
+		errors: result.errors,
+		affectedPaths: result.updatedPaths,
+	};
+}

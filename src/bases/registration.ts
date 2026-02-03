@@ -559,6 +559,25 @@ export async function registerBasesTaskList(plugin: TaskNotesPlugin): Promise<vo
 						displayName: "Include items from all notification-enabled bases",
 						default: true,
 					},
+					{
+						type: "dropdown",
+						key: "dateFormat",
+						displayName: "Date format",
+						default: "default",
+						options: {
+							"default": "Use default",
+							"rich": "Rich (Jan 31, 2026 • Friday)",
+							"us": "US (Jan 31, 2026)",
+							"eu": "EU (31 Jan 2026)",
+							"iso": "ISO (2026-01-31)",
+						},
+					},
+					{
+						type: "toggle",
+						key: "useRelativeDates",
+						displayName: "Use relative dates for recent items",
+						default: true,
+					},
 				],
 			});
 

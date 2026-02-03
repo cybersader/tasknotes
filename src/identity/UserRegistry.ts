@@ -149,6 +149,29 @@ export class UserRegistry {
 	}
 
 	/**
+	 * Update a device mapping with partial data.
+	 * Used for updating display name, avatar color, etc.
+	 */
+	async updateMapping(
+		deviceId: string,
+		updates: Partial<Pick<DeviceUserMapping, "userDisplayName" | "avatarColor">>
+	): Promise<void> {
+		const settings = this.getSettings();
+		const mapping = settings.deviceUserMappings.find((m) => m.deviceId === deviceId);
+
+		if (mapping) {
+			if (updates.userDisplayName !== undefined) {
+				mapping.userDisplayName = updates.userDisplayName || undefined;
+			}
+			if (updates.avatarColor !== undefined) {
+				mapping.avatarColor = updates.avatarColor || undefined;
+			}
+			mapping.lastSeen = Date.now();
+			await this.saveSettings(settings);
+		}
+	}
+
+	/**
 	 * Get all registered device→user mappings.
 	 */
 	getAllMappings(): DeviceUserMapping[] {

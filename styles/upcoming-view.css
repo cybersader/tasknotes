@@ -216,7 +216,7 @@
 
 /* Individual items - Todoist style */
 .tn-upcoming-item {
-	padding: 8px 0;
+	padding: 12px 0;
 	border-bottom: 1px solid var(--background-modifier-border-hover);
 	transition: background 0.1s ease;
 }
@@ -224,16 +224,26 @@
 .tn-upcoming-item:hover {
 	background: var(--background-secondary);
 	margin: 0 -8px;
-	padding: 8px;
+	padding: 12px 8px;
 	border-radius: var(--radius-s);
 	border-bottom-color: transparent;
 }
 
-/* Main row: checkbox + title + project */
-.tn-upcoming-item__main {
+/* Row 1: indicator + title + avatars */
+.tn-upcoming-item__row1 {
 	display: flex;
 	align-items: center;
 	gap: 8px;
+}
+
+/* Row 2: date/time (left) + context/project (right) */
+.tn-upcoming-item__row2 {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding-left: 26px; /* Align with title (past indicator) */
+	margin-top: 3px;
+	min-height: 18px;
 }
 
 /* Checkbox/indicator */
@@ -284,19 +294,28 @@
 	color: var(--text-accent);
 }
 
-/* Project/source on right */
-.tn-upcoming-item__project {
+/* Avatars container in row 1 (right-aligned) */
+.tn-upcoming-item__avatars {
+	flex-shrink: 0;
+	margin-left: auto;
+}
+
+/* Context/project - right side of row 2 */
+.tn-upcoming-item__context {
 	color: var(--text-faint);
 	font-size: var(--font-ui-smaller);
 	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	max-width: 40%;
+	text-align: right;
+	margin-left: auto;
 }
 
-/* Date row below title (Todoist-style: time only or relative date for overdue) */
+/* Date/time - left side of row 2 */
 .tn-upcoming-item__date {
-	padding-left: 26px; /* Align with title */
-	margin-top: 2px;
 	font-size: var(--font-ui-smaller);
-	color: var(--text-muted); /* Default color */
+	color: var(--text-muted);
 	display: flex;
 	align-items: center;
 	gap: 2px;
@@ -440,7 +459,7 @@
 	/* Remove gray background, keep transparent */
 	background: transparent;
 	/* Consistent padding to prevent jitter */
-	padding: 8px 0;
+	padding: 12px 0;
 	/* Right-side accent border for visual delineation - subtle color */
 	border-right: 3px solid var(--text-accent);
 	padding-right: 12px;
@@ -455,7 +474,7 @@
 	/* Keep same margins/padding as non-hover to prevent jitter */
 	margin: 0;
 	margin-right: -4px;
-	padding: 8px 0;
+	padding: 12px 0;
 	padding-right: 12px;
 	border-radius: 0;
 	/* Brighten the right accent on hover */
@@ -488,7 +507,4 @@
 	font-weight: 500;
 }
 
-/* Hide default project label for base notifications (we use base-indicator instead) */
-.tn-upcoming-item--base-notification .tn-upcoming-item__project {
-	display: none;
-}
+/* Base indicator in row 2 acts as context for base notifications */

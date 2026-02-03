@@ -42,7 +42,9 @@ const CSS_FILES = [
     'styles/status-bar.css',         // StatusBar component with proper BEM scoping
     'styles/bases-views.css',        // Bases integration views (list and kanban)
     'styles/upcoming-view.css',      // UpcomingView (Todoist-style aggregated notifications)
-    'styles/toast-notification.css'  // ToastNotification (compact bottom-right indicator)
+    'styles/toast-notification.css', // ToastNotification (compact bottom-right indicator)
+    'styles/person-avatar.css',       // PersonAvatar (circular avatar with initials)
+    'styles/person-group-picker.css'  // PersonGroupPicker (multi-select with search)
 ];
 
 const MAIN_CSS_TEMPLATE = `/* TaskNotes Plugin Styles */

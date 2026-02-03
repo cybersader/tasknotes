@@ -53,6 +53,7 @@ export class VaultWideNotificationService {
 	/**
 	 * Get all aggregated notification items from enabled sources.
 	 * Items are deduplicated by path and categorized by time.
+	 * Optionally filtered by assignee if onlyNotifyIfAssignedToMe is enabled.
 	 */
 	async getAggregatedItems(): Promise<AggregatedNotificationItem[]> {
 		this.plugin.debugLog.log("VaultWideNotificationService", "getAggregatedItems called");
@@ -88,10 +89,144 @@ export class VaultWideNotificationService {
 		// }
 
 		// Deduplicate by path, merging sources
-		const deduped = this.deduplicateItems(allItems);
+		let deduped = this.deduplicateItems(allItems);
+
+		// Filter by assignee if enabled
+		if (settings.onlyNotifyIfAssignedToMe) {
+			deduped = await this.filterByAssignee(deduped, settings.notifyForUnassignedTasks);
+		}
 
 		// Sort by time category priority
 		return this.sortByTimeCategory(deduped);
+	}
+
+	/**
+	 * Filter items to only those assigned to the current device's user.
+	 * Also includes unassigned tasks if notifyForUnassigned is true.
+	 */
+	private async filterByAssignee(
+		items: AggregatedNotificationItem[],
+		notifyForUnassigned: boolean
+	): Promise<AggregatedNotificationItem[]> {
+		const currentUser = this.plugin.userRegistry?.getCurrentUser();
+
+		// If no user is registered for this device, can't filter - return all or none
+		if (!currentUser) {
+			this.plugin.debugLog.log(
+				"VaultWideNotificationService",
+				"No user registered for device - returning all items (can't filter)"
+			);
+			return items;
+		}
+
+		this.plugin.debugLog.log(
+			"VaultWideNotificationService",
+			`Filtering by assignee. Current user: ${currentUser}, notifyForUnassigned: ${notifyForUnassigned}`
+		);
+
+		const filtered: AggregatedNotificationItem[] = [];
+		const assigneeFieldName = this.plugin.settings.assigneeFieldName || "assignee";
+
+		for (const item of items) {
+			// Get assignee from frontmatter
+			const file = this.plugin.app.vault.getAbstractFileByPath(item.path);
+			if (!(file instanceof TFile)) {
+				continue;
+			}
+
+			const cache = this.plugin.app.metadataCache.getFileCache(file);
+			const assigneeValue = cache?.frontmatter?.[assigneeFieldName];
+
+			// No assignee
+			if (!assigneeValue) {
+				if (notifyForUnassigned) {
+					this.plugin.debugLog.log(
+						"VaultWideNotificationService",
+						`Item ${item.path} has no assignee - including (notifyForUnassigned=true)`
+					);
+					filtered.push(item);
+				} else {
+					this.plugin.debugLog.log(
+						"VaultWideNotificationService",
+						`Item ${item.path} has no assignee - skipping (notifyForUnassigned=false)`
+					);
+				}
+				continue;
+			}
+
+			// Check if current user is the assignee (or in the group)
+			const isAssignedToMe = this.isAssignedToUser(assigneeValue, currentUser);
+
+			if (isAssignedToMe) {
+				this.plugin.debugLog.log(
+					"VaultWideNotificationService",
+					`Item ${item.path} assigned to current user - including`
+				);
+				filtered.push(item);
+			} else {
+				this.plugin.debugLog.log(
+					"VaultWideNotificationService",
+					`Item ${item.path} assigned to ${assigneeValue} - skipping (not current user)`
+				);
+			}
+		}
+
+		this.plugin.debugLog.log(
+			"VaultWideNotificationService",
+			`Filtered ${items.length} items down to ${filtered.length}`
+		);
+
+		return filtered;
+	}
+
+	/**
+	 * Check if an assignee value matches the current user.
+	 * Handles direct assignment and group membership.
+	 */
+	private isAssignedToUser(assigneeValue: string | string[], currentUser: string): boolean {
+		// Handle array assignees (multiple assignees)
+		const assignees = Array.isArray(assigneeValue) ? assigneeValue : [assigneeValue];
+
+		for (const assignee of assignees) {
+			if (typeof assignee !== "string") continue;
+
+			// Resolve the assignee (handles groups)
+			const resolvedPersons = this.plugin.groupRegistry?.resolveAssignee(assignee) || [assignee];
+
+			// Check if current user is in the resolved list
+			for (const person of resolvedPersons) {
+				// Normalize paths for comparison (remove .md, handle wikilinks)
+				const normalizedPerson = this.normalizePath(person);
+				const normalizedCurrentUser = this.normalizePath(currentUser);
+
+				if (normalizedPerson === normalizedCurrentUser) {
+					return true;
+				}
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Normalize a path for comparison (removes .md, folder paths, wikilink syntax).
+	 */
+	private normalizePath(path: string): string {
+		// Remove wikilink syntax
+		let normalized = path.replace(/^\[\[/, "").replace(/\]\]$/, "");
+
+		// Handle display text: [[path|display]] -> path
+		const pipeIndex = normalized.indexOf("|");
+		if (pipeIndex !== -1) {
+			normalized = normalized.substring(0, pipeIndex);
+		}
+
+		// Remove .md extension
+		normalized = normalized.replace(/\.md$/, "");
+
+		// Get just the filename (last segment)
+		const segments = normalized.split("/");
+		return segments[segments.length - 1].toLowerCase();
 	}
 
 	/**

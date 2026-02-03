@@ -4,6 +4,65 @@ All notable changes to this TaskNotes fork will be documented in this file.
 
 This fork (`cybersader/tasknotes`) adds bulk tasking, notifications, and other enhancements to the upstream [TaskNotes](https://github.com/callumalpass/tasknotes) plugin.
 
+## [4.3.18] - 2026-02-03
+
+### Added
+- **UpcomingView 2-row Todoist layout**: Items now display in two rows
+  - Row 1: Checkbox + title + assignee avatar stack
+  - Row 2: Date/time (color-coded) + project/context or base indicator
+  - Base notifications show layers icon + count on Row 2 (number before icon for alignment)
+- **"Edit task" context menu**: Right-click any task or base notification to open the edit modal
+- **"Assign" context menu**: Right-click to assign/unassign persons and groups
+  - Toggle behavior: adds if not assigned, removes if already assigned (multi-select)
+  - Supports multiple assignees simultaneously
+- **PersonGroupPicker in Edit Task modal**: Assignee and creator fields render with full picker UI
+  - Search, pills for selected items, grouped dropdown (People/Groups)
+  - Pre-loads existing assignees when editing tasks
+
+### Changed
+- **Shortest wikilinks**: Assignee fields now store shortest unique path (e.g., `[[Cybersader]]` instead of `[[User-DB/People/Cybersader]]`)
+- **UpcomingView item spacing**: Increased vertical padding (12px) and row gap (3px) to match Todoist density
+- **Base notification avatars**: Now visible alongside the layers icon (previously hidden by if/else)
+
+### Fixed
+- **PersonGroupPicker detection**: Case-insensitive key comparison fixes field matching edge cases
+- **Ctrl+click in UpcomingView**: Now opens tasks and base notifications in new tabs
+- **Creator field rendering**: No longer shows as empty text box; uses PersonGroupPicker like assignee
+- **Ghost user fields**: Empty-key fields in settings are skipped instead of rendering blank inputs
+- **Edit Task modal spacing**: Added margin between field groups (title/contexts gap)
+- **Assignee picker loading**: Resolves shortest wikilinks correctly when loading existing assignees
+
+## [4.3.17] - 2026-02-02
+
+### Added
+- **Person avatars**: Circular avatars with initials for person/group display
+  - Consistent color generation from name hash (15-color palette)
+  - Size variants: xs (20px), sm (24px), md (32px), lg (40px)
+  - Group indicator (folder icon in corner) for group notes
+  - Avatar stacks for showing multiple assignees with overflow indicator (+N)
+  - Integrated into person note selector in Settings → Team & Attribution
+  - "Registered as" section shows clickable avatar that opens person note
+  - **Edit button** to customize display name and avatar color without editing file
+  - **Error handling** for deleted/moved person notes with visual warning
+  - Custom avatar color stored in settings (persists even if file is deleted)
+- **Periodic toast notification check**: Status bar and toast updates on configurable interval
+  - Uses `checkInterval` setting from vault-wide notifications
+  - Triggers toast for urgent items (overdue, today)
+- **Bulk assignee selection**: Assign tasks in bulk from Bases view
+  - Dropdown in BulkTaskCreationModal with discovered persons and groups
+  - Shows avatar preview next to dropdown
+  - Groups shown with folder icon indicator
+  - `discoverPersons()` method added to PersonNoteService
+- **Assignee-aware notification filtering**: Only notify for tasks assigned to you
+  - New setting: "Only notify for my tasks" (default: off for backwards compatibility)
+  - "Include unassigned tasks" option when filtering is enabled
+  - Resolves group membership (nested groups supported)
+  - Visual identity status in settings with registration guidance
+
+### Changed
+- File selector modal now supports avatar display via `showAvatars` option
+- Person note selector in Team & Attribution settings shows avatars
+
 ## [4.3.16] - 2026-02-02
 
 ### Added

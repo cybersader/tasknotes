@@ -9,6 +9,7 @@ import {
 	TimeCategory,
 } from "../types/settings";
 import { showTaskContextMenu } from "../ui/TaskCard";
+import { createAvatarStack } from "../ui/PersonAvatar";
 import { hasTimeComponent, formatTime, parseDate, parseDateAsLocal, getDatePart, combineDateAndTime, formatDateForUpcomingView, UpcomingViewDateSettings } from "../utils/dateUtils";
 import { DueDateModal } from "../modals/DueDateModal";
 import { BulkOperationEngine, BulkItem, formatResultNotice } from "../bulk";
@@ -110,6 +111,68 @@ export class UpcomingView extends BasesViewBase {
 		return match ? match[1] : undefined;
 	}
 
+	/**
+	 * Extract display name from a projects field.
+	 * Handles: wikilink string, array of wikilinks, plain string, or undefined.
+	 * E.g., "[[Project Alpha]]" → "Project Alpha"
+	 *       ["[[Project Alpha]]", "[[Project Beta]]"] → "Project Alpha" (first one)
+	 */
+	private extractProjectName(projects?: string | string[]): string {
+		if (!projects) return "";
+
+		// Handle array - take first project
+		const firstProject = Array.isArray(projects) ? projects[0] : projects;
+		if (!firstProject) return "";
+
+		// Handle Bases Link objects (has path/display properties)
+		if (typeof firstProject === "object" && firstProject !== null) {
+			const linkObj = firstProject as { display?: string; path?: string };
+			if (linkObj.display) return linkObj.display;
+			if (linkObj.path) {
+				// Extract basename from path
+				const parts = linkObj.path.split("/");
+				return parts[parts.length - 1].replace(/\.md$/, "");
+			}
+			return "";
+		}
+
+		// Handle wikilink string: [[path/to/Project Alpha]] or [[Project Alpha|Display Name]]
+		if (typeof firstProject === "string") {
+			const match = firstProject.match(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/);
+			if (match) {
+				// If there's an alias (display name after |), use it
+				if (match[2]) return match[2];
+				// Otherwise extract basename from path
+				const path = match[1];
+				const parts = path.split("/");
+				return parts[parts.length - 1].replace(/\.md$/, "");
+			}
+			// Plain string (no wikilink brackets)
+			return firstProject;
+		}
+
+		return "";
+	}
+
+	/**
+	 * Extract display names from assignee wikilink values.
+	 * [[User-DB/Alice Chen]] → "Alice Chen"
+	 * [[User-DB/Alice Chen|Alice]] → "Alice"
+	 * "Bob" → "Bob"
+	 */
+	private extractAssigneeNames(assignees?: string[]): string[] {
+		if (!assignees || assignees.length === 0) return [];
+		return assignees.map(a => {
+			const match = a.match(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/);
+			if (match) {
+				if (match[2]) return match[2];
+				const parts = match[1].split("/");
+				return parts[parts.length - 1].replace(/\.md$/, "");
+			}
+			return a;
+		});
+	}
+
 	onload(): void {
 		super.onload();
 	}
@@ -138,20 +201,15 @@ export class UpcomingView extends BasesViewBase {
 		this.plugin.debugLog.log("UpcomingView", "render() called");
 
 		try {
-			// Get items from own filter (this base's data)
-			const ownItems = await this.getOwnFilterItems();
-			this.plugin.debugLog.log("UpcomingView", `Own filter items: ${ownItems.length}`);
-
-			// Get aggregated items from VaultWideNotificationService
-			const aggregatedItems = await this.plugin.vaultWideNotificationService.getAggregatedItems();
-			this.plugin.debugLog.log("UpcomingView", `Aggregated items from service: ${aggregatedItems.length}`);
-
-			// Merge and deduplicate
-			const allItems = this.mergeAndDeduplicate(ownItems, aggregatedItems);
-			this.plugin.debugLog.log("UpcomingView", `Total merged items: ${allItems.length}`);
+			// Get items from own filter ONLY (this base's data)
+			// NOTE: We do NOT aggregate from other notify:true bases here.
+			// notify:true is for the notification system, not for injecting items into views.
+			// Each view should respect its own filters.
+			const items = await this.getOwnFilterItems();
+			this.plugin.debugLog.log("UpcomingView", `Filter items: ${items.length}`);
 
 			// Group by time category
-			this.groupedItems = this.groupByTimeCategory(allItems);
+			this.groupedItems = this.groupByTimeCategory(items);
 
 			// Render the UI
 			this.renderContent();
@@ -240,6 +298,22 @@ export class UpcomingView extends BasesViewBase {
 			const timeCategory = this.categorizeByTime(dueDate);
 			const timeContext = this.getTimeContext(dueDate);
 
+			// Get projects field (user-configured field name via fieldMapper)
+			const projectFieldName = this.plugin.fieldMapper.toUserField("projects");
+			const projects = frontmatter?.[projectFieldName];
+
+			// Get assignees field
+			const assigneeFieldName = this.plugin.settings.assigneeFieldName || "assignee";
+			const rawAssignee = frontmatter?.[assigneeFieldName];
+			let assignees: string[] | undefined;
+			if (rawAssignee) {
+				if (Array.isArray(rawAssignee)) {
+					assignees = rawAssignee.map(String);
+				} else {
+					assignees = [String(rawAssignee)];
+				}
+			}
+
 			items.push({
 				path: file.path,
 				title,
@@ -247,6 +321,8 @@ export class UpcomingView extends BasesViewBase {
 				status: isTask ? frontmatter?.status : undefined,
 				dueDate,
 				scheduledDate,
+				assignees,
+				projects,
 				sources: [{
 					type: "base",
 					path: "this",
@@ -943,32 +1019,31 @@ export class UpcomingView extends BasesViewBase {
 	}
 
 	/**
-	 * Render a single item.
-	 * Todoist-style: checkbox + title on left, date/project on right
-	 * Base notification items get special rendering (bell icon, item count)
+	 * Render a single item — Todoist-style 2-row layout.
+	 * Row 1: indicator + title + avatar stack (or base indicator)
+	 * Row 2: date/time (left) + project/context (right, grey)
 	 */
 	private renderItem(doc: Document, container: HTMLElement, item: AggregatedNotificationItem): void {
 		const itemEl = doc.createElement("div");
 		itemEl.className = `tn-upcoming-item${item.isTask ? " tn-upcoming-item--task" : ""}${item.isBaseNotification ? " tn-upcoming-item--base-notification" : ""}`;
 
-		// Main row: checkbox + title + right info
-		const mainRow = doc.createElement("div");
-		mainRow.className = "tn-upcoming-item__main";
+		// ── Row 1: indicator + title + avatars/base-indicator ──
+		const row1 = doc.createElement("div");
+		row1.className = "tn-upcoming-item__row1";
 
-		// Indicator: bell for base notifications, checkbox for tasks, file icon for notes
+		// Indicator: checkbox for tasks, circle for base notifications, file icon for notes
 		const indicator = doc.createElement("span");
 		indicator.className = "tn-upcoming-item__indicator";
 
 		if (item.isBaseNotification) {
-			// Base notification: same circle as tasks (right-side styling distinguishes it)
 			indicator.classList.add("tn-upcoming-item__indicator--task");
 			setIcon(indicator, "circle");
 			indicator.addEventListener("click", (e) => {
 				e.stopPropagation();
-				this.handleOpenBase(item);
+				const newLeaf = e.ctrlKey || e.metaKey;
+				this.handleOpenBase(item, newLeaf);
 			});
 		} else if (item.isTask) {
-			// Regular task: checkbox
 			indicator.classList.add("tn-upcoming-item__indicator--task");
 			setIcon(indicator, "circle");
 			indicator.addEventListener("click", (e) => {
@@ -976,60 +1051,43 @@ export class UpcomingView extends BasesViewBase {
 				this.handleComplete(item);
 			});
 		} else {
-			// Non-task note: file icon
 			indicator.classList.add("tn-upcoming-item__indicator--note");
 			setIcon(indicator, "file-text");
 		}
-		mainRow.appendChild(indicator);
+		row1.appendChild(indicator);
 
-		// Title - clean text only (no inline badge)
+		// Title
 		const titleEl = doc.createElement("span");
 		titleEl.className = "tn-upcoming-item__title";
 		titleEl.textContent = String(item.title ?? "Untitled");
-		titleEl.addEventListener("click", () => {
+		titleEl.addEventListener("click", (event) => {
+			const newLeaf = event.ctrlKey || event.metaKey;
 			if (item.isBaseNotification) {
-				this.handleOpenBase(item);
+				this.handleOpenBase(item, newLeaf);
 			} else {
-				this.handleOpen(item);
+				this.handleOpen(item, newLeaf);
 			}
 		});
-		mainRow.appendChild(titleEl);
+		row1.appendChild(titleEl);
 
-		// Right side: source/project indicator (Todoist shows project on right)
-		if (item.isBaseNotification) {
-			// Base notification: icon + count on right
-			const baseIndicator = doc.createElement("span");
-			baseIndicator.className = "tn-upcoming-item__base-indicator";
-
-			// Icon (layers/database icon to indicate it's a base)
-			const iconSpan = doc.createElement("span");
-			setIcon(iconSpan, "layers");
-			baseIndicator.appendChild(iconSpan);
-
-			// Count
-			if (item.matchCount !== undefined) {
-				const countEl = doc.createElement("span");
-				countEl.className = "tn-upcoming-item__base-indicator__count";
-				countEl.textContent = String(item.matchCount);
-				baseIndicator.appendChild(countEl);
-			}
-
-			mainRow.appendChild(baseIndicator);
-		} else {
-			// Regular items: show source name
-			const rightSide = doc.createElement("span");
-			rightSide.className = "tn-upcoming-item__project";
-			const sourceName = item.sources[0]?.name || "";
-			rightSide.textContent = sourceName.length > 20 ? sourceName.substring(0, 17) + "..." : sourceName;
-			rightSide.title = item.sources.map(s => s.name).join(", ");
-			mainRow.appendChild(rightSide);
+		// Right side of Row 1: avatar stack (for ALL items with assignees)
+		const assigneeNames = this.extractAssigneeNames(item.assignees);
+		if (assigneeNames.length > 0) {
+			const avatarsContainer = doc.createElement("div");
+			avatarsContainer.className = "tn-upcoming-item__avatars";
+			const stack = createAvatarStack(assigneeNames, { size: "xs", maxShow: 3 });
+			avatarsContainer.appendChild(stack);
+			row1.appendChild(avatarsContainer);
 		}
 
-		itemEl.appendChild(mainRow);
+		itemEl.appendChild(row1);
 
-		// Secondary row: Todoist-style date display
-		// - Date-specific sections (Today, Tomorrow): show time only if present (no date needed - header has it)
-		// - Category sections (Overdue, This week, This month, Later): show actual date (header doesn't have specific date)
+		// ── Row 2: date/time (left) + context/project (right) ──
+		const row2 = doc.createElement("div");
+		row2.className = "tn-upcoming-item__row2";
+
+		// Left side: date/time display
+		const dateEl = doc.createElement("span");
 		const itemHasTime = item.dueDate && hasTimeComponent(item.dueDate);
 		const isDateSpecificSection = item.timeCategory === "today" || item.timeCategory === "tomorrow";
 		const isCategorySection = item.timeCategory === "overdue" || item.timeCategory === "thisWeek" ||
@@ -1037,37 +1095,67 @@ export class UpcomingView extends BasesViewBase {
 		const needsDateDisplay = isCategorySection && item.dueDate;
 
 		if (itemHasTime || needsDateDisplay) {
-			const dateRow = doc.createElement("div");
-			dateRow.className = `tn-upcoming-item__date tn-upcoming-item__date--${item.timeCategory}`;
+			dateEl.className = `tn-upcoming-item__date tn-upcoming-item__date--${item.timeCategory}`;
 
 			if (itemHasTime) {
-				// Show time with clock icon
 				const clockIcon = doc.createElement("span");
 				clockIcon.className = "tn-upcoming-item__date-icon";
 				setIcon(clockIcon, "clock");
-				dateRow.appendChild(clockIcon);
+				dateEl.appendChild(clockIcon);
 
-				// Format time using user's preference (12h/24h)
 				const timeFormat = this.plugin.settings.calendarViewSettings?.timeFormat || "12";
 				const parsedDate = parseDate(item.dueDate!);
 				const timeStr = formatTime(parsedDate, timeFormat as "12" | "24");
-				dateRow.appendChild(doc.createTextNode(` ${timeStr}`));
+				dateEl.appendChild(doc.createTextNode(` ${timeStr}`));
 
-				// For category sections with time, also show the date after the time
 				if (!isDateSpecificSection && item.dueDate) {
 					const settings = this.getDateSettings();
 					const formattedDate = formatDateForUpcomingView(item.dueDate, settings, false);
-					dateRow.appendChild(doc.createTextNode(` • ${formattedDate}`));
+					dateEl.appendChild(doc.createTextNode(` • ${formattedDate}`));
 				}
 			} else if (needsDateDisplay) {
-				// Show formatted date for items in category sections (Overdue, This week, etc.)
 				const settings = this.getDateSettings();
 				const formattedDate = formatDateForUpcomingView(item.dueDate, settings, false);
-				dateRow.textContent = formattedDate;
+				dateEl.textContent = formattedDate;
+			}
+		}
+		row2.appendChild(dateEl);
+
+		// Right side: base indicator (for base notifications) or project/context (grey text)
+		if (item.isBaseNotification) {
+			const baseIndicator = doc.createElement("span");
+			baseIndicator.className = "tn-upcoming-item__base-indicator";
+
+			if (item.matchCount !== undefined) {
+				const countEl = doc.createElement("span");
+				countEl.className = "tn-upcoming-item__base-indicator__count";
+				countEl.textContent = String(item.matchCount);
+				baseIndicator.appendChild(countEl);
 			}
 
-			itemEl.appendChild(dateRow);
+			const iconSpan = doc.createElement("span");
+			setIcon(iconSpan, "layers");
+			baseIndicator.appendChild(iconSpan);
+
+			baseIndicator.addEventListener("click", (e) => {
+				e.stopPropagation();
+				const newLeaf = e.ctrlKey || e.metaKey;
+				this.handleOpenBase(item, newLeaf);
+			});
+
+			row2.appendChild(baseIndicator);
+		} else {
+			const projectName = this.extractProjectName(item.projects);
+			if (projectName) {
+				const contextEl = doc.createElement("span");
+				contextEl.className = "tn-upcoming-item__context";
+				contextEl.textContent = projectName.length > 25 ? projectName.substring(0, 22) + "..." : projectName;
+				contextEl.title = projectName;
+				row2.appendChild(contextEl);
+			}
 		}
+
+		itemEl.appendChild(row2);
 
 		// Context menu (right-click)
 		itemEl.addEventListener("contextmenu", (e) => {
@@ -1221,6 +1309,26 @@ export class UpcomingView extends BasesViewBase {
 				});
 		});
 
+		// Edit task (opens full edit modal)
+		menu.addItem((menuItem) => {
+			menuItem
+				.setTitle("Edit task")
+				.setIcon("pencil")
+				.onClick(() => {
+					this.handleEditTask(item);
+				});
+		});
+
+		// Assign submenu
+		menu.addItem((menuItem) => {
+			menuItem
+				.setTitle("Assign")
+				.setIcon("user");
+
+			const submenu = (menuItem as any).setSubmenu();
+			this.addAssignSubmenu(submenu, item);
+		});
+
 		menu.addSeparator();
 
 		// Mark as resolved (complete the notification task)
@@ -1352,6 +1460,155 @@ export class UpcomingView extends BasesViewBase {
 	}
 
 	/**
+	 * Open the edit task modal for an item.
+	 */
+	private async handleEditTask(item: AggregatedNotificationItem): Promise<void> {
+		const task = await this.plugin.cacheManager.getTaskInfo(item.path);
+		if (task) {
+			this.plugin.openTaskEditModal(task);
+		} else {
+			// Fallback: just open the note
+			this.handleOpen(item);
+		}
+	}
+
+	/**
+	 * Add assign submenu items for an upcoming view item.
+	 */
+	private addAssignSubmenu(menu: Menu, item: AggregatedNotificationItem): void {
+		const assigneeFieldName = this.plugin.settings.assigneeFieldName || "assignee";
+
+		// Get current assignees from frontmatter (normalize to array)
+		const file = this.plugin.app.vault.getAbstractFileByPath(item.path);
+		const frontmatter = file instanceof TFile
+			? this.plugin.app.metadataCache.getFileCache(file)?.frontmatter
+			: null;
+		const currentAssignee = frontmatter?.[assigneeFieldName];
+		const currentAssignees: string[] = Array.isArray(currentAssignee)
+			? currentAssignee
+			: currentAssignee ? [currentAssignee] : [];
+
+		// Discover persons
+		const persons = this.plugin.personNoteService?.discoverPersons() || [];
+
+		// Unassign all option
+		if (currentAssignees.length > 0) {
+			menu.addItem((subItem: any) => {
+				subItem.setTitle("Unassign all");
+				subItem.setIcon("user-x");
+				subItem.onClick(async () => {
+					await this.toggleItemAssignee(item, null, []);
+				});
+			});
+			menu.addSeparator();
+		}
+
+		// People
+		for (const person of persons) {
+			const personPath = person.path.replace(/\.md$/, "");
+			const isAssigned = currentAssignees.some(a => a.includes(personPath));
+
+			menu.addItem((subItem: any) => {
+				subItem.setTitle(person.displayName);
+				subItem.setIcon(isAssigned ? "check" : "user");
+				subItem.onClick(async () => {
+					await this.toggleItemAssignee(item, person.path, currentAssignees);
+				});
+			});
+		}
+
+		// Groups
+		const groups = this.plugin.groupRegistry?.getAllGroups() || [];
+		if (groups.length > 0 && persons.length > 0) {
+			menu.addSeparator();
+		}
+		for (const group of groups) {
+			const groupPath = group.notePath.replace(/\.md$/, "");
+			const isAssigned = currentAssignees.some(a => a.includes(groupPath));
+
+			menu.addItem((subItem: any) => {
+				subItem.setTitle(group.displayName);
+				subItem.setIcon(isAssigned ? "check" : "users");
+				subItem.onClick(async () => {
+					await this.toggleItemAssignee(item, group.notePath, currentAssignees);
+				});
+			});
+		}
+
+		if (persons.length === 0 && groups.length === 0) {
+			menu.addItem((subItem: any) => {
+				subItem.setTitle("No people or groups found");
+				subItem.setDisabled(true);
+			});
+		}
+	}
+
+	/**
+	 * Toggle an assignee in/out of the assignees list using shortest wikilink format.
+	 * Pass filePath=null to clear all assignees.
+	 */
+	private async toggleItemAssignee(
+		item: AggregatedNotificationItem,
+		filePath: string | null,
+		currentAssignees: string[]
+	): Promise<void> {
+		const assigneeFieldName = this.plugin.settings.assigneeFieldName || "assignee";
+		const file = this.plugin.app.vault.getAbstractFileByPath(item.path);
+		if (!(file instanceof TFile)) return;
+
+		try {
+			let actionLabel = "";
+
+			await this.plugin.app.fileManager.processFrontMatter(file, (fm) => {
+				if (filePath === null) {
+					delete fm[assigneeFieldName];
+					actionLabel = "unassigned";
+					return;
+				}
+
+				const targetPath = filePath.replace(/\.md$/, "");
+				const alreadyIndex = currentAssignees.findIndex(a => a.includes(targetPath));
+
+				// Generate shortest wikilink
+				const targetFile = this.plugin.app.vault.getAbstractFileByPath(filePath);
+				const linktext = targetFile instanceof TFile
+					? this.plugin.app.metadataCache.fileToLinktext(targetFile, file.path, true)
+					: targetPath;
+				const wikilink = `[[${linktext}]]`;
+				const displayName = this.extractAssigneeNames([wikilink])[0] || linktext;
+
+				if (alreadyIndex >= 0) {
+					// Remove this assignee
+					const updated = currentAssignees.filter((_, i) => i !== alreadyIndex);
+					if (updated.length === 0) {
+						delete fm[assigneeFieldName];
+					} else if (updated.length === 1) {
+						fm[assigneeFieldName] = updated[0];
+					} else {
+						fm[assigneeFieldName] = updated;
+					}
+					actionLabel = `Removed ${displayName}`;
+				} else {
+					// Add this assignee
+					const updated = [...currentAssignees, wikilink];
+					if (updated.length === 1) {
+						fm[assigneeFieldName] = updated[0];
+					} else {
+						fm[assigneeFieldName] = updated;
+					}
+					actionLabel = `Added ${displayName}`;
+				}
+			});
+
+			new Notice(actionLabel || "Updated assignees");
+			await this.render();
+		} catch (error) {
+			this.plugin.debugLog.error("UpcomingView", "Error toggling assignee:", error);
+			new Notice("Failed to update assignee");
+		}
+	}
+
+	/**
 	 * Render empty state.
 	 */
 	private renderEmptyState(doc: Document): void {
@@ -1399,21 +1656,21 @@ export class UpcomingView extends BasesViewBase {
 
 	// Action handlers
 
-	private handleOpen(item: AggregatedNotificationItem): void {
+	private handleOpen(item: AggregatedNotificationItem, newLeaf = false): void {
 		const file = this.plugin.app.vault.getAbstractFileByPath(item.path);
 		if (file instanceof TFile) {
-			this.plugin.app.workspace.getLeaf(false).openFile(file);
+			this.plugin.app.workspace.getLeaf(newLeaf).openFile(file);
 		}
 	}
 
 	/**
 	 * Open the source .base file for a base notification item.
 	 */
-	private handleOpenBase(item: AggregatedNotificationItem): void {
+	private handleOpenBase(item: AggregatedNotificationItem, newLeaf = false): void {
 		if (item.sourceBasePath) {
 			const file = this.plugin.app.vault.getAbstractFileByPath(item.sourceBasePath);
 			if (file instanceof TFile) {
-				this.plugin.app.workspace.getLeaf(false).openFile(file);
+				this.plugin.app.workspace.getLeaf(newLeaf).openFile(file);
 				return;
 			}
 		}
@@ -1423,14 +1680,14 @@ export class UpcomingView extends BasesViewBase {
 		if (baseSource?.path) {
 			const file = this.plugin.app.vault.getAbstractFileByPath(baseSource.path);
 			if (file instanceof TFile) {
-				this.plugin.app.workspace.getLeaf(false).openFile(file);
+				this.plugin.app.workspace.getLeaf(newLeaf).openFile(file);
 				return;
 			}
 		}
 
 		// If no base found, just open the item itself
 		new Notice("Could not find source base file");
-		this.handleOpen(item);
+		this.handleOpen(item, newLeaf);
 	}
 
 	/**

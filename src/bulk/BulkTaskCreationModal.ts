@@ -10,6 +10,9 @@ import TaskNotesPlugin from "../main";
 import { BasesDataItem } from "../bases/helpers";
 import { BulkTaskEngine, BulkCreationOptions, BulkCreationResult } from "./bulk-task-engine";
 import { BulkConvertEngine, BulkConvertOptions, BulkConvertResult, ConvertPreCheckResult } from "./bulk-convert-engine";
+import { PersonNoteInfo } from "../identity/PersonNoteService";
+import { GroupNoteMapping } from "../identity/GroupRegistry";
+import { createPersonGroupPicker } from "../ui/PersonGroupPicker";
 
 type BulkMode = "generate" | "convert";
 
@@ -36,6 +39,14 @@ export class BulkTaskCreationModal extends Modal {
 	// Generate-mode options
 	private skipExisting = true;
 	private useParentAsProject = true;
+	private selectedAssignees: string[] = []; // Paths to person/group notes
+
+	// PersonGroupPicker instance for cleanup
+	private assigneePicker: { getSelection: () => string[]; setSelection: (paths: string[]) => void; destroy: () => void } | null = null;
+
+	// Discovered persons and groups for assignee dropdown
+	private discoveredPersons: PersonNoteInfo[] = [];
+	private discoveredGroups: GroupNoteMapping[] = [];
 
 	// Convert-mode options
 	private skipAlreadyTasks = true;
@@ -73,6 +84,11 @@ export class BulkTaskCreationModal extends Modal {
 		contentEl.empty();
 		contentEl.addClass("tn-bulk-creation-modal");
 
+		// Discover persons synchronously (fast - reads from cache/files)
+		this.discoveredPersons = this.plugin.personNoteService?.discoverPersons() || [];
+		// Start with empty groups - will update async
+		this.discoveredGroups = [];
+
 		// Header + item count
 		contentEl.createEl("h2", { text: "Bulk tasking" });
 		contentEl.createDiv({
@@ -102,9 +118,29 @@ export class BulkTaskCreationModal extends Modal {
 
 		// Initial pre-check
 		this.runPreCheck();
+
+		// Discover groups asynchronously and rebuild options when done
+		this.discoverGroupsAsync();
+	}
+
+	/**
+	 * Discover groups asynchronously and rebuild the options section.
+	 */
+	private async discoverGroupsAsync() {
+		if (this.plugin.groupRegistry) {
+			this.discoveredGroups = await this.plugin.groupRegistry.discoverGroups();
+			// Rebuild options to include groups in the picker
+			if (this.discoveredGroups.length > 0 && this.mode === "generate") {
+				this.rebuildOptions();
+			}
+		}
 	}
 
 	onClose() {
+		// Clean up PersonGroupPicker
+		this.assigneePicker?.destroy();
+		this.assigneePicker = null;
+
 		const { contentEl } = this;
 		contentEl.empty();
 	}
@@ -230,6 +266,39 @@ export class BulkTaskCreationModal extends Modal {
 					this.useParentAsProject = value;
 				})
 			);
+
+		// Assignee dropdown (only show if persons or groups exist)
+		const hasAssignees = this.discoveredPersons.length > 0 || this.discoveredGroups.length > 0;
+		if (hasAssignees) {
+			this.renderAssigneeDropdown(container);
+		}
+	}
+
+	/**
+	 * Render the assignee picker with multi-select support.
+	 */
+	private renderAssigneeDropdown(container: HTMLElement) {
+		const setting = new Setting(container)
+			.setName("Assign to")
+			.setDesc("Assign all created tasks to people or groups");
+
+		// Create picker container in the control element
+		const pickerContainer = setting.controlEl.createDiv({
+			cls: "tn-assignee-picker-container",
+		});
+
+		// Create the PersonGroupPicker
+		this.assigneePicker = createPersonGroupPicker({
+			container: pickerContainer,
+			persons: this.discoveredPersons,
+			groups: this.discoveredGroups,
+			multiSelect: true,
+			placeholder: "Search people or groups...",
+			initialSelection: this.selectedAssignees,
+			onChange: (selectedPaths) => {
+				this.selectedAssignees = selectedPaths;
+			},
+		});
 	}
 
 	/**
@@ -585,6 +654,7 @@ export class BulkTaskCreationModal extends Modal {
 		const options: BulkCreationOptions = {
 			skipExisting: this.skipExisting,
 			useParentAsProject: this.useParentAsProject,
+			assignees: this.selectedAssignees.length > 0 ? this.selectedAssignees : undefined,
 			onProgress: (current, total, status) => {
 				const percent = Math.round((current / total) * 100);
 				if (progressInner) {

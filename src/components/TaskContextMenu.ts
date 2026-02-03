@@ -338,7 +338,26 @@ export class TaskContextMenu {
 			});
 		});
 
+		// Assign submenu
+		this.menu.addItem((item) => {
+			item.setTitle("Assign");
+			item.setIcon("user");
+
+			const submenu = (item as any).setSubmenu();
+			this.addAssignOptions(submenu, task, plugin);
+		});
+
 		this.menu.addSeparator();
+
+		// Edit task (opens full edit modal)
+		this.menu.addItem((item) => {
+			item.setTitle("Edit task");
+			item.setIcon("pencil");
+			item.onClick(() => {
+				this.menu.hide();
+				plugin.openTaskEditModal(task);
+			});
+		});
 
 		// Open Note
 		this.menu.addItem((item) => {
@@ -930,6 +949,158 @@ export class TaskContextMenu {
 				void this.openSubtaskAssignmentSelector(task, plugin);
 			});
 		});
+	}
+
+	private addAssignOptions(menu: Menu, task: TaskInfo, plugin: TaskNotesPlugin): void {
+		const assigneeFieldName = plugin.settings.assigneeFieldName || "assignee";
+
+		// Get current assignees from frontmatter (normalize to array)
+		const file = plugin.app.vault.getAbstractFileByPath(task.path);
+		const frontmatter = file instanceof TFile
+			? plugin.app.metadataCache.getFileCache(file)?.frontmatter
+			: null;
+		const currentAssignee = frontmatter?.[assigneeFieldName];
+		const currentAssignees: string[] = Array.isArray(currentAssignee)
+			? currentAssignee
+			: currentAssignee ? [currentAssignee] : [];
+
+		// Discover persons
+		const persons = plugin.personNoteService?.discoverPersons() || [];
+
+		// Unassign all option (only if currently assigned)
+		if (currentAssignees.length > 0) {
+			menu.addItem((subItem: any) => {
+				subItem.setTitle("Unassign all");
+				subItem.setIcon("user-x");
+				subItem.onClick(async () => {
+					await this.toggleAssignee(task, plugin, null, []);
+				});
+			});
+
+			menu.addSeparator();
+		}
+
+		// People section
+		if (persons.length > 0) {
+			for (const person of persons) {
+				const personPath = person.path.replace(/\.md$/, "");
+				const isAssigned = currentAssignees.some(a => a.includes(personPath));
+
+				menu.addItem((subItem: any) => {
+					subItem.setTitle(person.displayName);
+					subItem.setIcon(isAssigned ? "check" : "user");
+					subItem.onClick(async () => {
+						await this.toggleAssignee(task, plugin, person.path, currentAssignees);
+					});
+				});
+			}
+		}
+
+		// Groups section (sync discovery — may be empty if not yet loaded)
+		const groups = plugin.groupRegistry?.getAllGroups() || [];
+		if (groups.length > 0 && persons.length > 0) {
+			menu.addSeparator();
+		}
+		for (const group of groups) {
+			const groupPath = group.notePath.replace(/\.md$/, "");
+			const isAssigned = currentAssignees.some(a => a.includes(groupPath));
+
+			menu.addItem((subItem: any) => {
+				subItem.setTitle(group.displayName);
+				subItem.setIcon(isAssigned ? "check" : "users");
+				subItem.onClick(async () => {
+					await this.toggleAssignee(task, plugin, group.notePath, currentAssignees);
+				});
+			});
+		}
+
+		if (persons.length === 0 && groups.length === 0) {
+			menu.addItem((subItem: any) => {
+				subItem.setTitle("No people or groups found");
+				subItem.setDisabled(true);
+			});
+		}
+	}
+
+	/**
+	 * Toggle an assignee in/out of the assignees list using shortest wikilink format.
+	 * Pass filePath=null to clear all assignees.
+	 */
+	private async toggleAssignee(
+		task: TaskInfo,
+		plugin: TaskNotesPlugin,
+		filePath: string | null,
+		currentAssignees: string[]
+	): Promise<void> {
+		const assigneeFieldName = plugin.settings.assigneeFieldName || "assignee";
+		const file = plugin.app.vault.getAbstractFileByPath(task.path);
+		if (!(file instanceof TFile)) return;
+
+		try {
+			let displayName = "";
+
+			await plugin.app.fileManager.processFrontMatter(file, (fm) => {
+				if (filePath === null) {
+					// Clear all
+					delete fm[assigneeFieldName];
+					return;
+				}
+
+				const targetPath = filePath.replace(/\.md$/, "");
+				const alreadyIndex = currentAssignees.findIndex(a => a.includes(targetPath));
+
+				// Generate shortest wikilink
+				const targetFile = plugin.app.vault.getAbstractFileByPath(filePath);
+				const linktext = targetFile instanceof TFile
+					? plugin.app.metadataCache.fileToLinktext(targetFile, file.path, true)
+					: targetPath;
+				const wikilink = `[[${linktext}]]`;
+				displayName = this.extractName(wikilink);
+
+				if (alreadyIndex >= 0) {
+					// Remove this assignee
+					const updated = currentAssignees.filter((_, i) => i !== alreadyIndex);
+					if (updated.length === 0) {
+						delete fm[assigneeFieldName];
+					} else if (updated.length === 1) {
+						fm[assigneeFieldName] = updated[0];
+					} else {
+						fm[assigneeFieldName] = updated;
+					}
+					displayName = ""; // signal removal
+				} else {
+					// Add this assignee
+					const updated = [...currentAssignees, wikilink];
+					if (updated.length === 1) {
+						fm[assigneeFieldName] = updated[0];
+					} else {
+						fm[assigneeFieldName] = updated;
+					}
+				}
+			});
+
+			this.options.onUpdate?.();
+			if (filePath === null) {
+				new Notice("Unassigned all");
+			} else if (displayName) {
+				new Notice(`Added ${displayName}`);
+			} else {
+				new Notice("Removed assignee");
+			}
+		} catch (error) {
+			console.error("Error toggling assignee:", error);
+			new Notice("Failed to update assignee");
+		}
+	}
+
+	private extractName(wikilink: string): string {
+		const match = wikilink.match(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/);
+		if (match) {
+			if (match[2]) return match[2];
+			const parts = match[1].split("/");
+			return parts[parts.length - 1].replace(/\.md$/, "");
+		}
+		return wikilink;
 	}
 
 	private async openProjectSelector(task: TaskInfo, plugin: TaskNotesPlugin): Promise<void> {

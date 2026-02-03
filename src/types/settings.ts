@@ -99,6 +99,8 @@ export interface DeviceUserMapping {
 	deviceName: string;
 	lastSeen: number;
 	userDisplayName?: string;
+	/** Custom avatar color (hex). If not set, color is generated from name. */
+	avatarColor?: string;
 }
 
 /**
@@ -337,6 +339,8 @@ export interface AggregatedNotificationItem {
 	dueDate?: string;
 	scheduledDate?: string;
 	assignees?: string[];
+	/** Project(s) this task belongs to - shown as grey text in UpcomingView */
+	projects?: string | string[];
 	/** Sources that triggered this notification (may come from multiple bases) */
 	sources: NotificationSource[];
 	/** Time-based grouping category */
@@ -367,6 +371,10 @@ export interface VaultWideNotificationSettings {
 	defaultReminderTime: string; // HH:MM format
 	/** Path to the .base file to open when clicking toast (optional, uses convention if not set) */
 	upcomingViewPath?: string;
+	/** Only notify for tasks assigned to current device's user (or groups containing them) */
+	onlyNotifyIfAssignedToMe: boolean;
+	/** Whether to notify for tasks with no assignee (when onlyNotifyIfAssignedToMe is true) */
+	notifyForUnassignedTasks: boolean;
 }
 
 export interface DefaultReminder {

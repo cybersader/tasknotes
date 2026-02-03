@@ -1466,3 +1466,56 @@ select.tasknotes-settings__card-input {
         transition: none;
     }
 }
+
+/* ================================================
+   IDENTITY AVATAR ROW (Team & Attribution settings)
+   ================================================ */
+
+.tasknotes-identity-avatar-row {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--tn-spacing-sm);
+    padding: var(--tn-spacing-xs) var(--tn-spacing-sm);
+    border-radius: var(--radius-m);
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+    margin-right: var(--tn-spacing-sm);
+}
+
+.tasknotes-identity-avatar-row:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+.tasknotes-identity-avatar-row:focus-visible {
+    outline: 2px solid var(--text-accent);
+    outline-offset: 2px;
+}
+
+.tasknotes-identity-name {
+    font-weight: 500;
+    color: var(--text-normal);
+    white-space: nowrap;
+}
+
+/* Identity edit section (expandable) */
+.tasknotes-identity-edit {
+    margin-top: var(--tn-spacing-sm);
+    padding: var(--tn-spacing-md);
+    background: var(--background-secondary);
+    border-radius: var(--radius-m);
+    border: 1px solid var(--background-modifier-border);
+}
+
+.tasknotes-identity-edit .setting-item {
+    border-top: none;
+    padding-top: var(--tn-spacing-xs);
+}
+
+.tasknotes-identity-edit .setting-item:first-child {
+    padding-top: 0;
+}
+
+.tasknotes-identity-edit .setting-item:last-child {
+    padding-bottom: 0;
+    border-bottom: none;
+}

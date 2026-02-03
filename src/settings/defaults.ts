@@ -236,6 +236,8 @@ export const DEFAULT_VAULT_WIDE_NOTIFICATIONS: VaultWideNotificationSettings = {
 		viewEntry: true,
 	},
 	defaultReminderTime: "09:00",
+	onlyNotifyIfAssignedToMe: false, // Default: notify for all tasks
+	notifyForUnassignedTasks: true, // When filtering, still show unassigned tasks
 };
 
 // Default NLP triggers configuration
