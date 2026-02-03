@@ -103,6 +103,7 @@ import { UserRegistry } from "./identity/UserRegistry";
 import { GroupRegistry } from "./identity/GroupRegistry";
 import { PersonNoteService } from "./identity/PersonNoteService";
 import { NoteUuidService } from "./identity/NoteUuidService";
+import { DevicePreferencesManager } from "./identity/DevicePreferences";
 import { DebugLog } from "./utils/DebugLog";
 
 interface TranslatedCommandDefinition {
@@ -246,6 +247,7 @@ export default class TaskNotesPlugin extends Plugin {
 	groupRegistry: GroupRegistry;
 	personNoteService: PersonNoteService;
 	noteUuidService: NoteUuidService;
+	devicePrefs: DevicePreferencesManager;
 
 	// Debug logging utility (writes to debug.log file when enabled)
 	debugLog: DebugLog;
@@ -408,6 +410,7 @@ export default class TaskNotesPlugin extends Plugin {
 		this.groupRegistry = new GroupRegistry(this);
 		this.personNoteService = new PersonNoteService(this);
 		this.noteUuidService = new NoteUuidService(this);
+		this.devicePrefs = new DevicePreferencesManager(this);
 
 		// Initialize debug logging utility (writes to debug.log when enabled)
 		// Reads initial state from settings and persists changes back

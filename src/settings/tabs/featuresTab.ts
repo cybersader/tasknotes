@@ -449,14 +449,89 @@ export function renderFeaturesTab(
 						options: [
 							{ value: "in-app", label: translate("settings.features.notifications.inAppLabel") },
 							{ value: "system", label: translate("settings.features.notifications.systemLabel") },
+							{ value: "both", label: "Both (system + in-app)" },
 						],
 						getValue: () => plugin.settings.notificationType,
 						setValue: async (value: string) => {
-							plugin.settings.notificationType = value as "in-app" | "system";
+							plugin.settings.notificationType = value as "in-app" | "system" | "both";
 							save();
 						},
 					})
 				);
+
+				// Test notification button
+				group.addSetting((setting) => {
+					setting
+						.setName("Test notification")
+						.setDesc("Tests the vault-wide delivery type shown above. Per-device overrides are tested in Team & Attribution.")
+						.addButton((button) =>
+							button
+								.setButtonText("Send test")
+								.onClick(() => {
+									const type = plugin.settings.notificationType || "in-app";
+									sendTestNotification(type, plugin);
+								})
+						);
+				});
+
+				// System notification troubleshooting (show when system or both selected)
+				if (plugin.settings.notificationType === "system" || plugin.settings.notificationType === "both") {
+					group.addSetting((setting) => {
+						const descEl = setting.descEl;
+						setting.setName("System notification troubleshooting");
+						const permStatus = "Notification" in window ? Notification.permission : "unavailable";
+						descEl.appendText(`Browser permission: ${permStatus}. `);
+
+						const detailsEl = descEl.createEl("details");
+						detailsEl.createEl("summary", {
+							text: "Not seeing system notifications?",
+						});
+						const list = detailsEl.createEl("ul");
+						list.style.marginTop = "4px";
+						list.style.paddingLeft = "16px";
+						list.createEl("li", {
+							text: "Windows: Settings \u2192 System \u2192 Notifications. Make sure Obsidian is listed and allowed, banners are enabled, and Do Not Disturb / Focus Assist is off.",
+						});
+						list.createEl("li", {
+							text: "macOS: System Settings \u2192 Notifications \u2192 Obsidian. Ensure alerts are enabled and Focus is off.",
+						});
+						list.createEl("li", {
+							text: "Linux: Check your desktop environment's notification daemon is running.",
+						});
+
+						const knownIssueLi = list.createEl("li");
+						knownIssueLi.appendText("Known Electron limitation: On Windows, Obsidian may not register as a notification sender with the OS. If Obsidian does not appear in your Windows notification settings, system notifications will silently fail. This is an ");
+						knownIssueLi.createEl("a", {
+							text: "upstream Electron issue",
+							href: "https://github.com/electron/electron/issues/4973",
+						});
+						knownIssueLi.appendText(" that requires a fix from the Obsidian team (");
+						knownIssueLi.createEl("a", {
+							text: "related discussion",
+							href: "https://github.com/uphy/obsidian-reminder/issues/73",
+						});
+						knownIssueLi.appendText("). Use \"In-app\" or \"Both\" as a workaround.");
+
+						list.createEl("li", {
+							text: "Obsidian cannot detect if your OS silently suppressed a notification (e.g., via Do Not Disturb). If the test fires but nothing appears, the OS is blocking it.",
+						});
+					});
+				}
+
+				// Cross-link to per-device scope settings
+				group.addSetting((setting) => {
+					const descEl = setting.descEl;
+					setting.setName("Per-device scope");
+					descEl.appendText("In shared vaults, each device can override the notification type and filter by assignment. ");
+					const linkEl = descEl.createEl("a", {
+						text: "Team & Attribution \u2192",
+						href: "#",
+					});
+					linkEl.addEventListener("click", (e) => {
+						e.preventDefault();
+						navigateToNotificationScope(plugin);
+					});
+				});
 			}
 		}
 	);
@@ -647,4 +722,107 @@ export function renderFeaturesTab(
 			}
 		}
 	);
+}
+
+/**
+ * Send a test notification with diagnostic feedback.
+ * Shared by both Features and Team & Attribution test buttons.
+ */
+export function sendTestNotification(type: "in-app" | "system" | "both", plugin: TaskNotesPlugin): void {
+	const message = "This is a test notification from TaskNotes.";
+	const diagnostics: string[] = [];
+
+	if (type === "system" || type === "both") {
+		if (!("Notification" in window)) {
+			diagnostics.push("System: Notification API not available in this environment.");
+		} else {
+			diagnostics.push(`System: permission=${Notification.permission}`);
+			if (Notification.permission === "granted") {
+				try {
+					const n = new Notification("TaskNotes Test", { body: message });
+					n.onshow = () => diagnostics.push("System: onshow fired");
+					n.onerror = () => {
+						new Notice("System notification error. Your OS may be blocking Obsidian notifications.");
+					};
+					diagnostics.push("System: Notification constructor succeeded. If nothing appeared, your OS is suppressing it (DND, Focus Assist, or app-level block).");
+				} catch (err) {
+					diagnostics.push(`System: constructor threw: ${err}`);
+					new Notice(`System notification failed: ${err}`);
+				}
+			} else if (Notification.permission === "default") {
+				Notification.requestPermission().then((perm) => {
+					if (perm === "granted") {
+						new Notification("TaskNotes Test", { body: message });
+						new Notice("System: permission granted. Notification sent.");
+					} else {
+						new Notice(`System: permission ${perm}. Notifications won't work until allowed.`);
+					}
+				});
+				return; // async flow, skip the summary notice
+			} else {
+				diagnostics.push("System: permission denied. Re-enable in OS settings for Obsidian.");
+				new Notice("System notifications denied. Re-enable in your OS notification settings for Obsidian.");
+			}
+		}
+	}
+
+	if (type === "in-app" || type === "both") {
+		plugin.toastNotification.show({
+			message: "3 items need attention",
+			subtitleHtml: '<span class="tn-toast__overdue">1 overdue</span> \u00b7 2 due today',
+			timeout: 0,
+			actionLabel: "View",
+			onAction: () => {
+				plugin.toastNotification.dismiss();
+			},
+			showSnooze: true,
+			onSnooze: (minutes) => {
+				const label =
+					minutes >= 1440
+						? "until tomorrow"
+						: minutes >= 60
+							? `${Math.round(minutes / 60)} hour${Math.round(minutes / 60) > 1 ? "s" : ""}`
+							: `${minutes} minute${minutes > 1 ? "s" : ""}`;
+				new Notice(`Test: would snooze for ${label}`);
+			},
+		});
+		diagnostics.push("In-app: toast shown.");
+	}
+
+	// Show diagnostic summary
+	if (diagnostics.length > 0) {
+		console.log("[TaskNotes Test Notification]", diagnostics.join(" | "));
+	}
+}
+
+/**
+ * Navigate to Team & Attribution tab and scroll to Notification scope section
+ */
+function navigateToNotificationScope(plugin: TaskNotesPlugin): void {
+	const settingsTab = (plugin.app as any).setting?.activeTab;
+	if (settingsTab?.containerEl) {
+		const tabContent = settingsTab.containerEl.querySelector(
+			"#tab-content-team-attribution"
+		) as HTMLElement;
+		if (tabContent) {
+			tabContent.empty();
+		}
+		const tabButton = settingsTab.containerEl.querySelector(
+			"#tab-button-team-attribution"
+		) as HTMLElement;
+		if (tabButton) {
+			tabButton.click();
+			setTimeout(() => {
+				const headings = settingsTab.containerEl.querySelectorAll(
+					".setting-item-heading .setting-item-name"
+				);
+				for (const heading of headings) {
+					if (heading.textContent?.toLowerCase().includes("notification scope")) {
+						(heading as HTMLElement).scrollIntoView({ behavior: "smooth", block: "start" });
+						break;
+					}
+				}
+			}, 200);
+		}
+	}
 }

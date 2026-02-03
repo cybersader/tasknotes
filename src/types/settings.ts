@@ -230,7 +230,7 @@ export interface TaskNotesSettings {
 	savedViews: SavedView[];
 	// Notification settings
 	enableNotifications: boolean;
-	notificationType: "in-app" | "system";
+	notificationType: "in-app" | "system" | "both";
 	// HTTP API settings
 	enableAPI: boolean;
 	apiPort: number;

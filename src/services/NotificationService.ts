@@ -3,6 +3,7 @@ import { Notice, TFile, EventRef } from "obsidian";
 import TaskNotesPlugin from "../main";
 import { TaskInfo, Reminder, EVENT_TASK_UPDATED } from "../types";
 import { parseDateToLocal } from "../utils/dateUtils";
+import { shouldNotifyForTask } from "../utils/assigneeFilter";
 
 interface NotificationQueueItem {
 	taskPath: string;
@@ -35,7 +36,8 @@ export class NotificationService {
 		}
 
 		// Request notification permission if using system notifications
-		if (this.plugin.settings.notificationType === "system" && "Notification" in window) {
+		const effectiveType = this.plugin.devicePrefs.getNotificationType();
+		if ((effectiveType === "system" || effectiveType === "both") && "Notification" in window) {
 			if (Notification.permission === "default") {
 				await Notification.requestPermission();
 			}
@@ -113,9 +115,27 @@ export class NotificationService {
 		const now = Date.now();
 		const windowEnd = now + this.QUEUE_WINDOW;
 
+		// Assignee filtering setup (per-device via DevicePreferencesManager)
+		const filterByAssignee = this.plugin.devicePrefs.getFilterByAssignment();
+		const currentUser = filterByAssignee ? (this.plugin.userRegistry?.getCurrentUser() ?? null) : null;
+		const includeUnassigned = this.plugin.devicePrefs.getIncludeUnassignedTasks();
+		const assigneeFieldName = this.plugin.settings.assigneeFieldName || "assignee";
+
 		for (const task of tasks) {
 			if (!task.reminders || task.reminders.length === 0) {
 				continue;
+			}
+
+			// Skip tasks not assigned to current user (when filtering enabled)
+			if (filterByAssignee) {
+				const file = this.plugin.app.vault.getAbstractFileByPath(task.path);
+				if (file instanceof TFile) {
+					const cache = this.plugin.app.metadataCache.getFileCache(file);
+					const assigneeValue = cache?.frontmatter?.[assigneeFieldName];
+					if (!shouldNotifyForTask(assigneeValue, currentUser, includeUnassigned, this.plugin.groupRegistry ?? null)) {
+						continue;
+					}
+				}
 			}
 
 			for (const reminder of task.reminders) {
@@ -259,8 +279,9 @@ export class NotificationService {
 		const message =
 			item.reminder.description || this.generateDefaultMessage(task, item.reminder);
 
-		if (this.plugin.settings.notificationType === "system") {
-			// System notification
+		const notifType = this.plugin.devicePrefs.getNotificationType();
+
+		if (notifType === "system" || notifType === "both") {
 			if ("Notification" in window && Notification.permission === "granted") {
 				const notification = new Notification("TaskNotes Reminder", {
 					body: message,
@@ -272,12 +293,13 @@ export class NotificationService {
 					this.plugin.app.workspace.openLinkText(item.taskPath, "", false);
 					notification.close();
 				};
-			} else {
-				// Fallback to in-app notice if system notifications aren't available
+			} else if (notifType === "system") {
+				// Fallback to in-app only when system-only (not both)
 				this.showInAppNotice(message, item.taskPath);
 			}
-		} else {
-			// In-app notification
+		}
+
+		if (notifType === "in-app" || notifType === "both") {
 			this.showInAppNotice(message, item.taskPath);
 		}
 
@@ -288,7 +310,7 @@ export class NotificationService {
 				reminder: item.reminder,
 				notificationTime: new Date(item.notifyAt).toISOString(),
 				message,
-				notificationType: this.plugin.settings.notificationType,
+				notificationType: notifType,
 			});
 		}
 	}
@@ -375,6 +397,20 @@ export class NotificationService {
 
 				// Clear processed reminders for this task so they can trigger again if needed
 				this.clearProcessedRemindersForTask(path);
+
+				// Skip tasks not assigned to current user (per-device scope)
+				if (this.plugin.devicePrefs.getFilterByAssignment()) {
+					const currentUser = this.plugin.userRegistry?.getCurrentUser() ?? null;
+					const assigneeFieldName = this.plugin.settings.assigneeFieldName || "assignee";
+					const file = this.plugin.app.vault.getAbstractFileByPath(path);
+					if (file instanceof TFile) {
+						const cache = this.plugin.app.metadataCache.getFileCache(file);
+						const assigneeValue = cache?.frontmatter?.[assigneeFieldName];
+						if (!shouldNotifyForTask(assigneeValue, currentUser, this.plugin.devicePrefs.getIncludeUnassignedTasks(), this.plugin.groupRegistry ?? null)) {
+							return;
+						}
+					}
+				}
 
 				// Re-calculate notification times for the updated task within the current window
 				const now = Date.now();

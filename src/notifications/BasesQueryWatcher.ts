@@ -668,6 +668,17 @@ export class BasesQueryWatcher {
 	}
 
 	/**
+	 * Snooze all monitored bases at once.
+	 * Used by the toast notification's snooze-all action.
+	 */
+	snoozeAllBases(durationMinutes: number): void {
+		for (const [, monitored] of this.monitoredBases) {
+			monitored.snoozedUntil = Date.now() + durationMinutes * 60 * 1000;
+		}
+		this.plugin.debugLog.log("BasesQueryWatcher", `Snoozed all bases for ${durationMinutes} minutes`);
+	}
+
+	/**
 	 * Start periodic scan for changes that might have been missed.
 	 */
 	private startPeriodicScan(): void {

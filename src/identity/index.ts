@@ -36,6 +36,11 @@ export {
 	DEFAULT_PERSON_PREFERENCES,
 } from "./PersonNoteService";
 export { NoteUuidService } from "./NoteUuidService";
+export {
+	DevicePreferencesManager,
+	type DevicePreferences,
+	type NotificationScopePrefs,
+} from "./DevicePreferences";
 export type {
 	DeviceUserMapping,
 	GroupNoteMapping,

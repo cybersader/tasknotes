@@ -1,5 +1,24 @@
-import { setIcon } from "obsidian";
+import { Menu, Notice, setIcon } from "obsidian";
 import TaskNotesPlugin from "../main";
+
+/**
+ * Default snooze duration options shown in the toast snooze dropdown.
+ */
+const SNOOZE_OPTIONS: { label: string; getMinutes: () => number }[] = [
+	{ label: "15 minutes", getMinutes: () => 15 },
+	{ label: "1 hour", getMinutes: () => 60 },
+	{ label: "4 hours", getMinutes: () => 240 },
+	{
+		label: "Until tomorrow",
+		getMinutes: () => {
+			const now = new Date();
+			const tomorrow = new Date(now);
+			tomorrow.setDate(tomorrow.getDate() + 1);
+			tomorrow.setHours(9, 0, 0, 0);
+			return Math.round((tomorrow.getTime() - now.getTime()) / (1000 * 60));
+		},
+	},
+];
 
 /**
  * Toast notification configuration.
@@ -7,8 +26,10 @@ import TaskNotesPlugin from "../main";
 export interface ToastConfig {
 	/** Message to display */
 	message: string;
-	/** Optional subtitle/details */
+	/** Optional subtitle/details (plain text) */
 	subtitle?: string;
+	/** Optional subtitle as HTML (takes precedence over subtitle) */
+	subtitleHtml?: string;
 	/** Auto-dismiss timeout in ms (0 = no auto-dismiss) */
 	timeout?: number;
 	/** Show action button */
@@ -17,6 +38,10 @@ export interface ToastConfig {
 	onAction?: () => void;
 	/** Dismiss callback */
 	onDismiss?: () => void;
+	/** Show snooze dropdown button */
+	showSnooze?: boolean;
+	/** Snooze callback (duration in minutes) */
+	onSnooze?: (minutes: number) => void;
 }
 
 /**
@@ -58,19 +83,21 @@ export class ToastNotification {
 		// Build message
 		const message = `${counts.total} item${counts.total > 1 ? "s" : ""} need attention`;
 
-		// Build subtitle with breakdown
+		// Build subtitle with breakdown (overdue highlighted)
 		const parts: string[] = [];
-		if (counts.overdue > 0) parts.push(`${counts.overdue} overdue`);
+		if (counts.overdue > 0) parts.push(`<span class="tn-toast__overdue">${counts.overdue} overdue</span>`);
 		if (counts.today > 0) parts.push(`${counts.today} due today`);
 		if (counts.fromBases > 0) parts.push(`${counts.fromBases} from bases`);
-		const subtitle = parts.join(" · ");
+		const subtitleHtml = parts.join(" · ");
 
 		this.show({
 			message,
-			subtitle,
-			timeout: 10000, // 10 seconds
+			subtitleHtml,
+			timeout: 0, // Persist until user acts (WCAG 2.2.4)
 			actionLabel: "View",
 			onAction: () => this.openUpcomingView(),
+			showSnooze: true,
+			onSnooze: (minutes) => this.snoozeAll(minutes),
 		});
 		// Status bar is updated by checkAndShow(), not here (avoid double-update)
 	}
@@ -83,7 +110,7 @@ export class ToastNotification {
 		this.show({
 			message: taskTitle,
 			subtitle: context,
-			timeout: 10000,
+			timeout: 0, // Persist until user acts (WCAG 2.2.4)
 			actionLabel: "Open",
 			onAction: () => this.openUpcomingView(),
 		});
@@ -117,10 +144,14 @@ export class ToastNotification {
 		messageEl.textContent = config.message;
 		content.appendChild(messageEl);
 
-		if (config.subtitle) {
+		if (config.subtitleHtml || config.subtitle) {
 			const subtitleEl = doc.createElement("div");
 			subtitleEl.className = "tn-toast__subtitle";
-			subtitleEl.textContent = config.subtitle;
+			if (config.subtitleHtml) {
+				subtitleEl.innerHTML = config.subtitleHtml;
+			} else {
+				subtitleEl.textContent = config.subtitle!;
+			}
 			content.appendChild(subtitleEl);
 		}
 
@@ -142,10 +173,35 @@ export class ToastNotification {
 			actions.appendChild(actionBtn);
 		}
 
+		if (config.showSnooze && config.onSnooze) {
+			const snoozeBtn = doc.createElement("button");
+			snoozeBtn.className = "tn-toast__snooze";
+			const snoozeIcon = doc.createElement("span");
+			snoozeIcon.className = "tn-toast__snooze-icon";
+			setIcon(snoozeIcon, "clock");
+			snoozeBtn.appendChild(snoozeIcon);
+			snoozeBtn.appendText("Snooze");
+			snoozeBtn.addEventListener("click", (e) => {
+				e.stopPropagation();
+				const menu = new Menu();
+				for (const opt of SNOOZE_OPTIONS) {
+					menu.addItem((item) => {
+						item.setTitle(opt.label)
+							.setIcon("clock")
+							.onClick(() => {
+								config.onSnooze!(opt.getMinutes());
+								this.dismiss();
+							});
+					});
+				}
+				menu.showAtMouseEvent(e as MouseEvent);
+			});
+			actions.appendChild(snoozeBtn);
+		}
+
 		const dismissBtn = doc.createElement("button");
 		dismissBtn.className = "tn-toast__dismiss";
-		setIcon(dismissBtn, "x");
-		dismissBtn.title = "Dismiss";
+		dismissBtn.textContent = "Dismiss";
 		dismissBtn.addEventListener("click", (e) => {
 			e.stopPropagation();
 			this.dismiss();
@@ -238,6 +294,21 @@ export class ToastNotification {
 		} else {
 			this.statusBarItem.style.display = "none";
 		}
+	}
+
+	/**
+	 * Snooze all monitored bases and clear status bar.
+	 */
+	private snoozeAll(minutes: number): void {
+		this.plugin.basesQueryWatcher.snoozeAllBases(minutes);
+		this.updateStatusBar(0);
+		const label =
+			minutes >= 1440
+				? "until tomorrow"
+				: minutes >= 60
+					? `${Math.round(minutes / 60)} hour${Math.round(minutes / 60) > 1 ? "s" : ""}`
+					: `${minutes} minute${minutes > 1 ? "s" : ""}`;
+		new Notice(`Snoozed all notifications for ${label}`);
 	}
 
 	/**

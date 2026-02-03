@@ -2,10 +2,10 @@ import { TFile, parseYaml } from "obsidian";
 import TaskNotesPlugin from "../main";
 import {
 	AggregatedNotificationItem,
-	NotificationSource,
 	TimeCategory,
 } from "../types/settings";
 import { NotificationItem } from "../modals/BasesNotificationModal";
+import { shouldNotifyForTask } from "../utils/assigneeFilter";
 
 /**
  * Extended notification item with additional metadata for vault-wide aggregation.
@@ -91,9 +91,9 @@ export class VaultWideNotificationService {
 		// Deduplicate by path, merging sources
 		let deduped = this.deduplicateItems(allItems);
 
-		// Filter by assignee if enabled
-		if (settings.onlyNotifyIfAssignedToMe) {
-			deduped = await this.filterByAssignee(deduped, settings.notifyForUnassignedTasks);
+		// Filter by assignee if enabled (per-device via DevicePreferencesManager)
+		if (this.plugin.devicePrefs.getFilterByAssignment()) {
+			deduped = await this.filterByAssignee(deduped, this.plugin.devicePrefs.getIncludeUnassignedTasks());
 		}
 
 		// Sort by time category priority
@@ -102,22 +102,13 @@ export class VaultWideNotificationService {
 
 	/**
 	 * Filter items to only those assigned to the current device's user.
-	 * Also includes unassigned tasks if notifyForUnassigned is true.
+	 * Uses shared assigneeFilter utility (same logic as NotificationService).
 	 */
 	private async filterByAssignee(
 		items: AggregatedNotificationItem[],
 		notifyForUnassigned: boolean
 	): Promise<AggregatedNotificationItem[]> {
-		const currentUser = this.plugin.userRegistry?.getCurrentUser();
-
-		// If no user is registered for this device, can't filter - return all or none
-		if (!currentUser) {
-			this.plugin.debugLog.log(
-				"VaultWideNotificationService",
-				"No user registered for device - returning all items (can't filter)"
-			);
-			return items;
-		}
+		const currentUser = this.plugin.userRegistry?.getCurrentUser() ?? null;
 
 		this.plugin.debugLog.log(
 			"VaultWideNotificationService",
@@ -128,7 +119,6 @@ export class VaultWideNotificationService {
 		const assigneeFieldName = this.plugin.settings.assigneeFieldName || "assignee";
 
 		for (const item of items) {
-			// Get assignee from frontmatter
 			const file = this.plugin.app.vault.getAbstractFileByPath(item.path);
 			if (!(file instanceof TFile)) {
 				continue;
@@ -137,36 +127,12 @@ export class VaultWideNotificationService {
 			const cache = this.plugin.app.metadataCache.getFileCache(file);
 			const assigneeValue = cache?.frontmatter?.[assigneeFieldName];
 
-			// No assignee
-			if (!assigneeValue) {
-				if (notifyForUnassigned) {
-					this.plugin.debugLog.log(
-						"VaultWideNotificationService",
-						`Item ${item.path} has no assignee - including (notifyForUnassigned=true)`
-					);
-					filtered.push(item);
-				} else {
-					this.plugin.debugLog.log(
-						"VaultWideNotificationService",
-						`Item ${item.path} has no assignee - skipping (notifyForUnassigned=false)`
-					);
-				}
-				continue;
-			}
-
-			// Check if current user is the assignee (or in the group)
-			const isAssignedToMe = this.isAssignedToUser(assigneeValue, currentUser);
-
-			if (isAssignedToMe) {
-				this.plugin.debugLog.log(
-					"VaultWideNotificationService",
-					`Item ${item.path} assigned to current user - including`
-				);
+			if (shouldNotifyForTask(assigneeValue, currentUser, notifyForUnassigned, this.plugin.groupRegistry ?? null)) {
 				filtered.push(item);
 			} else {
 				this.plugin.debugLog.log(
 					"VaultWideNotificationService",
-					`Item ${item.path} assigned to ${assigneeValue} - skipping (not current user)`
+					`Item ${item.path} filtered out (assignee: ${assigneeValue})`
 				);
 			}
 		}
@@ -177,56 +143,6 @@ export class VaultWideNotificationService {
 		);
 
 		return filtered;
-	}
-
-	/**
-	 * Check if an assignee value matches the current user.
-	 * Handles direct assignment and group membership.
-	 */
-	private isAssignedToUser(assigneeValue: string | string[], currentUser: string): boolean {
-		// Handle array assignees (multiple assignees)
-		const assignees = Array.isArray(assigneeValue) ? assigneeValue : [assigneeValue];
-
-		for (const assignee of assignees) {
-			if (typeof assignee !== "string") continue;
-
-			// Resolve the assignee (handles groups)
-			const resolvedPersons = this.plugin.groupRegistry?.resolveAssignee(assignee) || [assignee];
-
-			// Check if current user is in the resolved list
-			for (const person of resolvedPersons) {
-				// Normalize paths for comparison (remove .md, handle wikilinks)
-				const normalizedPerson = this.normalizePath(person);
-				const normalizedCurrentUser = this.normalizePath(currentUser);
-
-				if (normalizedPerson === normalizedCurrentUser) {
-					return true;
-				}
-			}
-		}
-
-		return false;
-	}
-
-	/**
-	 * Normalize a path for comparison (removes .md, folder paths, wikilink syntax).
-	 */
-	private normalizePath(path: string): string {
-		// Remove wikilink syntax
-		let normalized = path.replace(/^\[\[/, "").replace(/\]\]$/, "");
-
-		// Handle display text: [[path|display]] -> path
-		const pipeIndex = normalized.indexOf("|");
-		if (pipeIndex !== -1) {
-			normalized = normalized.substring(0, pipeIndex);
-		}
-
-		// Remove .md extension
-		normalized = normalized.replace(/\.md$/, "");
-
-		// Get just the filename (last segment)
-		const segments = normalized.split("/");
-		return segments[segments.length - 1].toLowerCase();
 	}
 
 	/**

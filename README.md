@@ -118,6 +118,10 @@ Natural language parsing: English, German, Spanish, French, Italian, Japanese, D
 
 </details>
 
+## Known limitations
+
+- **System notifications on Windows**: Obsidian may not register as a notification sender with Windows, causing system (OS-level) notifications to silently fail even when permission is granted. This is a [known Electron issue](https://github.com/electron/electron/issues/4973) that affects all Electron apps and requires a fix from the Obsidian team ([related discussion](https://github.com/uphy/obsidian-reminder/issues/73)). **Workaround**: Use "In-app" or "Both" notification delivery type in settings.
+
 ## Credits
 
 Calendar components by [FullCalendar.io](https://fullcalendar.io/).

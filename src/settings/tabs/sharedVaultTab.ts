@@ -1,6 +1,7 @@
 import { Notice, Setting, TFile } from "obsidian";
 import TaskNotesPlugin from "../../main";
 import { createSettingGroup } from "../components/settingHelpers";
+import { sendTestNotification } from "./featuresTab";
 import { FolderSuggest } from "../components/FolderSuggest";
 import { TagSuggest } from "../components/TagSuggest";
 import { openFileSelector } from "../../modals/FileSelectorModal";
@@ -592,6 +593,38 @@ function navigateToTaskProperties(plugin: TaskNotesPlugin): void {
 }
 
 /**
+ * Navigate to Features tab and scroll to Notifications section
+ */
+function navigateToFeatures(plugin: TaskNotesPlugin): void {
+	const settingsTab = (plugin.app as any).setting?.activeTab;
+	if (settingsTab?.containerEl) {
+		const tabContent = settingsTab.containerEl.querySelector(
+			"#tab-content-features"
+		) as HTMLElement;
+		if (tabContent) {
+			tabContent.empty();
+		}
+		const tabButton = settingsTab.containerEl.querySelector(
+			"#tab-button-features"
+		) as HTMLElement;
+		if (tabButton) {
+			tabButton.click();
+			setTimeout(() => {
+				const headings = settingsTab.containerEl.querySelectorAll(
+					".setting-item-heading .setting-item-name"
+				);
+				for (const heading of headings) {
+					if (heading.textContent?.toLowerCase().includes("notifications")) {
+						(heading as HTMLElement).scrollIntoView({ behavior: "smooth", block: "start" });
+						break;
+					}
+				}
+			}, 200);
+		}
+	}
+}
+
+/**
  * Section 5: Registered Team Members
  * All devices that have registered in this vault
  */
@@ -653,8 +686,9 @@ function renderTeamMembersSection(
 }
 
 /**
- * Section 6: Notification Filtering
- * Filter notifications based on task assignee
+ * Section 6: Notification Scope (per-device)
+ * Controls what notifications this device receives.
+ * Settings stored in localStorage via DevicePreferencesManager.
  */
 function renderNotificationFilteringSection(
 	container: HTMLElement,
@@ -662,46 +696,155 @@ function renderNotificationFilteringSection(
 	save: () => void,
 	t: (key: TranslationKey) => string
 ): void {
+	const devicePrefs = plugin.devicePrefs;
+	const deviceName = plugin.deviceIdentityManager.getDeviceName();
+	const shortId = plugin.deviceIdentityManager.getShortDeviceId();
+
 	createSettingGroup(
 		container,
 		{
-			heading: "Notification filtering",
-			description: "Filter notifications based on who tasks are assigned to. Useful in shared vaults where you only want to see tasks assigned to you.",
+			heading: "Notification scope",
+			description: `Per-device settings for "${deviceName}" (${shortId}). These settings are stored locally and do not sync across devices.`,
 		},
 		(group) => {
-			// Only notify if assigned to me toggle
+			// Cross-link to vault-wide notification settings
+			group.addSetting((setting) => {
+				const descEl = setting.descEl;
+				setting.setName("Vault defaults");
+				descEl.appendText("The vault-wide notification enable/disable and default delivery type are in ");
+				const linkEl = descEl.createEl("a", {
+					text: "Features \u2192",
+					href: "#",
+				});
+				linkEl.addEventListener("click", (e) => {
+					e.preventDefault();
+					navigateToFeatures(plugin);
+				});
+			});
+
+			// Notification type override (per-device)
+			group.addSetting((setting) => {
+				const vaultDefault = plugin.settings.notificationType || "in-app";
+				const hasOverride = devicePrefs.hasNotificationTypeOverride();
+				const desc = hasOverride
+					? `Vault default: ${vaultDefault}`
+					: "Using vault default";
+				setting
+					.setName("Notification type")
+					.setDesc(desc)
+					.addDropdown((dropdown) =>
+						dropdown
+							.addOption("vault-default", `Vault default (${vaultDefault})`)
+							.addOption("in-app", "In-app notice")
+							.addOption("system", "System notification")
+							.addOption("both", "Both (system + in-app)")
+							.setValue(hasOverride ? devicePrefs.getNotificationType() : "vault-default")
+							.onChange((value) => {
+								if (value === "vault-default") {
+									devicePrefs.clearOverride("notificationType");
+								} else {
+									devicePrefs.update({ notificationType: value as "in-app" | "system" | "both" });
+								}
+								renderSharedVaultTab(container, plugin, save);
+							})
+					);
+			});
+
+			// Test notification button
 			group.addSetting((setting) => {
 				setting
-					.setName("Only notify for my tasks")
-					.setDesc("Only show notifications for tasks assigned to you (or groups you belong to). When disabled, you'll see notifications for all tasks.")
+					.setName("Test notification")
+					.setDesc("Send a test notification using the current delivery type for this device.")
+					.addButton((button) =>
+						button
+							.setButtonText("Send test")
+							.onClick(() => {
+								const type = devicePrefs.getNotificationType();
+								sendTestNotification(type, plugin);
+							})
+					);
+			});
+
+			// System notification troubleshooting (show when effective type includes system)
+			{
+				const effectiveType = devicePrefs.getNotificationType();
+				if (effectiveType === "system" || effectiveType === "both") {
+					group.addSetting((setting) => {
+						const descEl = setting.descEl;
+						setting.setName("System notification troubleshooting");
+						const permStatus = "Notification" in window ? Notification.permission : "unavailable";
+						descEl.appendText(`Browser permission: ${permStatus}. `);
+
+						const detailsEl = descEl.createEl("details");
+						detailsEl.createEl("summary", {
+							text: "Not seeing system notifications?",
+						});
+						const list = detailsEl.createEl("ul");
+						list.style.marginTop = "4px";
+						list.style.paddingLeft = "16px";
+						list.createEl("li", {
+							text: "Windows: Settings \u2192 System \u2192 Notifications. Make sure Obsidian is listed and allowed, banners are enabled, and Do Not Disturb / Focus Assist is off.",
+						});
+						list.createEl("li", {
+							text: "macOS: System Settings \u2192 Notifications \u2192 Obsidian. Ensure alerts are enabled and Focus is off.",
+						});
+						list.createEl("li", {
+							text: "Linux: Check your desktop environment's notification daemon is running.",
+						});
+
+						const knownIssueLi = list.createEl("li");
+						knownIssueLi.appendText("Known Electron limitation: On Windows, Obsidian may not register as a notification sender with the OS. If Obsidian does not appear in your Windows notification settings, system notifications will silently fail. This is an ");
+						knownIssueLi.createEl("a", {
+							text: "upstream Electron issue",
+							href: "https://github.com/electron/electron/issues/4973",
+						});
+						knownIssueLi.appendText(" that requires a fix from the Obsidian team (");
+						knownIssueLi.createEl("a", {
+							text: "related discussion",
+							href: "https://github.com/uphy/obsidian-reminder/issues/73",
+						});
+						knownIssueLi.appendText("). Use \"In-app\" or \"Both\" as a workaround.");
+
+						list.createEl("li", {
+							text: "Obsidian cannot detect if your OS silently suppressed a notification (e.g., via Do Not Disturb). If the test fires but nothing appears, the OS is blocking it.",
+						});
+					});
+				}
+			}
+
+			// Filter by assignment toggle (per-device)
+			group.addSetting((setting) => {
+				const vaultDefault = plugin.settings.vaultWideNotifications?.onlyNotifyIfAssignedToMe ?? false;
+				const hasOverride = devicePrefs.hasFilterByAssignmentOverride();
+				const effectiveValue = devicePrefs.getFilterByAssignment();
+				const desc = hasOverride
+					? `Per-device override active. Vault default: ${vaultDefault ? "on" : "off"}`
+					: "Only receive notifications for tasks where you (or a group you belong to) are listed as an assignee.";
+				setting
+					.setName("Filter by assignment")
+					.setDesc(desc)
 					.addToggle((toggle) =>
 						toggle
-							.setValue(plugin.settings.vaultWideNotifications?.onlyNotifyIfAssignedToMe ?? false)
-							.onChange(async (value) => {
-								if (!plugin.settings.vaultWideNotifications) {
-									plugin.settings.vaultWideNotifications = {} as any;
-								}
-								plugin.settings.vaultWideNotifications.onlyNotifyIfAssignedToMe = value;
-								save();
-								// Re-render to show/hide dependent settings
+							.setValue(effectiveValue)
+							.onChange((value) => {
+								devicePrefs.updateScope({ filterByAssignment: value });
 								renderSharedVaultTab(container, plugin, save);
 							})
 					);
 			});
 
 			// Show dependent settings only when filtering is enabled
-			if (plugin.settings.vaultWideNotifications?.onlyNotifyIfAssignedToMe) {
-				// Include unassigned tasks toggle
+			if (devicePrefs.getFilterByAssignment()) {
+				// Include unassigned tasks toggle (per-device)
 				group.addSetting((setting) => {
 					setting
 						.setName("Include unassigned tasks")
-						.setDesc("Also show notifications for tasks that have no assignee. Disable to only see tasks explicitly assigned to you.")
+						.setDesc("Also receive notifications for tasks that have no assignee.")
 						.addToggle((toggle) =>
 							toggle
-								.setValue(plugin.settings.vaultWideNotifications?.notifyForUnassignedTasks ?? true)
-								.onChange(async (value) => {
-									plugin.settings.vaultWideNotifications.notifyForUnassignedTasks = value;
-									save();
+								.setValue(devicePrefs.getIncludeUnassignedTasks())
+								.onChange((value) => {
+									devicePrefs.updateScope({ includeUnassignedTasks: value });
 								})
 						);
 				});
@@ -719,11 +862,22 @@ function renderNotificationFilteringSection(
 				} else {
 					group.addSetting((setting) => {
 						setting
-							.setName("⚠️ No identity registered")
-							.setDesc("Register your device in 'Your Identity' above to enable assignee filtering. Until then, you'll see all notifications.");
+							.setName("No identity registered")
+							.setDesc("Register your device in 'Your identity' above to enable assignment filtering. Until then, all notifications will be shown.");
 					});
 				}
 			}
+
+			// Info text explaining the scope model
+			group.addSetting((setting) => {
+				setting
+					.setName("How notification scope works")
+					.setDesc(
+						"When filtering is enabled, you receive reminders for tasks where your person note appears in the assignee field. " +
+						"This includes direct assignment and group membership. " +
+						"Future versions will support per-reminder targeting, allowing task creators to send specific reminders to specific people regardless of task assignment."
+					);
+			});
 		}
 	);
 }

@@ -73,6 +73,11 @@
 	margin-top: 2px;
 }
 
+.tn-toast__overdue {
+	color: var(--text-error);
+	font-weight: 600;
+}
+
 /* Actions */
 .tn-toast__actions {
 	display: flex;
@@ -97,28 +102,53 @@
 	background: var(--interactive-accent-hover);
 }
 
-.tn-toast__dismiss {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	width: 24px;
-	height: 24px;
+/* Snooze button */
+.tn-toast__snooze {
+	padding: 4px 8px;
 	border-radius: var(--radius-s);
 	background: transparent;
-	border: none;
+	border: 1px solid var(--background-modifier-border);
 	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
 	cursor: pointer;
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	white-space: nowrap;
+	transition: all 0.15s ease;
+}
+
+.tn-toast__snooze:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.tn-toast__snooze-icon {
+	display: flex;
+	align-items: center;
+}
+
+.tn-toast__snooze-icon svg {
+	width: 12px;
+	height: 12px;
+}
+
+/* Dismiss button — text label, styled like snooze for consistency */
+.tn-toast__dismiss {
+	padding: 4px 8px;
+	border-radius: var(--radius-s);
+	background: transparent;
+	border: 1px solid var(--background-modifier-border);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	cursor: pointer;
+	white-space: nowrap;
 	transition: all 0.15s ease;
 }
 
 .tn-toast__dismiss:hover {
 	background: var(--background-modifier-hover);
 	color: var(--text-normal);
-}
-
-.tn-toast__dismiss svg {
-	width: 14px;
-	height: 14px;
 }
 
 /* Status bar notifications badge */
