@@ -85,7 +85,7 @@ import { StatusBarService } from "./services/StatusBarService";
 import { ProjectSubtasksService } from "./services/ProjectSubtasksService";
 import { ExpandedProjectsService } from "./services/ExpandedProjectsService";
 import { NotificationService } from "./services/NotificationService";
-import { BasesQueryWatcher, VaultWideNotificationService, UnifiedNotificationModal, ToastNotification, BaseNotificationSyncService } from "./notifications";
+import { BasesQueryWatcher, VaultWideNotificationService, UnifiedNotificationModal, ToastNotification, BaseNotificationSyncService, NotificationCache } from "./notifications";
 import { AutoExportService } from "./services/AutoExportService";
 // Type-only import for HTTPAPIService (actual import is dynamic on desktop only)
 import type { HTTPAPIService } from "./services/HTTPAPIService";
@@ -210,6 +210,9 @@ export default class TaskNotesPlugin extends Plugin {
 
 	// Vault-wide notification service
 	vaultWideNotificationService: VaultWideNotificationService;
+
+	// Notification cache for performance (45s TTL, smart invalidation)
+	notificationCache: NotificationCache;
 
 	// Toast notification component (bottom-right indicator)
 	toastNotification: ToastNotification;
@@ -400,6 +403,7 @@ export default class TaskNotesPlugin extends Plugin {
 		this.notificationService = new NotificationService(this);
 		this.basesQueryWatcher = new BasesQueryWatcher(this);
 		this.vaultWideNotificationService = new VaultWideNotificationService(this);
+		this.notificationCache = new NotificationCache(this);
 		this.toastNotification = new ToastNotification(this);
 		this.baseNotificationSyncService = new BaseNotificationSyncService(this);
 		this.viewPerformanceService = new ViewPerformanceService(this);
@@ -642,7 +646,7 @@ export default class TaskNotesPlugin extends Plugin {
 						// Still update status bar even if toast isn't shown on startup
 						this.debugLog.log("ToastNotification", "Startup timer fired - updating status bar only");
 						try {
-							const items = await this.vaultWideNotificationService.getAggregatedItems();
+							const items = await this.notificationCache.getAggregatedItems();
 							this.toastNotification.updateStatusBar(items.length);
 							this.debugLog.log("ToastNotification", `Status bar updated: ${items.length} items`);
 						} catch (error) {
@@ -658,8 +662,16 @@ export default class TaskNotesPlugin extends Plugin {
 
 				this.toastCheckIntervalId = window.setInterval(async () => {
 					this.debugLog.log("ToastNotification", "Periodic check triggered");
+
+					// Respect toast-level snooze — skip everything (status bar + toast)
+					if (this.toastNotification.isSnoozed()) {
+						this.debugLog.log("ToastNotification", "Periodic check skipped — snoozed");
+						return;
+					}
+
 					try {
-						const items = await this.vaultWideNotificationService.getAggregatedItems();
+						// Use cache for performance - returns instantly if cached
+						const items = await this.notificationCache.getAggregatedItems();
 						this.toastNotification.updateStatusBar(items.length);
 
 						// Only show toast if there are overdue or today items (don't spam)

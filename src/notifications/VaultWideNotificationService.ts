@@ -147,37 +147,106 @@ export class VaultWideNotificationService {
 
 	/**
 	 * Get notification items from all bases with notify: true.
+	 * Supports two modes via baseNotificationDisplay setting:
+	 * - "rollup": One item per base with match count
+	 * - "individual": Each matching item separately
 	 */
 	private async getBasesNotificationItems(): Promise<AggregatedNotificationItem[]> {
+		// Use device preference if set, otherwise vault-wide setting, otherwise default
+		const displayMode = this.plugin.devicePrefs?.getBaseNotificationDisplay()
+			?? this.plugin.settings.vaultWideNotifications?.baseNotificationDisplay
+			?? "individual";
+		this.plugin.debugLog.log("VaultWideNotificationService", `Base notification display mode: ${displayMode}`);
+
+		if (displayMode === "rollup") {
+			return this.getBasesNotificationItemsRolledUp();
+		} else {
+			return this.getBasesNotificationItemsIndividual();
+		}
+	}
+
+	/**
+	 * Rolled-up mode: Return one notification item per base with match count.
+	 * "Documents Coming Due (3 items)" rather than 3 separate items.
+	 */
+	private async getBasesNotificationItemsRolledUp(): Promise<AggregatedNotificationItem[]> {
 		const items: AggregatedNotificationItem[] = [];
 
 		// Find all .base files with notify: true
 		const baseFiles = this.plugin.app.vault.getFiles().filter(f => f.extension === "base");
-		this.plugin.debugLog.log("VaultWideNotificationService", `Found ${baseFiles.length} .base files`);
+		this.plugin.debugLog.log("VaultWideNotificationService", `[RolledUp] Found ${baseFiles.length} .base files`);
 
 		for (const file of baseFiles) {
 			try {
 				const config = await this.parseBaseConfig(file);
-				this.plugin.debugLog.log("VaultWideNotificationService", `Checking ${file.path}: notify=${config?.notify}`);
+				if (!config?.notify) continue;
+
+				// Evaluate the query
+				const queryResults = await this.evaluateBaseQuery(file);
+				const matchCount = queryResults?.length ?? 0;
+
+				this.plugin.debugLog.log("VaultWideNotificationService", `[RolledUp] ${file.path}: ${matchCount} items match`);
+
+				if (matchCount === 0) continue;
+
+				// Determine the most urgent time category from all matched items
+				let mostUrgentCategory: TimeCategory = "later";
+				for (const result of queryResults) {
+					const category = this.categorizeByTime(result);
+					if (this.getTimeCategoryPriority(category) < this.getTimeCategoryPriority(mostUrgentCategory)) {
+						mostUrgentCategory = category;
+					}
+				}
+
+				// Create rolled-up item for this base
+				const baseName = config.name || file.basename;
+				items.push({
+					path: file.path, // Use base file path as the item path
+					title: baseName,
+					isTask: false,
+					isBaseNotification: true,
+					matchCount,
+					sourceBasePath: file.path,
+					sources: [{
+						type: 'base',
+						path: file.path,
+						name: baseName,
+					}],
+					timeCategory: mostUrgentCategory,
+					timeContext: `${matchCount} item${matchCount > 1 ? "s" : ""} match`,
+				});
+			} catch (error) {
+				this.plugin.debugLog.log("VaultWideNotificationService", `[RolledUp] Error processing ${file.path}:`, error);
+			}
+		}
+
+		return items;
+	}
+
+	/**
+	 * Individual mode: Return each matching item separately.
+	 * Original behavior - shows each file that matches the base query.
+	 */
+	private async getBasesNotificationItemsIndividual(): Promise<AggregatedNotificationItem[]> {
+		const items: AggregatedNotificationItem[] = [];
+
+		// Find all .base files with notify: true
+		const baseFiles = this.plugin.app.vault.getFiles().filter(f => f.extension === "base");
+		this.plugin.debugLog.log("VaultWideNotificationService", `[Individual] Found ${baseFiles.length} .base files`);
+
+		for (const file of baseFiles) {
+			try {
+				const config = await this.parseBaseConfig(file);
 				if (!config?.notify) continue;
 
 				// Evaluate the query using BasesViewBase infrastructure
-				this.plugin.debugLog.log("VaultWideNotificationService", `Evaluating query for ${file.path}`);
 				const queryResults = await this.evaluateBaseQuery(file);
-				this.plugin.debugLog.log("VaultWideNotificationService", `Query results for ${file.path}: ${queryResults?.length ?? 0} items`);
 				if (!queryResults || queryResults.length === 0) continue;
 
 				// Convert to aggregated items
 				for (const result of queryResults) {
 					const timeCategory = this.categorizeByTime(result);
 					const timeContext = this.getTimeContext(result);
-
-					// Debug: Log raw title value and type
-					this.plugin.debugLog.log("VaultWideNotificationService", `Converting result: ${result.path}`, {
-						rawTitleType: typeof result.title,
-						rawTitleValue: result.title,
-						isTask: result.isTask,
-					});
 
 					// Ensure title is a string (handle objects, arrays, etc.)
 					let finalTitle: string;
@@ -189,7 +258,6 @@ export class VaultWideNotificationService {
 							(result.title as any).path ||
 							(result.title as any).toString?.() ||
 							"Untitled";
-						this.plugin.debugLog.log("VaultWideNotificationService", `Title was object, extracted: ${finalTitle}`);
 					} else {
 						finalTitle = "Untitled";
 					}

@@ -7,6 +7,7 @@
 
 export { BasesQueryWatcher } from "./BasesQueryWatcher";
 export { VaultWideNotificationService } from "./VaultWideNotificationService";
+export { NotificationCache } from "./NotificationCache";
 export {
 	BasesNotificationModal,
 	type NotificationItem,

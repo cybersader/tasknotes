@@ -19121,6 +19121,192 @@ select.tasknotes-settings__card-input {
     border-bottom: none;
 }
 
+/* ================================================
+   SUB-SECTION HEADINGS (within setting groups)
+   Used for "Task notifications" / "Base notifications" etc.
+   ================================================ */
+
+/* Style sub-section headings within settings
+   These are used for "Task notifications" / "Base notifications" etc.
+   Keep headings simple, but indent/group the settings underneath */
+
+/* Sub-section headings - simple, just spacing */
+.tasknotes-plugin.tasknotes-settings .setting-item.setting-item-heading {
+    margin-top: 24px !important;
+    margin-bottom: 4px !important;
+    padding: 0 !important;
+    background: none !important;
+    border: none !important;
+}
+
+/* Heading text - slightly bolder but otherwise normal */
+.tasknotes-plugin.tasknotes-settings .setting-item.setting-item-heading .setting-item-name {
+    font-size: inherit !important;
+    font-weight: 600 !important;
+    color: var(--text-normal) !important;
+}
+
+/* Heading description styling */
+.tasknotes-plugin.tasknotes-settings .setting-item.setting-item-heading .setting-item-description {
+    font-size: var(--font-ui-smaller) !important;
+    color: var(--text-muted) !important;
+    margin-top: 2px !important;
+}
+
+/* Settings AFTER a heading get indented with a left border - visual grouping */
+.tasknotes-plugin.tasknotes-settings .setting-item.setting-item-heading ~ .setting-item:not(.setting-item-heading) {
+    margin-left: 12px !important;
+    padding-left: 12px !important;
+    border-left: 2px solid var(--background-modifier-border) !important;
+}
+
+/* Headings themselves should NEVER be indented - always flush left */
+.tasknotes-plugin.tasknotes-settings .setting-item.setting-item-heading {
+    margin-left: 0 !important;
+    padding-left: 0 !important;
+    border-left: none !important;
+}
+
+/* ================================================
+   REMINDER BEHAVIOR BY CATEGORY (Advanced Section)
+   ================================================ */
+
+/* Collapsible details container */
+.reminder-behavior-details {
+    margin-top: 8px;
+}
+
+.reminder-behavior-details > summary {
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text-normal);
+    padding: 8px 0;
+    list-style: none;
+}
+
+.reminder-behavior-details > summary::-webkit-details-marker {
+    display: none;
+}
+
+.reminder-behavior-details > summary::before {
+    content: "▶";
+    display: inline-block;
+    margin-right: 8px;
+    font-size: 10px;
+    transition: transform 0.2s ease;
+    color: var(--text-muted);
+}
+
+.reminder-behavior-details[open] > summary::before {
+    transform: rotate(90deg);
+}
+
+/* Category card styling */
+.reminder-category-settings {
+    margin-bottom: 20px !important;
+    padding: 12px 16px !important;
+    border-left: 3px solid var(--interactive-accent) !important;
+    background: var(--background-secondary);
+    border-radius: 0 6px 6px 0;
+}
+
+/* Category header - bolder and larger */
+.reminder-category-settings > div:first-child {
+    font-weight: 600 !important;
+    font-size: 14px !important;
+    color: var(--text-normal) !important;
+    margin-bottom: 2px !important;
+}
+
+/* Category description - slightly more visible */
+.reminder-category-settings > div:nth-child(2) {
+    font-size: 12px !important;
+    color: var(--text-muted) !important;
+    margin-bottom: 10px !important;
+    line-height: 1.4;
+}
+
+/* Controls row - tighter layout */
+.reminder-category-settings > div:nth-child(3) {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 16px !important;
+    align-items: center !important;
+}
+
+/* Dropdown label */
+.reminder-category-settings > div:nth-child(3) > div:first-child > span {
+    font-weight: 500;
+    color: var(--text-normal);
+    font-size: 13px;
+}
+
+/* Dropdown itself */
+.reminder-category-settings select.dropdown {
+    min-width: 180px;
+    font-size: 13px;
+}
+
+/* Checkbox labels - more compact */
+.reminder-category-settings label {
+    font-size: 13px !important;
+    color: var(--text-muted) !important;
+    gap: 6px !important;
+}
+
+.reminder-category-settings label:hover {
+    color: var(--text-normal) !important;
+}
+
+/* Help text - template style with highlighted values */
+.reminder-behavior-help {
+    font-size: 12px !important;
+    font-style: normal !important;
+    color: var(--text-muted) !important;
+    background: var(--background-primary);
+    padding: 6px 10px !important;
+    border-radius: 4px;
+    margin-top: 10px !important;
+    border: 1px solid var(--background-modifier-border);
+}
+
+/* Dynamic value within help text - highlighted */
+.reminder-help-value {
+    color: var(--text-accent);
+    font-weight: 600;
+    background: color-mix(in srgb, var(--text-accent) 12%, transparent);
+    padding: 1px 5px;
+    border-radius: 3px;
+}
+
+/* Footer explanation box */
+.reminder-category-settings ~ div:last-child {
+    margin-top: 20px !important;
+    padding: 12px 16px !important;
+    background: var(--background-secondary) !important;
+    border-radius: 6px !important;
+    font-size: 13px !important;
+}
+
+.reminder-category-settings ~ div:last-child > div:first-child {
+    font-weight: 600 !important;
+    font-size: 13px !important;
+    margin-bottom: 8px !important;
+    color: var(--text-normal) !important;
+}
+
+.reminder-category-settings ~ div:last-child ul {
+    margin: 0 !important;
+    padding-left: 20px !important;
+}
+
+.reminder-category-settings ~ div:last-child li {
+    margin-bottom: 6px !important;
+    line-height: 1.5 !important;
+    color: var(--text-muted) !important;
+}
+
 /* ===== WEBHOOK-SETTINGS.CSS ===== */
 /* 
  * Webhook Settings UI Styles
@@ -20744,12 +20930,41 @@ select.tasknotes-settings__card-input {
 .tn-upcoming-item__indicator--task {
 	color: var(--text-muted);
 	cursor: pointer;
+	border: 2px solid var(--text-muted);
 	border-radius: 50%;
+	background: transparent;
 	transition: all 0.15s ease;
 }
 
+.tn-upcoming-item__indicator--task svg {
+	display: none; /* Hide circle SVG — use CSS border as the indicator */
+}
+
 .tn-upcoming-item__indicator--task:hover {
-	color: var(--interactive-accent);
+	border-color: var(--next-status-color, var(--interactive-accent));
+	background: color-mix(in srgb, var(--next-status-color, var(--interactive-accent)) 20%, transparent);
+}
+
+/* Completed: filled circle with status color */
+.tn-upcoming-item__indicator--completed {
+	background-color: var(--status-color, var(--text-muted));
+	border-color: var(--status-color, var(--text-muted));
+}
+
+/* Icon mode: show status icon instead of border circle */
+.tn-upcoming-item__indicator--icon {
+	border: none;
+	background: transparent;
+}
+
+.tn-upcoming-item__indicator--icon svg {
+	display: flex;
+	width: 18px;
+	height: 18px;
+}
+
+.tn-upcoming-item__indicator--icon:hover svg {
+	color: var(--next-status-color, var(--interactive-accent));
 }
 
 .tn-upcoming-item__indicator--note {
@@ -20989,6 +21204,47 @@ select.tasknotes-settings__card-input {
 
 /* Base indicator in row 2 acts as context for base notifications */
 
+/* ============================================
+   Seen/Unseen State Indicators (Phase 8c)
+   Items marked as "seen" in the reminder queue
+   ============================================ */
+
+/* Seen items: muted styling to indicate user has acknowledged */
+.tn-upcoming-item--seen {
+	opacity: 0.6;
+}
+
+.tn-upcoming-item--seen .tn-upcoming-item__title {
+	color: var(--text-muted);
+	font-weight: normal;
+}
+
+.tn-upcoming-item--seen .tn-upcoming-item__indicator {
+	opacity: 0.5;
+}
+
+/* Seen badge (optional - can be enabled if users want explicit indicator) */
+.tn-upcoming-item--seen::after {
+	content: "✓";
+	position: absolute;
+	right: 8px;
+	top: 50%;
+	transform: translateY(-50%);
+	font-size: var(--font-ui-smaller);
+	color: var(--text-faint);
+	opacity: 0;
+	transition: opacity 0.15s ease;
+}
+
+.tn-upcoming-item--seen:hover::after {
+	opacity: 1;
+}
+
+/* Position relative for the badge */
+.tn-upcoming-item--seen {
+	position: relative;
+}
+
 
 /* ===== TOAST-NOTIFICATION.CSS ===== */
 /**
@@ -21174,6 +21430,223 @@ select.tasknotes-settings__card-input {
 	font-size: var(--font-ui-smaller);
 	font-weight: 600;
 	color: var(--text-accent);
+}
+
+/* ============================================
+   Enhanced Toast with Expandable Items (Phase 8b)
+   ============================================ */
+
+/* Wider toast when showing items */
+.tn-toast--with-items {
+	max-width: 420px;
+	flex-direction: column;
+	align-items: stretch;
+	gap: 0; /* No gap - items list handles its own margin */
+	padding: 0; /* Reset padding, header will have it */
+}
+
+/* Header wrapper - contains icon, content, actions. Stays at bottom. */
+.tn-toast__header {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 12px 16px;
+	/* This is at the bottom of flex column, stays in place when items expand above */
+}
+
+.tn-toast--with-items .tn-toast__icon {
+	/* No absolute positioning - let flex handle it */
+	position: relative;
+	top: auto;
+	left: auto;
+}
+
+.tn-toast--with-items .tn-toast__content {
+	padding-left: 0; /* No extra padding needed now */
+}
+
+.tn-toast--with-items .tn-toast__actions {
+	/* No border/padding when inside header - keeps it compact */
+	padding-top: 0;
+	border-top: none;
+	margin-top: 0;
+}
+
+/* Clickable count toggle in message (e.g., "4 bases ↑") */
+.tn-toast__count-toggle {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 2px 6px;
+	margin: -2px 0;
+	background: var(--background-secondary);
+	border-radius: var(--radius-s);
+	cursor: pointer;
+	transition: all 0.15s ease;
+}
+
+.tn-toast__count-toggle:hover {
+	background: var(--background-modifier-hover);
+}
+
+.tn-toast__count-toggle--expanded {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.tn-toast__count-toggle--expanded:hover {
+	background: var(--interactive-accent-hover);
+}
+
+.tn-toast__count-text {
+	font-weight: 600;
+}
+
+.tn-toast__count-chevron {
+	display: inline-flex;
+	align-items: center;
+	transition: transform 0.2s ease;
+}
+
+.tn-toast__count-chevron svg {
+	width: 12px;
+	height: 12px;
+}
+
+.tn-toast__count-toggle--expanded .tn-toast__count-chevron {
+	transform: rotate(180deg);
+}
+
+/* Items list - positioned above header, expands upward */
+.tn-toast__items-list--above {
+	/* Already first in DOM, no order needed */
+	max-height: 0;
+	overflow: hidden;
+	padding: 0;
+	margin: 0;
+	background: var(--background-secondary);
+	border-radius: 0; /* No radius - flush with toast edges */
+	border-bottom: none;
+	transition: max-height 0.3s ease, padding 0.3s ease, border-bottom 0.3s ease;
+}
+
+.tn-toast__items-list--above.tn-toast__items-list--expanded {
+	max-height: 200px;
+	overflow-y: auto;
+	padding: 8px 16px;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+/* Scrollable mode - triggered by clicking "+X more" to show all items */
+.tn-toast__items-list--above.tn-toast__items-list--scrollable {
+	max-height: 250px;
+	overflow-y: auto;
+	padding: 8px 16px;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+/* Combined: expanded + scrollable */
+.tn-toast__items-list--above.tn-toast__items-list--expanded.tn-toast__items-list--scrollable {
+	max-height: 250px;
+}
+
+/* Legacy items list (fallback) */
+.tn-toast__items-list:not(.tn-toast__items-list--above) {
+	margin-top: 8px;
+	padding: 8px;
+	background: var(--background-secondary);
+	border-radius: var(--radius-s);
+	max-height: 200px;
+	overflow-y: auto;
+}
+
+/* Individual item */
+.tn-toast__item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 4px;
+	border-radius: var(--radius-s);
+}
+
+.tn-toast__item:not(:last-child) {
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+/* Item icon (urgency indicator) */
+.tn-toast__item-icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 16px;
+	height: 16px;
+	flex-shrink: 0;
+}
+
+.tn-toast__item-icon svg {
+	width: 14px;
+	height: 14px;
+}
+
+.tn-toast__item-icon--overdue {
+	color: var(--text-error);
+}
+
+.tn-toast__item-icon--today {
+	color: var(--color-green);
+}
+
+.tn-toast__item-icon--upcoming {
+	color: var(--text-accent);
+}
+
+/* Item title - clickable to open */
+.tn-toast__item-title {
+	flex: 1;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-normal);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	cursor: pointer;
+	transition: color 0.15s ease;
+}
+
+.tn-toast__item-title:hover {
+	color: var(--text-accent);
+	text-decoration: underline;
+}
+
+/* Item context (due date / match count) */
+.tn-toast__item-context {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	white-space: nowrap;
+}
+
+/* Clickable context (e.g., "X items match" for base notifications) */
+.tn-toast__item-context--clickable {
+	cursor: pointer;
+	transition: color 0.15s ease;
+}
+
+.tn-toast__item-context--clickable:hover {
+	color: var(--text-accent);
+	text-decoration: underline;
+}
+
+/* "+X more" indicator */
+.tn-toast__item--more {
+	color: var(--text-muted);
+	font-style: italic;
+	justify-content: center;
+	padding: 8px 4px;
+	border-bottom: none;
+}
+
+/* "Got it" button - styled like dismiss but with tooltip hint */
+.tn-toast__got-it {
+	/* Same as dismiss */
 }
 
 

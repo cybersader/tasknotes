@@ -94,11 +94,14 @@ export class UpcomingView extends BasesViewBase {
 
 	// Agenda-style date navigation state
 	private currentDate: Date = new Date();
-	private periodType: PeriodType = "week";
+	private periodType: PeriodType = "list"; // Fallback, will be overwritten by device prefs
 
 	constructor(controller: any, containerEl: HTMLElement, plugin: TaskNotesPlugin) {
 		super(controller, containerEl, plugin);
 		(this.dataAdapter as any).basesView = this;
+
+		// Load period from device preferences (persists across sessions)
+		this.periodType = this.plugin.devicePrefs?.getUpcomingViewPeriod() ?? "list";
 	}
 
 	/**
@@ -709,9 +712,14 @@ export class UpcomingView extends BasesViewBase {
 
 	/**
 	 * Set the period type.
+	 * Persists choice to device preferences so it's remembered across sessions.
 	 */
 	private setPeriodType(type: PeriodType): void {
 		this.periodType = type;
+
+		// Save to device preferences (per-device, survives restart)
+		this.plugin.devicePrefs?.setUpcomingViewPeriod(type);
+
 		this.renderContent();
 	}
 
@@ -1022,10 +1030,17 @@ export class UpcomingView extends BasesViewBase {
 	 * Render a single item — Todoist-style 2-row layout.
 	 * Row 1: indicator + title + avatar stack (or base indicator)
 	 * Row 2: date/time (left) + project/context (right, grey)
+	 *
+	 * Phase 8c: Shows seen/unseen state from reminder queue.
+	 * - PENDING (unseen): Normal styling
+	 * - SEEN: Muted styling (grey text, reduced opacity)
 	 */
 	private renderItem(doc: Document, container: HTMLElement, item: AggregatedNotificationItem): void {
+		// Check if item is seen in the reminder queue (Phase 8c)
+		const isSeen = this.plugin.toastNotification.isItemSeen(item);
+
 		const itemEl = doc.createElement("div");
-		itemEl.className = `tn-upcoming-item${item.isTask ? " tn-upcoming-item--task" : ""}${item.isBaseNotification ? " tn-upcoming-item--base-notification" : ""}`;
+		itemEl.className = `tn-upcoming-item${item.isTask ? " tn-upcoming-item--task" : ""}${item.isBaseNotification ? " tn-upcoming-item--base-notification" : ""}${isSeen ? " tn-upcoming-item--seen" : ""}`;
 
 		// ── Row 1: indicator + title + avatars/base-indicator ──
 		const row1 = doc.createElement("div");
@@ -1045,7 +1060,42 @@ export class UpcomingView extends BasesViewBase {
 			});
 		} else if (item.isTask) {
 			indicator.classList.add("tn-upcoming-item__indicator--task");
-			setIcon(indicator, "circle");
+
+			// Status-aware rendering (matches TaskCard pattern)
+			const statusConfig = item.status
+				? this.plugin.statusManager.getStatusConfig(item.status)
+				: undefined;
+
+			if (statusConfig?.icon) {
+				// Icon mode: render the status icon with color
+				indicator.classList.add("tn-upcoming-item__indicator--icon");
+				setIcon(indicator, statusConfig.icon);
+				indicator.style.color = statusConfig.color;
+			} else {
+				// Dot mode: colored border circle
+				setIcon(indicator, "circle");
+				if (statusConfig) {
+					indicator.style.borderColor = statusConfig.color;
+				}
+			}
+
+			// Completed state: filled circle
+			if (statusConfig?.isCompleted) {
+				indicator.classList.add("tn-upcoming-item__indicator--completed");
+				if (statusConfig.color) {
+					indicator.style.setProperty("--status-color", statusConfig.color);
+				}
+			}
+
+			// Next status hint for hover
+			const nextStatus = this.plugin.statusManager.getNextStatus(item.status ?? "");
+			const nextConfig = nextStatus
+				? this.plugin.statusManager.getStatusConfig(nextStatus)
+				: undefined;
+			if (nextConfig) {
+				indicator.style.setProperty("--next-status-color", nextConfig.color);
+			}
+
 			indicator.addEventListener("click", (e) => {
 				e.stopPropagation();
 				this.handleComplete(item);

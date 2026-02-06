@@ -375,6 +375,63 @@ export interface VaultWideNotificationSettings {
 	onlyNotifyIfAssignedToMe: boolean;
 	/** Whether to notify for tasks with no assignee (when onlyNotifyIfAssignedToMe is true) */
 	notifyForUnassignedTasks: boolean;
+	/**
+	 * How to display base notifications in toast/upcoming view:
+	 * - "rollup": Show one item per base with match count (e.g., "Documents Coming Due (3 items)")
+	 * - "individual": Show each matching item separately
+	 * Default: "rollup" - bases represent queries, not individual items
+	 */
+	baseNotificationDisplay: "rollup" | "individual";
+	/** Per-category reminder behavior configuration */
+	reminderTypeSettings?: ReminderTypeSettings;
+}
+
+/**
+ * Behavior when user dismisses a notification item.
+ * Different categories may need different dismiss semantics.
+ */
+export type DismissBehavior =
+	| "until-restart"       // Returns on Obsidian restart (current default)
+	| "until-data-change"   // Returns when due date/content changes
+	| "until-complete"      // Persistent until task completed (for overdue)
+	| "snooze-1h"           // Auto-snooze for 1 hour, then return
+	| "snooze-4h"           // Auto-snooze for 4 hours
+	| "snooze-1d"           // Auto-snooze for 1 day
+	| "until-next-reminder" // For lead-time: dismiss this one, next scheduled fires later
+	| "permanent";          // Gone forever (user can re-enable via Upcoming View)
+
+/**
+ * Configuration for how a specific time category behaves in the notification system.
+ * Each category (overdue, today, tomorrow, etc.) can have independent settings.
+ */
+export interface TimeCategoryBehavior {
+	/** Whether items in this category contribute to the bell count */
+	showInBellCount: boolean;
+	/** Whether items in this category trigger toast popups */
+	showToast: boolean;
+	/** What happens when user clicks "Got it" / dismisses */
+	dismissBehavior: DismissBehavior;
+	/** Force return after X hours even if dismissed (0 = never auto-return) */
+	autoReturnHours: number;
+}
+
+/**
+ * Per-category behavior configuration for the notification system.
+ * Allows different treatment for overdue vs today vs upcoming items.
+ */
+export interface ReminderTypeSettings {
+	/** Overdue items (past due date) — typically most persistent */
+	overdue: TimeCategoryBehavior;
+	/** Due today items */
+	today: TimeCategoryBehavior;
+	/** Tomorrow items (heads up) */
+	tomorrow: TimeCategoryBehavior;
+	/** This week items (planning horizon) */
+	thisWeek: TimeCategoryBehavior;
+	/** Scheduled/start date reminders (awareness) */
+	scheduled: TimeCategoryBehavior;
+	/** Base query notifications (different paradigm - about query results, not individual items) */
+	queryBased: TimeCategoryBehavior;
 }
 
 export interface DefaultReminder {

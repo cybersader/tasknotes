@@ -420,18 +420,345 @@ export function renderFeaturesTab(
 		}
 	);
 
-	// Notifications Section
+	// Notifications Section (reorganized: General → Task → Base)
 	createSettingGroup(
 		container,
 		{
 			heading: translate("settings.features.notifications.header"),
-			description: translate("settings.features.notifications.description"),
+			description: "Configure how notifications behave across the plugin",
 		},
 		(group) => {
+			// ─────────────────────────────────────────────────────────────
+			// General (applies to all notification types)
+			// ─────────────────────────────────────────────────────────────
+			group.addSetting((setting) => {
+				setting.setName("General").setHeading();
+				setting.setDesc("Settings that apply to all notification types");
+			});
+
+			// Toast click behavior (per-device setting)
+			group.addSetting((setting) =>
+				configureDropdownSetting(setting, {
+					name: "Toast click behavior",
+					desc: "What happens when you click on the notification toast",
+					options: [
+						{
+							value: "view",
+							label: "Open Upcoming View (recommended)",
+						},
+						{
+							value: "expand",
+							label: "Expand item list",
+						},
+					],
+					getValue: () => plugin.devicePrefs?.getToastClickBehavior() ?? "view",
+					setValue: async (value: string) => {
+						plugin.devicePrefs?.setToastClickBehavior(value as "view" | "expand");
+					},
+				})
+			);
+
+			// Status bar click behavior (per-device setting)
+			group.addSetting((setting) =>
+				configureDropdownSetting(setting, {
+					name: "Status bar click behavior",
+					desc: "What happens when you click the notification bell in the status bar",
+					options: [
+						{
+							value: "view",
+							label: "Open Upcoming View (recommended)",
+						},
+						{
+							value: "toast",
+							label: "Show notification toast",
+						},
+					],
+					getValue: () => plugin.devicePrefs?.getStatusBarClickBehavior() ?? "view",
+					setValue: async (value: string) => {
+						plugin.devicePrefs?.setStatusBarClickBehavior(value as "view" | "toast");
+					},
+				})
+			);
+
+			group.addSetting((setting) =>
+				configureNumberSetting(setting, {
+					name: "Check interval (minutes)",
+					desc: "How often to check for new notification items",
+					placeholder: "5",
+					min: 1,
+					max: 60,
+					getValue: () => plugin.settings.vaultWideNotifications?.checkInterval ?? 5,
+					setValue: async (value: number) => {
+						if (!plugin.settings.vaultWideNotifications) {
+							plugin.settings.vaultWideNotifications = {
+								enabled: true,
+								showOnStartup: false,
+								checkInterval: 5,
+								enabledSources: {
+									bases: true,
+									reminderViews: true,
+									upstreamReminders: true,
+									viewEntry: true,
+								},
+								defaultReminderTime: "09:00",
+								onlyNotifyIfAssignedToMe: false,
+								notifyForUnassignedTasks: true,
+								baseNotificationDisplay: "individual",
+							};
+						}
+						plugin.settings.vaultWideNotifications.checkInterval = value;
+						save();
+					},
+				})
+			);
+
+			group.addSetting((setting) =>
+				configureToggleSetting(setting, {
+					name: "Show on startup",
+					desc: "Show notifications when Obsidian starts",
+					getValue: () => plugin.settings.vaultWideNotifications?.showOnStartup ?? false,
+					setValue: async (value: boolean) => {
+						if (!plugin.settings.vaultWideNotifications) {
+							plugin.settings.vaultWideNotifications = {
+								enabled: true,
+								showOnStartup: false,
+								checkInterval: 5,
+								enabledSources: {
+									bases: true,
+									reminderViews: true,
+									upstreamReminders: true,
+									viewEntry: true,
+								},
+								defaultReminderTime: "09:00",
+								onlyNotifyIfAssignedToMe: false,
+								notifyForUnassignedTasks: true,
+								baseNotificationDisplay: "individual",
+							};
+						}
+						plugin.settings.vaultWideNotifications.showOnStartup = value;
+						save();
+					},
+				})
+			);
+
+			// Reminder behavior by category (collapsible advanced section)
+			group.addSetting((setting) => {
+				const descEl = setting.descEl;
+				setting.setName("");
+				descEl.empty();
+				const detailsEl = descEl.createEl("details");
+				detailsEl.addClass("reminder-behavior-details");
+				const summaryEl = detailsEl.createEl("summary", {
+					text: "Reminder behavior by category (advanced)",
+				});
+				summaryEl.style.cursor = "pointer";
+				summaryEl.style.fontWeight = "500";
+				summaryEl.style.marginBottom = "8px";
+
+				const contentEl = detailsEl.createEl("div");
+				contentEl.style.marginTop = "12px";
+
+				// Import defaults for fallback
+				const { DEFAULT_REMINDER_TYPE_SETTINGS } = require("../../settings/defaults");
+				const currentSettings = plugin.settings.vaultWideNotifications?.reminderTypeSettings ?? DEFAULT_REMINDER_TYPE_SETTINGS;
+
+				// Get default dismiss behavior for a category
+				const getDefaultDismiss = (key: string): string => {
+					return (DEFAULT_REMINDER_TYPE_SETTINGS as any)[key]?.dismissBehavior ?? "until-restart";
+				};
+
+				// Helper to create category settings
+				const createCategorySettings = (
+					categoryContainer: HTMLElement,
+					categoryKey: string,
+					categoryLabel: string,
+					categoryDesc: string
+				) => {
+					const defaultDismiss = getDefaultDismiss(categoryKey);
+					const categoryEl = categoryContainer.createEl("div");
+					categoryEl.addClass("reminder-category-settings");
+					categoryEl.style.marginBottom = "16px";
+					categoryEl.style.paddingLeft = "12px";
+					categoryEl.style.borderLeft = "2px solid var(--background-modifier-border)";
+
+					const headerEl = categoryEl.createEl("div");
+					headerEl.style.fontWeight = "500";
+					headerEl.style.marginBottom = "4px";
+					headerEl.textContent = categoryLabel;
+
+					const descriptionEl = categoryEl.createEl("div");
+					descriptionEl.style.fontSize = "var(--font-ui-smaller)";
+					descriptionEl.style.color = "var(--text-muted)";
+					descriptionEl.style.marginBottom = "8px";
+					descriptionEl.textContent = categoryDesc;
+
+					const controlsEl = categoryEl.createEl("div");
+					controlsEl.style.display = "flex";
+					controlsEl.style.flexWrap = "wrap";
+					controlsEl.style.gap = "12px";
+					controlsEl.style.alignItems = "center";
+
+					// Dismiss behavior dropdown
+					const dismissGroup = controlsEl.createEl("div");
+					dismissGroup.style.display = "flex";
+					dismissGroup.style.alignItems = "center";
+					dismissGroup.style.gap = "6px";
+					dismissGroup.createEl("span", { text: "After 'Got it':", cls: "setting-item-name" });
+					const dismissDropdown = dismissGroup.createEl("select");
+					dismissDropdown.addClass("dropdown");
+					const dismissOptions = [
+						{ value: "until-restart", label: "Until restart" },
+						{ value: "snooze-1h", label: "Snooze 1 hour" },
+						{ value: "snooze-4h", label: "Snooze 4 hours" },
+						{ value: "snooze-1d", label: "Snooze 1 day" },
+						{ value: "until-data-change", label: "Until data changes" },
+						{ value: "until-next-reminder", label: "Until next reminder" },
+						{ value: "until-complete", label: "Until completed" },
+						{ value: "permanent", label: "Permanently" },
+					];
+					for (const opt of dismissOptions) {
+						// Add "(default)" label if this is the default for this category
+						const isDefault = opt.value === defaultDismiss;
+						const displayLabel = isDefault ? `${opt.label} (default)` : opt.label;
+						const optionEl = dismissDropdown.createEl("option", { value: opt.value, text: displayLabel });
+						if ((currentSettings as any)[categoryKey]?.dismissBehavior === opt.value) {
+							optionEl.selected = true;
+						}
+					}
+					dismissDropdown.addEventListener("change", async () => {
+						const settings = plugin.settings.vaultWideNotifications?.reminderTypeSettings ?? { ...DEFAULT_REMINDER_TYPE_SETTINGS };
+						(settings as any)[categoryKey] = {
+							...(settings as any)[categoryKey],
+							dismissBehavior: dismissDropdown.value,
+						};
+						if (!plugin.settings.vaultWideNotifications) {
+							plugin.settings.vaultWideNotifications = { ...DEFAULT_REMINDER_TYPE_SETTINGS };
+						}
+						plugin.settings.vaultWideNotifications.reminderTypeSettings = settings;
+						save();
+					});
+
+					// Show in bell checkbox
+					const bellGroup = controlsEl.createEl("label");
+					bellGroup.style.display = "flex";
+					bellGroup.style.alignItems = "center";
+					bellGroup.style.gap = "4px";
+					bellGroup.style.cursor = "pointer";
+					const bellCheckbox = bellGroup.createEl("input", { type: "checkbox" });
+					bellCheckbox.checked = (currentSettings as any)[categoryKey]?.showInBellCount ?? true;
+					bellGroup.createEl("span", { text: "Show in bell count" });
+					bellCheckbox.addEventListener("change", async () => {
+						const settings = plugin.settings.vaultWideNotifications?.reminderTypeSettings ?? { ...DEFAULT_REMINDER_TYPE_SETTINGS };
+						(settings as any)[categoryKey] = {
+							...(settings as any)[categoryKey],
+							showInBellCount: bellCheckbox.checked,
+						};
+						if (!plugin.settings.vaultWideNotifications) {
+							plugin.settings.vaultWideNotifications = { ...DEFAULT_REMINDER_TYPE_SETTINGS };
+						}
+						plugin.settings.vaultWideNotifications.reminderTypeSettings = settings;
+						save();
+					});
+
+					// Show toast checkbox
+					const toastGroup = controlsEl.createEl("label");
+					toastGroup.style.display = "flex";
+					toastGroup.style.alignItems = "center";
+					toastGroup.style.gap = "4px";
+					toastGroup.style.cursor = "pointer";
+					const toastCheckbox = toastGroup.createEl("input", { type: "checkbox" });
+					toastCheckbox.checked = (currentSettings as any)[categoryKey]?.showToast ?? true;
+					toastGroup.createEl("span", { text: "Show popup" });
+					toastCheckbox.addEventListener("change", async () => {
+						const settings = plugin.settings.vaultWideNotifications?.reminderTypeSettings ?? { ...DEFAULT_REMINDER_TYPE_SETTINGS };
+						(settings as any)[categoryKey] = {
+							...(settings as any)[categoryKey],
+							showToast: toastCheckbox.checked,
+						};
+						if (!plugin.settings.vaultWideNotifications) {
+							plugin.settings.vaultWideNotifications = { ...DEFAULT_REMINDER_TYPE_SETTINGS };
+						}
+						plugin.settings.vaultWideNotifications.reminderTypeSettings = settings;
+						save();
+					});
+
+					// Dynamic help text that explains what the current dismiss behavior does
+					const helpText = categoryEl.createEl("div");
+					helpText.addClass("reminder-behavior-help");
+
+					const updateHelpText = (behavior: string) => {
+						// Template: static text with <span class="value"> for dynamic parts
+						const templates: Record<string, string> = {
+							"until-restart": 'Removed from bell until <span class="reminder-help-value">Obsidian restarts</span>',
+							"snooze-1h": 'Removed from bell for <span class="reminder-help-value">1 hour</span>, then returns',
+							"snooze-4h": 'Removed from bell for <span class="reminder-help-value">4 hours</span>, then returns',
+							"snooze-1d": 'Removed from bell for <span class="reminder-help-value">1 day</span>, then returns',
+							"until-data-change": 'Removed from bell until <span class="reminder-help-value">item\'s data changes</span>',
+							"until-next-reminder": 'Removed until <span class="reminder-help-value">next scheduled reminder</span>',
+							"until-complete": 'Removed from bell until <span class="reminder-help-value">task is completed</span>',
+							"permanent": '<span class="reminder-help-value">Permanently removed</span> (never returns)',
+						};
+						helpText.innerHTML = templates[behavior] || "";
+					};
+
+					// Set initial help text
+					updateHelpText(dismissDropdown.value);
+
+					// Update help text when dropdown changes
+					dismissDropdown.addEventListener("change", () => {
+						updateHelpText(dismissDropdown.value);
+					});
+				};
+
+				// Create settings for each category
+				createCategorySettings(contentEl, "overdue", "Overdue", "Items past their due date — typically most persistent");
+				createCategorySettings(contentEl, "today", "Due today", "Items due today — urgent, but less persistent than overdue");
+				createCategorySettings(contentEl, "tomorrow", "Due tomorrow", "Items due tomorrow — heads up, awareness only");
+				createCategorySettings(contentEl, "thisWeek", "This week", "Items due this week — planning horizon");
+				createCategorySettings(contentEl, "scheduled", "Scheduled/start date", "Items with scheduled start dates — awareness reminders");
+				createCategorySettings(contentEl, "queryBased", "Query-based (Bases)", "Items from Bases views — notification returns when query results change");
+
+				// Add explanation
+				const explanationEl = contentEl.createEl("div");
+				explanationEl.style.marginTop = "16px";
+				explanationEl.style.padding = "8px 12px";
+				explanationEl.style.backgroundColor = "var(--background-secondary)";
+				explanationEl.style.borderRadius = "4px";
+				explanationEl.style.fontSize = "var(--font-ui-smaller)";
+
+				const explanationHeader = explanationEl.createEl("div");
+				explanationHeader.style.fontWeight = "500";
+				explanationHeader.style.marginBottom = "6px";
+				explanationHeader.textContent = "How these settings work:";
+
+				const explanationList = explanationEl.createEl("ul");
+				explanationList.style.margin = "0";
+				explanationList.style.paddingLeft = "16px";
+				explanationList.createEl("li", {
+					text: '"Show in bell count" — If unchecked, these items won\'t appear in the status bar count',
+				});
+				explanationList.createEl("li", {
+					text: '"Show popup" — If unchecked, these items won\'t trigger toast notifications',
+				});
+				explanationList.createEl("li", {
+					text: '"After \'Got it\'" — When you dismiss the toast, items are temporarily removed from the bell. This setting controls when they return.',
+				});
+
+				setting.settingEl.addClass("settings-view__group-description");
+			});
+
+			// ─────────────────────────────────────────────────────────────
+			// Task Notifications (upstream reminders based on due/scheduled)
+			// ─────────────────────────────────────────────────────────────
+			group.addSetting((setting) => {
+				setting.setName("Task notifications").setHeading();
+				setting.setDesc("Upstream reminders based on task due/scheduled dates");
+			});
+
 			group.addSetting((setting) =>
 				configureToggleSetting(setting, {
 					name: translate("settings.features.notifications.enableName"),
-					desc: translate("settings.features.notifications.enableDesc"),
+					desc: "Get notified when tasks are due or scheduled",
 					getValue: () => plugin.settings.enableNotifications,
 					setValue: async (value: boolean) => {
 						plugin.settings.enableNotifications = value;
@@ -463,7 +790,7 @@ export function renderFeaturesTab(
 				group.addSetting((setting) => {
 					setting
 						.setName("Test notification")
-						.setDesc("Tests the vault-wide delivery type shown above. Per-device overrides are tested in Team & Attribution.")
+						.setDesc("Send a test notification using the delivery type above")
 						.addButton((button) =>
 							button
 								.setButtonText("Send test")
@@ -533,6 +860,109 @@ export function renderFeaturesTab(
 					});
 				});
 			}
+
+			// ─────────────────────────────────────────────────────────────
+			// Base Notifications (Bases views with notify: true)
+			// ─────────────────────────────────────────────────────────────
+			group.addSetting((setting) => {
+				setting.setName("Base notifications").setHeading();
+				setting.setDesc("Notifications from Bases views with notify: true in their YAML");
+			});
+
+			group.addSetting((setting) =>
+				configureToggleSetting(setting, {
+					name: "Enable base notifications",
+					desc: "Show notifications when items match your notify-enabled Bases views",
+					getValue: () => plugin.settings.vaultWideNotifications?.enabled ?? true,
+					setValue: async (value: boolean) => {
+						if (!plugin.settings.vaultWideNotifications) {
+							plugin.settings.vaultWideNotifications = {
+								enabled: true,
+								showOnStartup: false,
+								checkInterval: 5,
+								enabledSources: {
+									bases: true,
+									reminderViews: true,
+									upstreamReminders: true,
+									viewEntry: true,
+								},
+								defaultReminderTime: "09:00",
+								onlyNotifyIfAssignedToMe: false,
+								notifyForUnassignedTasks: true,
+								baseNotificationDisplay: "individual",
+							};
+						}
+						plugin.settings.vaultWideNotifications.enabled = value;
+						save();
+						renderFeaturesTab(container, plugin, save);
+					},
+				})
+			);
+
+			if (plugin.settings.vaultWideNotifications?.enabled !== false) {
+				group.addSetting((setting) =>
+					configureDropdownSetting(setting, {
+						name: "Display mode",
+						desc: "How to show notifications from Bases views",
+						options: [
+							{
+								value: "individual",
+								label: "Show individual items (recommended)",
+							},
+							{
+								value: "rollup",
+								label: "Roll up to base level",
+							},
+						],
+						getValue: () =>
+							plugin.settings.vaultWideNotifications?.baseNotificationDisplay || "individual",
+						setValue: async (value: string) => {
+							if (!plugin.settings.vaultWideNotifications) {
+								plugin.settings.vaultWideNotifications = {
+									enabled: true,
+									showOnStartup: false,
+									checkInterval: 5,
+									enabledSources: {
+										bases: true,
+										reminderViews: true,
+										upstreamReminders: true,
+										viewEntry: true,
+									},
+									defaultReminderTime: "09:00",
+									onlyNotifyIfAssignedToMe: false,
+									notifyForUnassignedTasks: true,
+									baseNotificationDisplay: "individual",
+								};
+							}
+							plugin.settings.vaultWideNotifications.baseNotificationDisplay = value as
+								| "rollup"
+								| "individual";
+							save();
+						},
+					})
+				);
+
+				// Explanation of modes
+				group.addSetting((setting) => {
+					const descEl = setting.descEl;
+					setting.setName("");
+					descEl.empty();
+					const detailsEl = descEl.createEl("details");
+					detailsEl.createEl("summary", {
+						text: "What do these modes mean?",
+					});
+					const list = detailsEl.createEl("ul");
+					list.style.marginTop = "4px";
+					list.style.paddingLeft = "16px";
+					list.createEl("li", {
+						text: 'Roll up: Shows one notification per base with a count (e.g., "Documents Coming Due (3 items)"). Best for dynamic queries where items flow in and out.',
+					});
+					list.createEl("li", {
+						text: "Individual: Shows each matching item separately. Better when you want to track and dismiss specific items.",
+					});
+					setting.settingEl.addClass("settings-view__group-description");
+				});
+			}
 		}
 	);
 
@@ -571,6 +1001,21 @@ export function renderFeaturesTab(
 							})
 					)
 			);
+
+			// Cross-link to Base notifications settings
+			group.addSetting((setting) => {
+				const descEl = setting.descEl;
+				setting.setName("Notification settings");
+				descEl.appendText("Configure notifications for Bases with notify: true. ");
+				const linkEl = descEl.createEl("a", {
+					text: "Base notifications \u2192",
+					href: "#",
+				});
+				linkEl.addEventListener("click", (e) => {
+					e.preventDefault();
+					scrollToBaseNotifications(container);
+				});
+			});
 		}
 	);
 
@@ -767,26 +1212,71 @@ export function sendTestNotification(type: "in-app" | "system" | "both", plugin:
 	}
 
 	if (type === "in-app" || type === "both") {
-		plugin.toastNotification.show({
-			message: "3 items need attention",
-			subtitleHtml: '<span class="tn-toast__overdue">1 overdue</span> \u00b7 2 due today',
-			timeout: 0,
-			actionLabel: "View",
-			onAction: () => {
-				plugin.toastNotification.dismiss();
+		// Use the enhanced toast with mock items showing both base notifications and tasks
+		const mockItems = [
+			// Base notifications (use layers icon)
+			{
+				path: "TaskNotes/Views/overdue-tasks.base",
+				title: "Overdue tasks",
+				isTask: false,
+				isBaseNotification: true,
+				timeCategory: "overdue" as const,
+				timeContext: "3 items match",
+				matchCount: 3,
+				sourceBasePath: "TaskNotes/Views/overdue-tasks.base",
+				sources: [{ type: "base" as const, name: "Overdue tasks" }],
 			},
-			showSnooze: true,
-			onSnooze: (minutes) => {
-				const label =
-					minutes >= 1440
-						? "until tomorrow"
-						: minutes >= 60
-							? `${Math.round(minutes / 60)} hour${Math.round(minutes / 60) > 1 ? "s" : ""}`
-							: `${minutes} minute${minutes > 1 ? "s" : ""}`;
-				new Notice(`Test: would snooze for ${label}`);
+			{
+				path: "TaskNotes/Views/documents-coming-due.base",
+				title: "Documents coming due",
+				isTask: false,
+				isBaseNotification: true,
+				timeCategory: "today" as const,
+				timeContext: "5 items match",
+				matchCount: 5,
+				sourceBasePath: "TaskNotes/Views/documents-coming-due.base",
+				sources: [{ type: "base" as const, name: "Documents coming due" }],
+			},
+			// Individual task items (use urgency-specific icons)
+			{
+				path: "TaskNotes/Tasks/test-task-1.md",
+				title: "Submit quarterly report",
+				isTask: true,
+				isBaseNotification: false,
+				timeCategory: "overdue" as const,
+				timeContext: "Due yesterday",
+				sources: [{ type: "base" as const, name: "Test" }],
+			},
+			{
+				path: "TaskNotes/Tasks/test-task-2.md",
+				title: "Review pull request",
+				isTask: true,
+				isBaseNotification: false,
+				timeCategory: "today" as const,
+				timeContext: "Due today",
+				sources: [{ type: "base" as const, name: "Test" }],
+			},
+			{
+				path: "TaskNotes/Tasks/test-task-3.md",
+				title: "Update documentation",
+				isTask: true,
+				isBaseNotification: false,
+				timeCategory: "thisWeek" as const,
+				timeContext: "Due Friday",
+				sources: [{ type: "base" as const, name: "Test" }],
+			},
+		];
+
+		plugin.toastNotification.showAggregated({
+			items: mockItems,
+			counts: {
+				total: 5,
+				overdue: 2,
+				today: 2,
+				fromBases: 2,
 			},
 		});
-		diagnostics.push("In-app: toast shown.");
+		diagnostics.push("In-app: enhanced toast shown with mixed base + task items.");
 	}
 
 	// Show diagnostic summary
@@ -823,6 +1313,20 @@ function navigateToNotificationScope(plugin: TaskNotesPlugin): void {
 					}
 				}
 			}, 200);
+		}
+	}
+}
+
+/**
+ * Scroll to Base notifications sub-section within the current tab
+ */
+function scrollToBaseNotifications(container: HTMLElement): void {
+	// Find the "Base notifications" heading within the settings container
+	const headings = container.querySelectorAll(".setting-item-heading .setting-item-name");
+	for (const heading of headings) {
+		if (heading.textContent?.toLowerCase().includes("base notifications")) {
+			(heading as HTMLElement).scrollIntoView({ behavior: "smooth", block: "start" });
+			break;
 		}
 	}
 }

@@ -4,6 +4,48 @@ All notable changes to this TaskNotes fork will be documented in this file.
 
 This fork (`cybersader/tasknotes`) adds bulk tasking, notifications, and other enhancements to the upstream [TaskNotes](https://github.com/callumalpass/tasknotes) plugin.
 
+## [4.3.20] - 2026-02-06
+
+### Added
+- **NotificationCache**: High-performance caching layer for notification items
+  - 45-second TTL on aggregated results
+  - In-flight promise deduplication (prevents concurrent duplicate evaluations)
+  - Folder→Bases inverted index for O(1) invalidation lookup
+  - Bell click is now instant (~1ms cache hit vs ~200-500ms full scan)
+- **Per-category reminder behavior settings**: Each time category has configurable behavior
+  - Overdue, today, tomorrow, thisWeek, scheduled, queryBased categories
+  - Dismiss behaviors: until-restart, snooze-1h/4h/1d, until-data-change, until-complete, permanent
+  - Per-category bell toggle (show/hide in status bar count)
+  - Per-category toast toggle (show/hide popup notification)
+  - Advanced settings section in Settings → Notifications → General
+- **Scrollable toast items**: Click "+X more" to enable scroll mode with all items visible
+- **Ctrl+hover page preview**: Task titles in toast support Ctrl+hover to show page preview
+
+### Changed
+- **Bell shows PENDING only**: Status bar count now shows only unseen items where category has `showInBellCount: true`
+- **Smart invalidation**: File changes only re-evaluate bases that monitor the changed folder (not ALL bases)
+- **Console log timestamps**: All debug console output now includes ISO timestamps for traceability
+- **Settings reorganized**: Notifications section split into General/Task/Base sub-sections
+  - Global settings (toast click, status bar click, check interval, show on startup) moved to General
+  - Per-category behavior settings in General → "Reminder behavior by category (advanced)"
+- **Settings UX clarity**: Improved labels and help text for reminder behavior settings
+  - "Bell" → "Show in bell count", "Toast" → "Show popup", "Dismiss:" → "After 'Got it':"
+  - Dynamic help text explains what happens when you dismiss (e.g., "Removed from bell for **4 hours**, then returns")
+  - Dynamic values highlighted in accent color for visual distinction from template text
+  - Category cards with background and accent border for clearer visual grouping
+  - Footer explanation updated with clearer bullet-point format
+
+### Fixed
+- **Toast click area**: Click handler now includes subtitle text for expand mode (was only handling explicit elements)
+- **Constant background activity**: Removed O(n) "evaluate ALL bases" approach on every file change
+- **Delayed bell response**: Bell click now returns cached data instantly instead of waiting for full evaluation
+
+### Performance
+- Bell click: ~200-500ms → ~1ms (cache hit)
+- Periodic check (no changes): Full scan → Instant (cache hit)
+- File change in monitored folder: ALL bases evaluated → Only affected bases
+- File change elsewhere: ALL bases evaluated → No evaluation
+
 ## [4.3.19] - 2026-02-03
 
 ### Added

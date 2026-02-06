@@ -174,7 +174,7 @@ export class BasesQueryWatcher {
 					cachedPaths: existing?.cachedPaths || new Set(),
 				});
 
-				this.plugin.debugLog.log("BasesQueryWatcher", `Registered: ${file.path}`);
+				// Registered base for monitoring
 			} else {
 				// Remove if notify was disabled
 				this.monitoredBases.delete(file.path);
@@ -206,7 +206,7 @@ export class BasesQueryWatcher {
 			if (!hasNotify && Array.isArray(parsed?.views)) {
 				hasNotify = parsed.views.some((v: any) => v?.notify === true);
 				if (hasNotify) {
-					this.plugin.debugLog.log("BasesQueryWatcher", `Found notify:true in views[] for ${filePath || 'unknown file'}`);
+					// Found notify:true in views[]
 				}
 			}
 
@@ -223,7 +223,7 @@ export class BasesQueryWatcher {
 						if (view.source) source = view.source;
 						if (view.filters) filters = view.filters;
 						if (source || filters) {
-							this.plugin.debugLog.log("BasesQueryWatcher", `Extracted filters from views[] for ${filePath || 'unknown file'}`);
+							// Extracted filters from views[]
 							break;
 						}
 					}
@@ -232,7 +232,7 @@ export class BasesQueryWatcher {
 
 			// Debug: log what we found
 			if (filePath) {
-				this.plugin.debugLog.log("BasesQueryWatcher", `Parsed ${filePath}: notify=${hasNotify}, hasViews=${Array.isArray(parsed?.views)}, viewCount=${parsed?.views?.length || 0}`);
+				// Base parsed successfully
 			}
 
 			return {
@@ -315,25 +315,27 @@ export class BasesQueryWatcher {
 
 	/**
 	 * Handle a path change - check if it affects any monitored queries.
+	 * Uses NotificationCache's smart invalidation to only re-evaluate affected bases.
 	 */
 	private handlePathChange(changedPath: string): void {
 		// Quick check: does this path appear in any cached result set?
+		// (This handles items already in results)
 		for (const [basePath, monitored] of this.monitoredBases) {
 			if (monitored.cachedPaths.has(changedPath)) {
 				this.pendingEvaluations.add(basePath);
 			}
 		}
 
-		// Also, the change might ADD a new item to a query we haven't cached yet
-		// So we schedule evaluation for all non-snoozed bases
-		const now = Date.now();
-		for (const [basePath, monitored] of this.monitoredBases) {
-			if (monitored.snoozedUntil <= now) {
-				this.pendingEvaluations.add(basePath);
-			}
-		}
+		// Smart invalidation: let the cache determine which bases monitor this folder.
+		// This replaces the O(n) "evaluate ALL bases" approach with O(1) lookup.
+		// The cache uses a folder→bases index built from .base source filters.
+		this.plugin.notificationCache.invalidateForPath(changedPath);
 
-		this.scheduleEvaluation();
+		// Only schedule evaluation if we found cached path matches above
+		// (The cache invalidation handles the "new items" case via its own mechanism)
+		if (this.pendingEvaluations.size > 0) {
+			this.scheduleEvaluation();
+		}
 	}
 
 	/**
@@ -504,7 +506,7 @@ export class BasesQueryWatcher {
 	private async evaluateSourceFilter(config: BaseFileConfig): Promise<NotificationItem[]> {
 		const items: NotificationItem[] = [];
 
-		this.plugin.debugLog.log("BasesQueryWatcher", `evaluateSourceFilter called with config: source=${config.source}, hasFilters=${!!config.filters}`);
+		// Evaluate source filter silently - only log results
 
 		// Try to extract filter criteria from source string and filters structure
 		let folder: string | null = null;
@@ -518,28 +520,28 @@ export class BasesQueryWatcher {
 			const folderMatch = filterStr.match(/file\.inFolder\s*\(\s*["']([^"']+)["']\s*\)/);
 			if (folderMatch) {
 				folder = folderMatch[1];
-				this.plugin.debugLog.log("BasesQueryWatcher", `Extracted folder: ${folder}`);
+				// Folder extracted from filter
 			}
 
 			// Check for file.name == "value" pattern
 			const nameMatch = filterStr.match(/file\.name\s*==\s*["']([^"']+)["']/);
 			if (nameMatch) {
 				exactFileName = nameMatch[1];
-				this.plugin.debugLog.log("BasesQueryWatcher", `Extracted exactFileName: ${exactFileName}`);
+				// exactFileName extracted
 			}
 
 			// Check for type == "value" pattern
 			const typeMatch = filterStr.match(/type\s*==\s*["']([^"']+)["']/);
 			if (typeMatch) {
 				typeFilter = typeMatch[1];
-				this.plugin.debugLog.log("BasesQueryWatcher", `Extracted typeFilter: ${typeFilter}`);
+				// typeFilter extracted
 			}
 
 			// Check for file.path.contains("value") pattern
 			const pathMatch = filterStr.match(/file\.path\.contains\s*\(\s*["']([^"']+)["']\s*\)/);
 			if (pathMatch) {
 				pathContains = pathMatch[1];
-				this.plugin.debugLog.log("BasesQueryWatcher", `Extracted pathContains: ${pathContains}`);
+				// pathContains extracted
 			}
 		};
 
@@ -551,7 +553,7 @@ export class BasesQueryWatcher {
 		// Also check filters structure (used by many .base files)
 		if (config.filters) {
 			const filterArray = config.filters.and || config.filters.or || [];
-			this.plugin.debugLog.log("BasesQueryWatcher", `Processing filters: ${JSON.stringify(filterArray)}`);
+			// Processing filter array
 			for (const filter of filterArray) {
 				if (typeof filter === 'string') {
 					parseFilterString(filter);
@@ -566,10 +568,7 @@ export class BasesQueryWatcher {
 			return items;
 		}
 
-		this.plugin.debugLog.log("BasesQueryWatcher", `Evaluating: folder="${folder}", exactFileName="${exactFileName}", pathContains="${pathContains}", typeFilter="${typeFilter}"`);
-
 		const files = this.plugin.app.vault.getMarkdownFiles();
-		this.plugin.debugLog.log("BasesQueryWatcher", `Total markdown files in vault: ${files.length}`);
 
 		let matchedCriteria = 0;
 		let matchedType = 0;
@@ -589,7 +588,6 @@ export class BasesQueryWatcher {
 				// Match against basename (without .md extension)
 				if (file.basename === exactFileName) {
 					matches = true;
-					this.plugin.debugLog.log("BasesQueryWatcher", `File name match: ${file.path} matches "${exactFileName}"`);
 				}
 			}
 
@@ -608,7 +606,6 @@ export class BasesQueryWatcher {
 
 			// Apply type filter if present
 			if (typeFilter && frontmatter?.type !== typeFilter) {
-				this.plugin.debugLog.log("BasesQueryWatcher", `File ${file.path} excluded by type filter: ${frontmatter?.type} !== ${typeFilter}`);
 				continue;
 			}
 			matchedType++;

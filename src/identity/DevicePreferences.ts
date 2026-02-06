@@ -25,6 +25,11 @@ export interface NotificationScopePrefs {
 /**
  * Per-device preferences stored in localStorage.
  * All fields are optional — undefined means "use vault-wide default".
+ *
+ * Pattern: device override → vault-wide setting → hardcoded default
+ *
+ * Future: This could expand to include many more view-specific and
+ * user-preference settings. See roadmap for "Per-Device Settings Architecture".
  */
 export interface DevicePreferences {
 	/** Override vault-wide notification type */
@@ -35,6 +40,18 @@ export interface DevicePreferences {
 	checkInterval?: number;
 	/** Notification scope (per-device) */
 	notificationScope?: NotificationScopePrefs;
+
+	// ── View Preferences ──────────────────────────────────
+	/** Upcoming View default period (Y/M/W/3D/D/L) */
+	upcomingViewPeriod?: "year" | "month" | "week" | "3day" | "day" | "list";
+	/** Toast display mode for base notifications */
+	baseNotificationDisplay?: "individual" | "rollup";
+
+	/** Toast click behavior: "view" = click opens Upcoming, "expand" = click expands items */
+	toastClickBehavior?: "view" | "expand";
+
+	/** Status bar click behavior: "view" = opens Upcoming, "toast" = shows/toggles toast */
+	statusBarClickBehavior?: "view" | "toast";
 }
 
 export class DevicePreferencesManager {
@@ -167,5 +184,75 @@ export class DevicePreferencesManager {
 	/** Whether this device has an unassigned override */
 	hasIncludeUnassignedTasksOverride(): boolean {
 		return this.prefs.notificationScope?.includeUnassignedTasks !== undefined;
+	}
+
+	// ── View Preferences ─────────────────────────────────
+
+	/** Get effective Upcoming View period for this device */
+	getUpcomingViewPeriod(): "year" | "month" | "week" | "3day" | "day" | "list" {
+		return this.prefs.upcomingViewPeriod ?? "list"; // Hardcoded default
+	}
+
+	/** Whether this device has an Upcoming View period override */
+	hasUpcomingViewPeriodOverride(): boolean {
+		return this.prefs.upcomingViewPeriod !== undefined;
+	}
+
+	/** Set Upcoming View period for this device */
+	setUpcomingViewPeriod(period: "year" | "month" | "week" | "3day" | "day" | "list"): void {
+		this.prefs.upcomingViewPeriod = period;
+		this.save();
+	}
+
+	/** Get effective base notification display mode for this device */
+	getBaseNotificationDisplay(): "individual" | "rollup" {
+		return this.prefs.baseNotificationDisplay
+			?? this.plugin.settings.vaultWideNotifications?.baseNotificationDisplay
+			?? "individual";
+	}
+
+	/** Whether this device has a base notification display override */
+	hasBaseNotificationDisplayOverride(): boolean {
+		return this.prefs.baseNotificationDisplay !== undefined;
+	}
+
+	/** Set base notification display mode for this device */
+	setBaseNotificationDisplay(mode: "individual" | "rollup"): void {
+		this.prefs.baseNotificationDisplay = mode;
+		this.save();
+	}
+
+	// ── Toast Preferences ─────────────────────────────────
+
+	/** Get effective toast click behavior for this device */
+	getToastClickBehavior(): "view" | "expand" {
+		return this.prefs.toastClickBehavior ?? "view"; // Default: click opens Upcoming View
+	}
+
+	/** Whether this device has a toast click behavior override */
+	hasToastClickBehaviorOverride(): boolean {
+		return this.prefs.toastClickBehavior !== undefined;
+	}
+
+	/** Set toast click behavior for this device */
+	setToastClickBehavior(behavior: "view" | "expand"): void {
+		this.prefs.toastClickBehavior = behavior;
+		this.save();
+	}
+
+	/** Get effective status bar click behavior for this device */
+	getStatusBarClickBehavior(): "view" | "toast" {
+		return this.prefs.statusBarClickBehavior ?? "view"; // Default: click opens Upcoming View
+	}
+
+	/** Whether this device has a status bar click behavior override */
+	hasStatusBarClickBehaviorOverride(): boolean {
+		return this.prefs.statusBarClickBehavior !== undefined;
+	}
+
+	/** Set status bar click behavior for this device */
+	setStatusBarClickBehavior(behavior: "view" | "toast"): void {
+		this.prefs.statusBarClickBehavior = behavior;
+		this.save();
 	}
 }

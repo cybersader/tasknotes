@@ -67,11 +67,12 @@ export class DebugLog {
 		// Only output when enabled (per Obsidian guidelines)
 		if (!this.enabled) return;
 
-		// Log to console when debug mode is on
+		// Log to console when debug mode is on (with timestamp for traceability)
+		const timestamp = new Date().toISOString();
 		if (data !== undefined) {
-			console.log(`[${tag}] ${message}`, data);
+			console.log(`[${timestamp}] [${tag}] ${message}`, data);
 		} else {
-			console.log(`[${tag}] ${message}`);
+			console.log(`[${timestamp}] [${tag}] ${message}`);
 		}
 
 		// Queue writes to avoid race conditions
@@ -87,7 +88,8 @@ export class DebugLog {
 		// Only output when enabled (per Obsidian guidelines)
 		if (!this.enabled) return;
 
-		console.warn(`[${tag}] ${message}`, data);
+		const timestamp = new Date().toISOString();
+		console.warn(`[${timestamp}] [${tag}] ${message}`, data);
 
 		this.writeQueue = this.writeQueue.then(() =>
 			this.writeToFile(tag, `⚠️ WARN: ${message}`, data)
@@ -101,7 +103,8 @@ export class DebugLog {
 	 */
 	async error(tag: string, message: string, error?: unknown): Promise<void> {
 		// Errors ALWAYS go to console (allowed per Obsidian guidelines)
-		console.error(`[${tag}] ${message}`, error);
+		const timestamp = new Date().toISOString();
+		console.error(`[${timestamp}] [${tag}] ${message}`, error);
 
 		// Only write to file if enabled
 		if (!this.enabled) return;

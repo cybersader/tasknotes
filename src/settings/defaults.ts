@@ -8,6 +8,8 @@ import {
 	NLPTriggersConfig,
 	GoogleCalendarExportSettings,
 	VaultWideNotificationSettings,
+	ReminderTypeSettings,
+	TimeCategoryBehavior,
 } from "../types/settings";
 
 /**
@@ -224,6 +226,47 @@ export const DEFAULT_PROJECT_AUTOSUGGEST: ProjectAutosuggestSettings = {
 	propertyValue: "",
 };
 
+// Default per-category reminder behavior
+// Sensible defaults: overdue is persistent, today shows toast, future items are quieter
+export const DEFAULT_REMINDER_TYPE_SETTINGS: ReminderTypeSettings = {
+	overdue: {
+		showInBellCount: true,
+		showToast: true,
+		dismissBehavior: "snooze-4h", // Comes back after 4 hours - overdue items are persistent
+		autoReturnHours: 24, // Force return after 24h even if snoozed again
+	} as TimeCategoryBehavior,
+	today: {
+		showInBellCount: true,
+		showToast: true,
+		dismissBehavior: "until-restart", // Gone until Obsidian restarts
+		autoReturnHours: 0, // No forced return
+	} as TimeCategoryBehavior,
+	tomorrow: {
+		showInBellCount: true,
+		showToast: false, // Don't popup for tomorrow items (awareness only)
+		dismissBehavior: "until-restart",
+		autoReturnHours: 0,
+	} as TimeCategoryBehavior,
+	thisWeek: {
+		showInBellCount: true,
+		showToast: false, // Don't popup for this week items
+		dismissBehavior: "until-restart",
+		autoReturnHours: 0,
+	} as TimeCategoryBehavior,
+	scheduled: {
+		showInBellCount: true,
+		showToast: true, // Show toast when scheduled/start date arrives
+		dismissBehavior: "until-next-reminder", // One-shot per reminder instance
+		autoReturnHours: 0,
+	} as TimeCategoryBehavior,
+	queryBased: {
+		showInBellCount: true,
+		showToast: true,
+		dismissBehavior: "until-data-change", // Returns when query results change
+		autoReturnHours: 0,
+	} as TimeCategoryBehavior,
+};
+
 // Default vault-wide notification settings
 export const DEFAULT_VAULT_WIDE_NOTIFICATIONS: VaultWideNotificationSettings = {
 	enabled: true,
@@ -238,6 +281,8 @@ export const DEFAULT_VAULT_WIDE_NOTIFICATIONS: VaultWideNotificationSettings = {
 	defaultReminderTime: "09:00",
 	onlyNotifyIfAssignedToMe: false, // Default: notify for all tasks
 	notifyForUnassignedTasks: true, // When filtering, still show unassigned tasks
+	baseNotificationDisplay: "individual", // Default: show each item separately (most intuitive)
+	reminderTypeSettings: DEFAULT_REMINDER_TYPE_SETTINGS, // Per-category behavior configuration
 };
 
 // Default NLP triggers configuration

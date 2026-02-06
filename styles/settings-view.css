@@ -1519,3 +1519,189 @@ select.tasknotes-settings__card-input {
     padding-bottom: 0;
     border-bottom: none;
 }
+
+/* ================================================
+   SUB-SECTION HEADINGS (within setting groups)
+   Used for "Task notifications" / "Base notifications" etc.
+   ================================================ */
+
+/* Style sub-section headings within settings
+   These are used for "Task notifications" / "Base notifications" etc.
+   Keep headings simple, but indent/group the settings underneath */
+
+/* Sub-section headings - simple, just spacing */
+.tasknotes-plugin.tasknotes-settings .setting-item.setting-item-heading {
+    margin-top: 24px !important;
+    margin-bottom: 4px !important;
+    padding: 0 !important;
+    background: none !important;
+    border: none !important;
+}
+
+/* Heading text - slightly bolder but otherwise normal */
+.tasknotes-plugin.tasknotes-settings .setting-item.setting-item-heading .setting-item-name {
+    font-size: inherit !important;
+    font-weight: 600 !important;
+    color: var(--text-normal) !important;
+}
+
+/* Heading description styling */
+.tasknotes-plugin.tasknotes-settings .setting-item.setting-item-heading .setting-item-description {
+    font-size: var(--font-ui-smaller) !important;
+    color: var(--text-muted) !important;
+    margin-top: 2px !important;
+}
+
+/* Settings AFTER a heading get indented with a left border - visual grouping */
+.tasknotes-plugin.tasknotes-settings .setting-item.setting-item-heading ~ .setting-item:not(.setting-item-heading) {
+    margin-left: 12px !important;
+    padding-left: 12px !important;
+    border-left: 2px solid var(--background-modifier-border) !important;
+}
+
+/* Headings themselves should NEVER be indented - always flush left */
+.tasknotes-plugin.tasknotes-settings .setting-item.setting-item-heading {
+    margin-left: 0 !important;
+    padding-left: 0 !important;
+    border-left: none !important;
+}
+
+/* ================================================
+   REMINDER BEHAVIOR BY CATEGORY (Advanced Section)
+   ================================================ */
+
+/* Collapsible details container */
+.reminder-behavior-details {
+    margin-top: 8px;
+}
+
+.reminder-behavior-details > summary {
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text-normal);
+    padding: 8px 0;
+    list-style: none;
+}
+
+.reminder-behavior-details > summary::-webkit-details-marker {
+    display: none;
+}
+
+.reminder-behavior-details > summary::before {
+    content: "▶";
+    display: inline-block;
+    margin-right: 8px;
+    font-size: 10px;
+    transition: transform 0.2s ease;
+    color: var(--text-muted);
+}
+
+.reminder-behavior-details[open] > summary::before {
+    transform: rotate(90deg);
+}
+
+/* Category card styling */
+.reminder-category-settings {
+    margin-bottom: 20px !important;
+    padding: 12px 16px !important;
+    border-left: 3px solid var(--interactive-accent) !important;
+    background: var(--background-secondary);
+    border-radius: 0 6px 6px 0;
+}
+
+/* Category header - bolder and larger */
+.reminder-category-settings > div:first-child {
+    font-weight: 600 !important;
+    font-size: 14px !important;
+    color: var(--text-normal) !important;
+    margin-bottom: 2px !important;
+}
+
+/* Category description - slightly more visible */
+.reminder-category-settings > div:nth-child(2) {
+    font-size: 12px !important;
+    color: var(--text-muted) !important;
+    margin-bottom: 10px !important;
+    line-height: 1.4;
+}
+
+/* Controls row - tighter layout */
+.reminder-category-settings > div:nth-child(3) {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 16px !important;
+    align-items: center !important;
+}
+
+/* Dropdown label */
+.reminder-category-settings > div:nth-child(3) > div:first-child > span {
+    font-weight: 500;
+    color: var(--text-normal);
+    font-size: 13px;
+}
+
+/* Dropdown itself */
+.reminder-category-settings select.dropdown {
+    min-width: 180px;
+    font-size: 13px;
+}
+
+/* Checkbox labels - more compact */
+.reminder-category-settings label {
+    font-size: 13px !important;
+    color: var(--text-muted) !important;
+    gap: 6px !important;
+}
+
+.reminder-category-settings label:hover {
+    color: var(--text-normal) !important;
+}
+
+/* Help text - template style with highlighted values */
+.reminder-behavior-help {
+    font-size: 12px !important;
+    font-style: normal !important;
+    color: var(--text-muted) !important;
+    background: var(--background-primary);
+    padding: 6px 10px !important;
+    border-radius: 4px;
+    margin-top: 10px !important;
+    border: 1px solid var(--background-modifier-border);
+}
+
+/* Dynamic value within help text - highlighted */
+.reminder-help-value {
+    color: var(--text-accent);
+    font-weight: 600;
+    background: color-mix(in srgb, var(--text-accent) 12%, transparent);
+    padding: 1px 5px;
+    border-radius: 3px;
+}
+
+/* Footer explanation box */
+.reminder-category-settings ~ div:last-child {
+    margin-top: 20px !important;
+    padding: 12px 16px !important;
+    background: var(--background-secondary) !important;
+    border-radius: 6px !important;
+    font-size: 13px !important;
+}
+
+.reminder-category-settings ~ div:last-child > div:first-child {
+    font-weight: 600 !important;
+    font-size: 13px !important;
+    margin-bottom: 8px !important;
+    color: var(--text-normal) !important;
+}
+
+.reminder-category-settings ~ div:last-child ul {
+    margin: 0 !important;
+    padding-left: 20px !important;
+}
+
+.reminder-category-settings ~ div:last-child li {
+    margin-bottom: 6px !important;
+    line-height: 1.5 !important;
+    color: var(--text-muted) !important;
+}
