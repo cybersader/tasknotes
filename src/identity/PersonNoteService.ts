@@ -217,7 +217,10 @@ export class PersonNoteService {
 			const cache = this.plugin.app.metadataCache.getFileCache(file);
 			const frontmatter = cache?.frontmatter;
 
-			if (!frontmatter || frontmatter.type !== "person") {
+			// Check if it's a person note using configurable property name and value
+			const typeProperty = this.plugin.settings.identityTypePropertyName || "type";
+			const personValue = this.plugin.settings.personTypeValue || "person";
+			if (!frontmatter || frontmatter[typeProperty] !== personValue) {
 				continue;
 			}
 

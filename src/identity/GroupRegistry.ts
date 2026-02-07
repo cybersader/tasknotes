@@ -73,7 +73,10 @@ export class GroupRegistry {
 			const cache = this.plugin.app.metadataCache.getFileCache(file);
 			const frontmatter = cache?.frontmatter;
 
-			if (!frontmatter || frontmatter.type !== "group") {
+			// Check if it's a group note using configurable property name and value
+			const typeProperty = this.plugin.settings.identityTypePropertyName || "type";
+			const groupValue = this.plugin.settings.groupTypeValue || "group";
+			if (!frontmatter || frontmatter[typeProperty] !== groupValue) {
 				continue;
 			}
 
@@ -104,7 +107,7 @@ export class GroupRegistry {
 	}
 
 	/**
-	 * Check if a note is a group (has type: group in frontmatter).
+	 * Check if a note is a group (has configured type property with group value in frontmatter).
 	 */
 	isGroup(notePath: string): boolean {
 		const file = this.plugin.app.vault.getAbstractFileByPath(notePath);
@@ -113,11 +116,13 @@ export class GroupRegistry {
 		}
 
 		const cache = this.plugin.app.metadataCache.getFileCache(file);
-		return cache?.frontmatter?.type === "group";
+		const typeProperty = this.plugin.settings.identityTypePropertyName || "type";
+		const groupValue = this.plugin.settings.groupTypeValue || "group";
+		return cache?.frontmatter?.[typeProperty] === groupValue;
 	}
 
 	/**
-	 * Check if a note is a person note (has type: person in frontmatter).
+	 * Check if a note is a person note (has configured type property with person value in frontmatter).
 	 */
 	isPersonNote(notePath: string): boolean {
 		const file = this.plugin.app.vault.getAbstractFileByPath(notePath);
@@ -126,7 +131,9 @@ export class GroupRegistry {
 		}
 
 		const cache = this.plugin.app.metadataCache.getFileCache(file);
-		return cache?.frontmatter?.type === "person";
+		const typeProperty = this.plugin.settings.identityTypePropertyName || "type";
+		const personValue = this.plugin.settings.personTypeValue || "person";
+		return cache?.frontmatter?.[typeProperty] === personValue;
 	}
 
 	/**

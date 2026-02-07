@@ -282,8 +282,12 @@ export class FileSelectorModal extends SuggestModal<TAbstractFile> {
 			const frontmatter = cache?.frontmatter;
 
 			if (frontmatter) {
-				isPerson = frontmatter.type === "person";
-				isGroup = frontmatter.type === "group";
+				// Use configurable property names for person/group detection
+				const typeProperty = this.plugin.settings.identityTypePropertyName || "type";
+				const personValue = this.plugin.settings.personTypeValue || "person";
+				const groupValue = this.plugin.settings.groupTypeValue || "group";
+				isPerson = frontmatter[typeProperty] === personValue;
+				isGroup = frontmatter[typeProperty] === groupValue;
 
 				// Use title field if available, otherwise file basename
 				const titleField = this.plugin.fieldMapper.toUserField("title");

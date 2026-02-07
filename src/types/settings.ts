@@ -299,6 +299,11 @@ export interface TaskNotesSettings {
 	groupNotesFolder: string; // Can be same as personNotesFolder
 	groupNotesTag: string; // Optional filter tag
 	groupNoteMappings: GroupNoteMapping[]; // Cached discovered groups
+	// Configurable type property names (for enterprise compatibility)
+	identityTypePropertyName: string; // Property name for person/group type detection (default: "type")
+	personTypeValue: string; // Value that identifies person notes (default: "person")
+	groupTypeValue: string; // Value that identifies group notes (default: "group")
+	taskTypeValue: string; // Value that identifies task notes for Bases interceptor (default: "task")
 	// Vault-wide notification settings
 	vaultWideNotifications: VaultWideNotificationSettings;
 	// Debug logging (persists between restarts)

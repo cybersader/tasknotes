@@ -223,7 +223,7 @@ function navigateToTeamAttribution(plugin: TaskNotesPlugin): void {
 	if (settingsTab?.containerEl) {
 		// Force re-render by clearing target tab
 		const tabContent = settingsTab.containerEl.querySelector(
-			"#tab-content-team-attribution"
+			"#settings-tab-team-attribution"
 		) as HTMLElement;
 		if (tabContent) {
 			tabContent.empty();

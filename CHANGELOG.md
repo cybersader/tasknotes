@@ -4,6 +4,22 @@ All notable changes to this TaskNotes fork will be documented in this file.
 
 This fork (`cybersader/tasknotes`) adds bulk tasking, notifications, and other enhancements to the upstream [TaskNotes](https://github.com/callumalpass/tasknotes) plugin.
 
+## [4.3.21] - 2026-02-07
+
+### Fixed
+- **Settings navigation bug**: "Open Team and Attribution settings" button now works correctly
+  - Fixed ID mismatch in taskPropertiesTab.ts and sharedVaultTab.ts
+  - Tab bar no longer disappears when clicking cross-tab navigation links
+
+### Added
+- **Configurable type properties**: Enterprise compatibility for person/group/task note detection
+  - New settings in Team & Attribution → Type property configuration
+  - `identityTypePropertyName`: Change property name used for type detection (default: "type")
+  - `personTypeValue`: Value that identifies person notes (default: "person")
+  - `groupTypeValue`: Value that identifies group notes (default: "group")
+  - `taskTypeValue`: Value that identifies task notes for Bases (default: "task")
+  - Allows using custom properties if "type: person" conflicts with other plugins
+
 ## [4.3.20] - 2026-02-06
 
 ### Added

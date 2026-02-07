@@ -50,6 +50,9 @@ export function renderSharedVaultTab(
 	// Section 3.5: Group Notes - Configure group notes for team assignment
 	renderGroupNotesSection(container, plugin, save, t);
 
+	// Section 3.6: Type Property Configuration - Enterprise compatibility
+	renderTypePropertySection(container, plugin, save, t);
+
 	// Section 4: Your Identity - Device registration
 	renderYourIdentitySection(container, plugin, save, t);
 
@@ -387,6 +390,103 @@ function renderGroupNotesSection(
 }
 
 /**
+ * Section 3.6: Type Property Configuration
+ * Configure the frontmatter property and values used to identify person/group notes.
+ * This allows enterprise users to use custom property names if "type" conflicts with other plugins.
+ */
+function renderTypePropertySection(
+	container: HTMLElement,
+	plugin: TaskNotesPlugin,
+	save: () => void,
+	_t: (key: TranslationKey) => string
+): void {
+	createSettingGroup(
+		container,
+		{
+			heading: "Type property configuration",
+			description: "Configure how TaskNotes identifies person and group notes. Change these if 'type: person' conflicts with other plugins.",
+		},
+		(group) => {
+			// Type property name
+			group.addSetting((setting) => {
+				setting
+					.setName("Type property name")
+					.setDesc("The frontmatter property used to identify note types (default: type)")
+					.addText((text) => {
+						text
+							.setPlaceholder("type")
+							.setValue(plugin.settings.identityTypePropertyName)
+							.onChange(async (value) => {
+								plugin.settings.identityTypePropertyName = value.trim() || "type";
+								save();
+							});
+					});
+			});
+
+			// Person type value
+			group.addSetting((setting) => {
+				setting
+					.setName("Person type value")
+					.setDesc("The value that identifies a note as a person (default: person)")
+					.addText((text) => {
+						text
+							.setPlaceholder("person")
+							.setValue(plugin.settings.personTypeValue)
+							.onChange(async (value) => {
+								plugin.settings.personTypeValue = value.trim() || "person";
+								save();
+							});
+					});
+			});
+
+			// Group type value
+			group.addSetting((setting) => {
+				setting
+					.setName("Group type value")
+					.setDesc("The value that identifies a note as a group (default: group)")
+					.addText((text) => {
+						text
+							.setPlaceholder("group")
+							.setValue(plugin.settings.groupTypeValue)
+							.onChange(async (value) => {
+								plugin.settings.groupTypeValue = value.trim() || "group";
+								save();
+							});
+					});
+			});
+
+			// Task type value (for future Bases interceptor)
+			group.addSetting((setting) => {
+				setting
+					.setName("Task type value")
+					.setDesc("The value that identifies a note as a task (default: task). Used by Bases integration.")
+					.addText((text) => {
+						text
+							.setPlaceholder("task")
+							.setValue(plugin.settings.taskTypeValue)
+							.onChange(async (value) => {
+								plugin.settings.taskTypeValue = value.trim() || "task";
+								save();
+							});
+					});
+			});
+
+			// Example display
+			group.addSetting((setting) => {
+				const propName = plugin.settings.identityTypePropertyName || "type";
+				const personVal = plugin.settings.personTypeValue || "person";
+				const groupVal = plugin.settings.groupTypeValue || "group";
+				const taskVal = plugin.settings.taskTypeValue || "task";
+
+				setting
+					.setName("Current configuration")
+					.setDesc(`Person notes: ${propName}: ${personVal} | Group notes: ${propName}: ${groupVal} | Task notes: ${propName}: ${taskVal}`);
+			});
+		}
+	);
+}
+
+/**
  * Section 4: Your Identity
  * Link this device to your person note
  */
@@ -568,7 +668,7 @@ function navigateToTaskProperties(plugin: TaskNotesPlugin): void {
 	if (settingsTab && settingsTab.containerEl) {
 		// Force re-render by clearing target tab
 		const tabContent = settingsTab.containerEl.querySelector(
-			"#tab-content-task-properties"
+			"#settings-tab-task-properties"
 		) as HTMLElement;
 		if (tabContent) {
 			tabContent.empty();
