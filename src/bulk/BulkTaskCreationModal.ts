@@ -18,6 +18,8 @@ import { StatusContextMenu } from "../components/StatusContextMenu";
 import { PriorityContextMenu } from "../components/PriorityContextMenu";
 import { ReminderModal } from "../modals/ReminderModal";
 import { Reminder, TaskInfo } from "../types";
+import { type PropertyType } from "../utils/propertyDiscoveryUtils";
+import { createPropertyPicker } from "../ui/PropertyPicker";
 
 type BulkMode = "generate" | "convert";
 
@@ -64,6 +66,10 @@ export class BulkTaskCreationModal extends Modal {
 	private bulkStatus = "";
 	private bulkPriority = "";
 	private bulkReminders: Reminder[] = []; // Stackable reminders via ReminderModal
+	private bulkCustomProperties: Record<string, any> = {}; // Custom properties from PropertyPicker
+	private propertyPickerInstance: { refresh: () => void; destroy: () => void } | null = null;
+	private customPropsPanel: HTMLElement | null = null;
+	private customPropsIcon: HTMLElement | null = null;
 
 	// UI element references
 	private bodyContainer: HTMLElement | null = null;
@@ -267,6 +273,11 @@ export class BulkTaskCreationModal extends Modal {
 		// Reminders
 		this.reminderIcon = this.createActionIcon(actionBar, "bell", "Reminders", () => this.openReminderPicker());
 
+		actionBar.createDiv({ cls: "tn-bulk-modal__action-separator" });
+
+		// Custom properties
+		this.customPropsIcon = this.createActionIcon(actionBar, "braces", "Custom properties", () => this.toggleCustomPropertiesPanel());
+
 		// Update icon states
 		this.updateActionIconStates();
 	}
@@ -346,12 +357,105 @@ export class BulkTaskCreationModal extends Modal {
 			setTooltip(this.assigneeIcon, count > 0 ? `${count} assignee${count !== 1 ? "s" : ""} selected` : "Assignee");
 		}
 
+		// Custom properties
+		if (this.customPropsIcon) {
+			const count = Object.keys(this.bulkCustomProperties).length;
+			this.customPropsIcon.toggleClass("has-value", count > 0);
+			setTooltip(this.customPropsIcon, count > 0
+				? `${count} custom propert${count !== 1 ? "ies" : "y"} set`
+				: "Custom properties");
+		}
+
 		// Show/hide reminder warning (when reminders set but no dates)
 		if (this.reminderWarning) {
 			const hasReminders = this.bulkReminders.length > 0;
 			const hasDate = !!this.dueDate || !!this.scheduledDate;
 			const showWarning = hasReminders && !hasDate;
 			this.reminderWarning.style.display = showWarning ? "block" : "none";
+		}
+	}
+
+	/**
+	 * Toggle the custom properties inline panel below the action bar.
+	 */
+	private toggleCustomPropertiesPanel() {
+		if (this.customPropsPanel) {
+			// Destroy picker and remove panel
+			if (this.propertyPickerInstance) {
+				this.propertyPickerInstance.destroy();
+				this.propertyPickerInstance = null;
+			}
+			this.customPropsPanel.remove();
+			this.customPropsPanel = null;
+			return;
+		}
+
+		// Find the action bar section to insert after
+		const actionBarSection = this.customPropsIcon?.closest(".tn-bulk-modal__section");
+		if (!actionBarSection) return;
+
+		this.customPropsPanel = actionBarSection.createDiv({ cls: "tn-bulk-modal__custom-props-panel" });
+
+		// Create PropertyPicker with item paths from current view
+		const itemPaths = this.items
+			.map(item => item.path)
+			.filter((p): p is string => !!p);
+
+		const pickerContainer = this.customPropsPanel.createDiv();
+		this.propertyPickerInstance = createPropertyPicker({
+			container: pickerContainer,
+			plugin: this.plugin,
+			itemPaths,
+			onSelect: (key: string, type: PropertyType, value?: any) => {
+				let defaultValue: any = value ?? null;
+				if (defaultValue === null) {
+					switch (type) {
+						case "date": defaultValue = ""; break;
+						case "number": defaultValue = 0; break;
+						case "boolean": defaultValue = false; break;
+						case "list": defaultValue = []; break;
+						default: defaultValue = ""; break;
+					}
+				}
+				this.bulkCustomProperties[key] = defaultValue;
+				this.updateActionIconStates();
+				this.renderCustomPropsActiveList();
+			},
+		});
+
+		// Render active custom properties
+		this.renderCustomPropsActiveList();
+	}
+
+	/**
+	 * Render the list of currently-set custom properties in the panel.
+	 */
+	private renderCustomPropsActiveList() {
+		if (!this.customPropsPanel) return;
+
+		// Remove existing active list
+		const existing = this.customPropsPanel.querySelector(".tn-bulk-modal__custom-props-active");
+		if (existing) existing.remove();
+
+		const keys = Object.keys(this.bulkCustomProperties);
+		if (keys.length === 0) return;
+
+		const list = this.customPropsPanel.createDiv({ cls: "tn-bulk-modal__custom-props-active" });
+
+		for (const key of keys) {
+			const row = list.createDiv({ cls: "tn-bulk-modal__custom-prop-row" });
+			row.createSpan({
+				cls: "tn-bulk-modal__custom-prop-key",
+				text: key.replace(/_/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, c => c.toUpperCase()),
+			});
+
+			const removeBtn = row.createSpan({ cls: "tn-bulk-modal__custom-prop-remove" });
+			setIcon(removeBtn, "x");
+			removeBtn.addEventListener("click", () => {
+				delete this.bulkCustomProperties[key];
+				this.updateActionIconStates();
+				this.renderCustomPropsActiveList();
+			});
 		}
 	}
 
@@ -673,6 +777,12 @@ export class BulkTaskCreationModal extends Modal {
 		// Clean up PersonGroupPicker
 		this.assigneePicker?.destroy();
 		this.assigneePicker = null;
+
+		// Clean up PropertyPicker
+		if (this.propertyPickerInstance) {
+			this.propertyPickerInstance.destroy();
+			this.propertyPickerInstance = null;
+		}
 
 		const { contentEl } = this;
 		contentEl.empty();
@@ -1211,6 +1321,7 @@ export class BulkTaskCreationModal extends Modal {
 			status: this.bulkStatus || undefined,
 			priority: this.bulkPriority || undefined,
 			reminders: this.bulkReminders.length > 0 ? this.bulkReminders : undefined,
+			customFrontmatter: Object.keys(this.bulkCustomProperties).length > 0 ? this.bulkCustomProperties : undefined,
 			onProgress: (current, total, status) => {
 				const percent = Math.round((current / total) * 100);
 				if (this.progressBarInner) {
@@ -1280,6 +1391,7 @@ export class BulkTaskCreationModal extends Modal {
 			status: this.bulkStatus || undefined,
 			priority: this.bulkPriority || undefined,
 			reminders: this.bulkReminders.length > 0 ? this.bulkReminders : undefined,
+			customFrontmatter: Object.keys(this.bulkCustomProperties).length > 0 ? this.bulkCustomProperties : undefined,
 			onProgress: (current, total, status) => {
 				const percent = Math.round((current / total) * 100);
 				if (this.progressBarInner) {

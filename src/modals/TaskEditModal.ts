@@ -1,5 +1,5 @@
 /* eslint-disable no-console, @typescript-eslint/no-non-null-assertion */
-import { App, Notice, TFile, TAbstractFile, setIcon, setTooltip } from "obsidian";
+import { App, Notice, TFile, TAbstractFile, Setting, setIcon, setTooltip } from "obsidian";
 import TaskNotesPlugin from "../main";
 import { TaskModal } from "./TaskModal";
 import { TaskDependency, TaskInfo } from "../types";
@@ -28,6 +28,13 @@ import { ReminderContextMenu } from "../components/ReminderContextMenu";
 import { generateLinkWithDisplay } from "../utils/linkUtils";
 import { EmbeddableMarkdownEditor } from "../editor/EmbeddableMarkdownEditor";
 import { ConfirmationModal } from "./ConfirmationModal";
+import {
+	type DiscoveredProperty,
+	type PropertyType,
+	discoverCustomProperties,
+	normalizeDateValue,
+} from "../utils/propertyDiscoveryUtils";
+import { createPropertyPicker } from "../ui/PropertyPicker";
 
 export interface TaskEditOptions {
 	task: TaskInfo;
@@ -39,6 +46,8 @@ export class TaskEditModal extends TaskModal {
 	private options: TaskEditOptions;
 	private metadataContainer: HTMLElement;
 	private editModalKeyboardHandler: ((e: KeyboardEvent) => void) | null = null;
+	private discoveredProperties: DiscoveredProperty[] = [];
+	private propertyPickerInstance: { refresh: () => void; destroy: () => void } | null = null;
 	// Changed from Set to array for consistency with other state management
 	private completedInstancesChanges: string[] = [];
 	private calendarWrapper: HTMLElement | null = null;
@@ -165,6 +174,21 @@ export class TaskEditModal extends TaskModal {
 				if (value !== undefined) {
 					this.userFields[field.key] = value;
 				}
+			}
+
+			// Auto-discover additional properties not covered by configured userFields
+			const excludeKeys = new Set(
+				userFieldConfigs.filter((f: any) => f?.key).map((f: any) => f.key)
+			);
+			this.discoveredProperties = discoverCustomProperties(
+				this.plugin,
+				this.task.path,
+				excludeKeys
+			);
+
+			// Load discovered property values into userFields for the save pipeline
+			for (const prop of this.discoveredProperties) {
+				this.userFields[prop.key] = prop.value;
 			}
 		} catch (error) {
 			console.error("Error initializing user fields:", error);
@@ -317,10 +341,11 @@ export class TaskEditModal extends TaskModal {
 	}
 
 	/**
-	 * Add completions calendar and metadata sections after details
+	 * Add completions calendar, discovered properties, and metadata sections after details
 	 */
 	protected createAdditionalSections(container: HTMLElement): void {
 		this.createCompletionsCalendarSection(container);
+		this.createDiscoveredPropertiesSection(container);
 		this.createMetadataSection(container);
 	}
 
@@ -427,6 +452,12 @@ export class TaskEditModal extends TaskModal {
 			this.editModalKeyboardHandler = null;
 		}
 
+		// Clean up property picker
+		if (this.propertyPickerInstance) {
+			this.propertyPickerInstance.destroy();
+			this.propertyPickerInstance = null;
+		}
+
 		// Base class handles detailsMarkdownEditor cleanup
 		super.onClose();
 	}
@@ -441,6 +472,157 @@ export class TaskEditModal extends TaskModal {
 
 			const calendarContent = calendarContainer.createDiv("completions-calendar-content");
 			this.createRecurringCalendar(calendarContent);
+		}
+	}
+
+	private createDiscoveredPropertiesSection(container: HTMLElement): void {
+		// Build the set of configured userField keys to exclude from discovery
+		const userFieldConfigs = this.plugin.settings?.userFields || [];
+		const configuredKeys = new Set(
+			userFieldConfigs.filter((f: any) => f?.key).map((f: any) => f.key)
+		);
+
+		// Only show section if there are discovered properties or we want to allow adding new ones
+		const hasDiscovered = this.discoveredProperties.length > 0;
+
+		const sectionContainer = container.createDiv("discovered-properties-container");
+
+		// Section label
+		const sectionLabel = sectionContainer.createDiv("detail-label");
+		const labelRow = sectionLabel.createDiv({ cls: "tn-pp-label-row" });
+		labelRow.createSpan({ text: "Additional properties" });
+
+		// If there are no properties, show collapsed by default with just the picker
+		if (!hasDiscovered) {
+			labelRow.style.cssText = "cursor: pointer; color: var(--text-muted);";
+			const expandIcon = labelRow.createSpan({ cls: "tn-pp-expand-icon" });
+			setIcon(expandIcon, "plus");
+		}
+
+		// Editable fields for discovered properties
+		const fieldsContainer = sectionContainer.createDiv("discovered-properties-fields");
+
+		if (hasDiscovered) {
+			this.renderDiscoveredPropertyFields(fieldsContainer, configuredKeys);
+		}
+
+		// PropertyPicker for adding more
+		const pickerContainer = sectionContainer.createDiv("discovered-properties-picker");
+		this.propertyPickerInstance = createPropertyPicker({
+			container: pickerContainer,
+			plugin: this.plugin,
+			currentFilePath: this.task.path,
+			excludeKeys: new Set([...configuredKeys, ...this.discoveredProperties.map(p => p.key)]),
+			onSelect: (key: string, type: PropertyType, value?: any) => {
+				// Set default value based on type
+				let defaultValue: any = value ?? null;
+				if (defaultValue === null) {
+					switch (type) {
+						case "date": defaultValue = ""; break;
+						case "number": defaultValue = 0; break;
+						case "boolean": defaultValue = false; break;
+						case "list": defaultValue = []; break;
+						default: defaultValue = ""; break;
+					}
+				}
+
+				// Add to userFields for save pipeline
+				this.userFields[key] = defaultValue;
+
+				// Add to discoveredProperties for tracking
+				this.discoveredProperties.push({
+					key,
+					displayName: key
+						.replace(/_/g, " ")
+						.replace(/([a-z])([A-Z])/g, "$1 $2")
+						.replace(/^./, (c) => c.toUpperCase()),
+					type,
+					value: defaultValue,
+				});
+
+				// Re-render the fields
+				fieldsContainer.empty();
+				this.renderDiscoveredPropertyFields(fieldsContainer, configuredKeys);
+			},
+		});
+	}
+
+	private renderDiscoveredPropertyFields(
+		container: HTMLElement,
+		configuredKeys: Set<string>
+	): void {
+		for (const prop of this.discoveredProperties) {
+			if (configuredKeys.has(prop.key)) continue;
+
+			const setting = new Setting(container).setName(prop.displayName);
+
+			// Add remove button
+			setting.addExtraButton((btn) => {
+				btn.setIcon("x")
+					.setTooltip("Remove property")
+					.onClick(() => {
+						// Set to null to mark for removal
+						this.userFields[prop.key] = null;
+						// Remove from discovered list
+						const idx = this.discoveredProperties.findIndex(p => p.key === prop.key);
+						if (idx >= 0) this.discoveredProperties.splice(idx, 1);
+						// Re-render
+						container.empty();
+						this.renderDiscoveredPropertyFields(container, configuredKeys);
+					});
+			});
+
+			switch (prop.type) {
+				case "text":
+					setting.addText((text) => {
+						text.setValue(this.userFields[prop.key]?.toString() || "")
+							.onChange((value) => {
+								this.userFields[prop.key] = value;
+							});
+					});
+					break;
+				case "date":
+					setting.addText((text) => {
+						text.setValue(this.userFields[prop.key] || "")
+							.onChange((value) => {
+								this.userFields[prop.key] = value;
+							});
+						text.inputEl.type = "date";
+					});
+					break;
+				case "number":
+					setting.addText((text) => {
+						text.setValue(this.userFields[prop.key]?.toString() || "")
+							.onChange((value) => {
+								const numValue = parseFloat(value);
+								this.userFields[prop.key] = isNaN(numValue) ? null : numValue;
+							});
+						text.inputEl.type = "number";
+					});
+					break;
+				case "boolean":
+					setting.addToggle((toggle) => {
+						toggle.setValue(this.userFields[prop.key] === true)
+							.onChange((value) => {
+								this.userFields[prop.key] = value;
+							});
+					});
+					break;
+				case "list":
+					setting.addText((text) => {
+						const currentValue = this.userFields[prop.key];
+						const displayValue = Array.isArray(currentValue)
+							? currentValue.join(", ")
+							: currentValue || "";
+						text.setValue(displayValue).onChange((value) => {
+							this.userFields[prop.key] = value
+								.split(",")
+								.map((v) => v.trim())
+								.filter((v) => v.length > 0);
+						});
+					});
+					break;
+			}
 		}
 	}
 
@@ -946,10 +1128,12 @@ export class TaskEditModal extends TaskModal {
 			const metadata = this.app.metadataCache.getFileCache(file);
 			const frontmatter: Record<string, any> = metadata?.frontmatter || {};
 
-			// Compare current values with original frontmatter
+			// Compare current values with original frontmatter (configured user fields)
 			const userFieldConfigs = this.plugin.settings?.userFields || [];
+			const checkedKeys = new Set<string>();
 			for (const field of userFieldConfigs) {
 				if (!field || !field.key) continue;
+				checkedKeys.add(field.key);
 
 				const newValue = this.userFields[field.key];
 				const oldValue = frontmatter[field.key];
@@ -961,6 +1145,35 @@ export class TaskEditModal extends TaskModal {
 						newValue === null || newValue === undefined || newValue === ""
 							? null
 							: newValue;
+				}
+			}
+
+			// Also check discovered properties (auto-discovered, not in settings)
+			for (const prop of this.discoveredProperties) {
+				if (checkedKeys.has(prop.key)) continue;
+				checkedKeys.add(prop.key);
+
+				const newValue = this.userFields[prop.key];
+				const oldValue = frontmatter[prop.key];
+				// Normalize Date objects from YAML for comparison
+				const normalizedOld = oldValue instanceof Date
+					? normalizeDateValue(oldValue) ?? oldValue
+					: oldValue;
+
+				if (this.isDifferent(newValue, normalizedOld)) {
+					userFieldsChanges[prop.key] =
+						newValue === null || newValue === undefined || newValue === ""
+							? null
+							: newValue;
+				}
+			}
+
+			// Check for newly-added properties (added via PropertyPicker, not in discoveredProperties)
+			for (const [key, value] of Object.entries(this.userFields)) {
+				if (checkedKeys.has(key)) continue;
+				// This is a new property added during this edit session
+				if (value !== null && value !== undefined && value !== "") {
+					userFieldsChanges[key] = value;
 				}
 			}
 		} catch (error) {

@@ -1,0 +1,375 @@
+import type TaskNotesPlugin from "../main";
+import { TFile } from "obsidian";
+
+/**
+ * Supported property types for discovered frontmatter fields.
+ */
+export type PropertyType = "text" | "number" | "date" | "boolean" | "list";
+
+/**
+ * A single property discovered from a task file's frontmatter.
+ */
+export interface DiscoveredProperty {
+	/** Frontmatter key (e.g., "review_date") */
+	key: string;
+	/** Human-readable label (e.g., "Review date") */
+	displayName: string;
+	/** Detected type */
+	type: PropertyType;
+	/** Current value from the specific file */
+	value: any;
+}
+
+/**
+ * Aggregated property info across multiple files.
+ * Used by PropertyPicker to show vault-wide property stats.
+ */
+export interface PropertyCatalogEntry {
+	/** Frontmatter key */
+	key: string;
+	/** Human-readable label */
+	displayName: string;
+	/** Most common type across files */
+	dominantType: PropertyType;
+	/** Type breakdown: e.g., { date: 43, text: 2 } */
+	typeBreakdown: Record<string, number>;
+	/** Total files that have this property */
+	fileCount: number;
+	/** File paths with non-dominant type (for conversion targeting) */
+	mismatchedFiles: string[];
+	/** Whether all values are the same type */
+	isConsistent: boolean;
+}
+
+/**
+ * Result of a batch type conversion operation.
+ */
+export interface ConversionResult {
+	converted: number;
+	failed: number;
+	errors: string[];
+}
+
+// ── Shared constants ──────────────────────────────────────────
+
+/**
+ * Core/internal property keys that should be excluded from discovery.
+ * Union of known task fields (from bases/helpers.ts knownProperties)
+ * and non-date field keys (from dateAnchorUtils.ts NON_DATE_FIELD_KEYS).
+ */
+export const CORE_PROPERTY_KEYS = new Set([
+	// Task model fields (bases/helpers.ts knownProperties)
+	"title", "status", "priority", "archived", "due", "scheduled",
+	"contexts", "projects", "tags", "timeEstimate", "completedDate",
+	"recurrence", "dateCreated", "dateModified", "timeEntries",
+	"reminders", "icsEventId", "complete_instances", "skipped_instances",
+	"blockedBy", "blocking",
+	// Additional non-date fields (dateAnchorUtils.ts)
+	"type", "assignee", "assignees", "creator", "aliases", "cssclasses",
+	"recurrence_anchor", "archiveTag", "completeInstances",
+	"skippedInstances", "pomodoros", "icsEventTag", "tnId", "uid",
+	"publish", "permalink", "description",
+	// Obsidian internal / metadataCache
+	"position",
+]);
+
+// ── Shared utility functions ──────────────────────────────────
+
+/** Regex to match date-like strings (YYYY-MM-DD with optional time) */
+const DATE_LIKE_REGEX = /^\d{4}-\d{2}-\d{2}/;
+
+/**
+ * Convert a snake_case or camelCase key to a human-readable display name.
+ * e.g., "review_date" -> "Review date", "followUp" -> "Follow up"
+ */
+export function keyToDisplayName(key: string): string {
+	return key
+		.replace(/_/g, " ")
+		.replace(/([a-z])([A-Z])/g, "$1 $2")
+		.replace(/^./, (c) => c.toUpperCase());
+}
+
+/**
+ * Normalize a frontmatter value that may be a Date object or string into a YYYY-MM-DD string.
+ * Obsidian's YAML parser converts bare date values (e.g., `due: 2026-02-11`) into JS Date objects.
+ * Returns null if the value is not date-like.
+ */
+export function normalizeDateValue(value: unknown): string | null {
+	if (value instanceof Date && !isNaN(value.getTime())) {
+		return value.toISOString().slice(0, 10);
+	}
+	if (typeof value === "string" && DATE_LIKE_REGEX.test(value)) {
+		return value;
+	}
+	return null;
+}
+
+/**
+ * Detect the property type from a JavaScript value.
+ * Order matters: Date check before string check (Obsidian YAML parses dates as Date objects).
+ */
+export function detectPropertyType(value: unknown): PropertyType {
+	if (value === null || value === undefined) return "text";
+	if (value instanceof Date) return "date";
+	if (typeof value === "boolean") return "boolean";
+	if (typeof value === "number") return "number";
+	if (Array.isArray(value)) return "list";
+	if (typeof value === "string") {
+		if (DATE_LIKE_REGEX.test(value)) return "date";
+		return "text";
+	}
+	return "text";
+}
+
+// ── Single-file discovery ─────────────────────────────────────
+
+/**
+ * Discover custom properties from a single file's frontmatter.
+ * Fast — suitable for inline use in Edit Task modal.
+ *
+ * @param plugin - The TaskNotes plugin instance
+ * @param filePath - Path to the file to scan
+ * @param excludeKeys - Keys to exclude (e.g., already-rendered userFields)
+ * @returns Array of discovered properties
+ */
+export function discoverCustomProperties(
+	plugin: TaskNotesPlugin,
+	filePath: string,
+	excludeKeys?: Set<string>
+): DiscoveredProperty[] {
+	const results: DiscoveredProperty[] = [];
+	if (!plugin.app) return results;
+
+	const file = plugin.app.vault.getAbstractFileByPath(filePath);
+	if (!(file instanceof TFile)) return results;
+
+	const cache = plugin.app.metadataCache.getFileCache(file);
+	if (!cache?.frontmatter) return results;
+
+	for (const [key, value] of Object.entries(cache.frontmatter)) {
+		if (CORE_PROPERTY_KEYS.has(key)) continue;
+		if (excludeKeys?.has(key)) continue;
+
+		const type = detectPropertyType(value);
+		let normalizedValue = value;
+		if (type === "date") {
+			normalizedValue = normalizeDateValue(value) ?? value;
+		}
+
+		results.push({
+			key,
+			displayName: keyToDisplayName(key),
+			type,
+			value: normalizedValue,
+		});
+	}
+
+	return results;
+}
+
+// ── Multi-file catalog ────────────────────────────────────────
+
+/**
+ * Build a property catalog across multiple files.
+ * Shows type consistency, file counts, and mismatched files.
+ *
+ * @param plugin - The TaskNotes plugin instance
+ * @param filePaths - File paths to scan (can be all task files or just view items)
+ * @param excludeKeys - Keys to exclude from results
+ * @returns Array of catalog entries sorted by fileCount descending
+ */
+export function buildPropertyCatalog(
+	plugin: TaskNotesPlugin,
+	filePaths: string[],
+	excludeKeys?: Set<string>
+): PropertyCatalogEntry[] {
+	if (!plugin.app) return [];
+
+	// key -> { typeBreakdown, files by type }
+	const catalog = new Map<string, {
+		typeBreakdown: Record<string, number>;
+		filesByType: Record<string, string[]>;
+		fileCount: number;
+	}>();
+
+	for (const filePath of filePaths) {
+		const file = plugin.app.vault.getAbstractFileByPath(filePath);
+		if (!(file instanceof TFile)) continue;
+
+		const cache = plugin.app.metadataCache.getFileCache(file);
+		if (!cache?.frontmatter) continue;
+
+		for (const [key, value] of Object.entries(cache.frontmatter)) {
+			if (CORE_PROPERTY_KEYS.has(key)) continue;
+			if (excludeKeys?.has(key)) continue;
+
+			const type = detectPropertyType(value);
+
+			let entry = catalog.get(key);
+			if (!entry) {
+				entry = { typeBreakdown: {}, filesByType: {}, fileCount: 0 };
+				catalog.set(key, entry);
+			}
+
+			entry.typeBreakdown[type] = (entry.typeBreakdown[type] || 0) + 1;
+			if (!entry.filesByType[type]) entry.filesByType[type] = [];
+			entry.filesByType[type].push(filePath);
+			entry.fileCount++;
+		}
+	}
+
+	// Convert to catalog entries
+	const entries: PropertyCatalogEntry[] = [];
+	for (const [key, data] of catalog) {
+		// Find dominant type (most common)
+		let dominantType: PropertyType = "text";
+		let maxCount = 0;
+		for (const [type, count] of Object.entries(data.typeBreakdown)) {
+			if (count > maxCount) {
+				maxCount = count;
+				dominantType = type as PropertyType;
+			}
+		}
+
+		// Collect mismatched files (files with non-dominant type)
+		const mismatchedFiles: string[] = [];
+		for (const [type, files] of Object.entries(data.filesByType)) {
+			if (type !== dominantType) {
+				mismatchedFiles.push(...files);
+			}
+		}
+
+		entries.push({
+			key,
+			displayName: keyToDisplayName(key),
+			dominantType,
+			typeBreakdown: data.typeBreakdown,
+			fileCount: data.fileCount,
+			mismatchedFiles,
+			isConsistent: mismatchedFiles.length === 0,
+		});
+	}
+
+	// Sort by file count descending
+	entries.sort((a, b) => b.fileCount - a.fileCount);
+	return entries;
+}
+
+// ── Vault-wide task file collection ───────────────────────────
+
+/**
+ * Get all task file paths in the vault using the plugin's task identification method.
+ */
+export function getAllTaskFilePaths(plugin: TaskNotesPlugin): string[] {
+	if (!plugin.app || !plugin.cacheManager) return [];
+
+	const paths: string[] = [];
+	for (const file of plugin.app.vault.getMarkdownFiles()) {
+		const cache = plugin.app.metadataCache.getFileCache(file);
+		if (cache?.frontmatter && plugin.cacheManager.isTaskFile(cache.frontmatter)) {
+			paths.push(file.path);
+		}
+	}
+	return paths;
+}
+
+// ── Type conversion engine ────────────────────────────────────
+
+/**
+ * Convert a property's type across multiple files.
+ *
+ * @param plugin - The TaskNotes plugin instance
+ * @param propertyKey - The frontmatter key to convert
+ * @param targetType - The desired target type
+ * @param filePaths - Files to convert (only files with mismatched types)
+ * @param strategy - "convert-in-place" or "create-duplicate"
+ * @returns Conversion results with counts and errors
+ */
+export async function convertPropertyType(
+	plugin: TaskNotesPlugin,
+	propertyKey: string,
+	targetType: PropertyType,
+	filePaths: string[],
+	strategy: "convert-in-place" | "create-duplicate"
+): Promise<ConversionResult> {
+	const result: ConversionResult = { converted: 0, failed: 0, errors: [] };
+	if (!plugin.app) return result;
+
+	for (const filePath of filePaths) {
+		const file = plugin.app.vault.getAbstractFileByPath(filePath);
+		if (!(file instanceof TFile)) {
+			result.failed++;
+			result.errors.push(`File not found: ${filePath}`);
+			continue;
+		}
+
+		try {
+			await plugin.app.fileManager.processFrontMatter(file, (fm) => {
+				const currentValue = fm[propertyKey];
+				if (currentValue === undefined) return;
+
+				const converted = coerceValue(currentValue, targetType);
+
+				if (strategy === "convert-in-place") {
+					fm[propertyKey] = converted;
+				} else {
+					// create-duplicate: new key with target type suffix
+					const newKey = `${propertyKey}_${targetType}`;
+					fm[newKey] = converted;
+				}
+			});
+			result.converted++;
+		} catch (err) {
+			result.failed++;
+			result.errors.push(`${filePath}: ${err instanceof Error ? err.message : String(err)}`);
+		}
+	}
+
+	return result;
+}
+
+/**
+ * Coerce a value to the target type.
+ */
+function coerceValue(value: unknown, targetType: PropertyType): any {
+	switch (targetType) {
+		case "date": {
+			// Date object -> YYYY-MM-DD
+			if (value instanceof Date) return value.toISOString().slice(0, 10);
+			// String -> try parsing as date
+			if (typeof value === "string") {
+				const d = new Date(value);
+				if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+				return value; // Return as-is if not parseable
+			}
+			// Number -> unix timestamp
+			if (typeof value === "number") {
+				return new Date(value).toISOString().slice(0, 10);
+			}
+			return String(value);
+		}
+		case "number": {
+			if (typeof value === "number") return value;
+			if (typeof value === "boolean") return value ? 1 : 0;
+			const n = parseFloat(String(value));
+			return isNaN(n) ? 0 : n;
+		}
+		case "boolean": {
+			if (typeof value === "boolean") return value;
+			if (typeof value === "number") return value !== 0;
+			const s = String(value).toLowerCase().trim();
+			return s === "true" || s === "yes" || s === "1";
+		}
+		case "list": {
+			if (Array.isArray(value)) return value;
+			if (value === null || value === undefined) return [];
+			return [value];
+		}
+		case "text":
+		default: {
+			if (value instanceof Date) return value.toISOString().slice(0, 10);
+			if (Array.isArray(value)) return value.join(", ");
+			return String(value);
+		}
+	}
+}

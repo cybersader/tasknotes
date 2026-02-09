@@ -45,6 +45,7 @@ const CSS_FILES = [
     'styles/toast-notification.css', // ToastNotification (compact bottom-right indicator)
     'styles/person-avatar.css',       // PersonAvatar (circular avatar with initials)
     'styles/person-group-picker.css', // PersonGroupPicker (multi-select with search)
+    'styles/property-picker.css',     // PropertyPicker (inline property selector with type badges)
     'styles/bulk-modal.css'           // BulkTaskCreationModal (Edit Task modal inspired)
 ];
 

@@ -21992,6 +21992,390 @@ select.tasknotes-settings__card-input {
 }
 
 
+/* ===== PROPERTY-PICKER.CSS ===== */
+/* ================================================
+   PROPERTY PICKER
+   Inline searchable property selector with type badges
+   ================================================ */
+
+.tn-property-picker {
+    position: relative;
+    width: 100%;
+}
+
+/* Header row: search + toggle */
+.tn-pp-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.tn-pp-search-container {
+    flex: 1;
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.tn-pp-search-icon {
+    position: absolute;
+    left: 8px;
+    display: flex;
+    align-items: center;
+    color: var(--text-muted);
+    pointer-events: none;
+}
+
+.tn-pp-search-icon svg {
+    width: 14px;
+    height: 14px;
+}
+
+.tn-pp-search {
+    width: 100%;
+    padding: 6px 10px 6px 28px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    background: var(--background-primary);
+    font-size: var(--font-ui-small);
+}
+
+.tn-pp-search:focus {
+    outline: none;
+    border-color: var(--interactive-accent);
+    box-shadow: 0 0 0 2px var(--background-modifier-border-focus);
+}
+
+/* Vault-wide toggle */
+.tn-pp-toggle-container {
+    flex-shrink: 0;
+}
+
+.tn-pp-toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    white-space: nowrap;
+    user-select: none;
+}
+
+.tn-pp-toggle-checkbox {
+    margin: 0;
+    width: 14px;
+    height: 14px;
+    cursor: pointer;
+}
+
+/* Dropdown - fixed positioning to escape modal overflow */
+.tn-pp-dropdown {
+    position: fixed;
+    max-height: 280px;
+    min-width: 280px;
+    overflow-y: auto;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    box-shadow: var(--shadow-s);
+    z-index: 10000;
+}
+
+/* Type sections */
+.tn-pp-section {
+    padding: 4px 0;
+}
+
+.tn-pp-section:not(:last-child) {
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.tn-pp-section-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    font-size: var(--font-ui-smaller);
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.tn-pp-section-title {
+    flex: 1;
+}
+
+/* Type badges */
+.tn-pp-type-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1px 6px;
+    border-radius: var(--radius-s);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    line-height: 1.4;
+    background: color-mix(in srgb, var(--badge-color, var(--text-muted)) 15%, transparent);
+    color: var(--badge-color, var(--text-muted));
+}
+
+.tn-pp-type-badge--date {
+    --badge-color: var(--color-blue);
+}
+
+.tn-pp-type-badge--text {
+    --badge-color: var(--color-green);
+}
+
+.tn-pp-type-badge--number {
+    --badge-color: var(--color-purple);
+}
+
+.tn-pp-type-badge--boolean {
+    --badge-color: var(--color-orange);
+}
+
+.tn-pp-type-badge--list {
+    --badge-color: var(--color-cyan);
+}
+
+/* Dropdown items */
+.tn-pp-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    cursor: pointer;
+    transition: background 0.1s;
+}
+
+.tn-pp-item:hover {
+    background: var(--background-modifier-hover);
+}
+
+.tn-pp-item-key {
+    flex: 1;
+    font-size: var(--font-ui-small);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tn-pp-item-value {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tn-pp-item-value--empty {
+    font-style: italic;
+    opacity: 0.6;
+}
+
+.tn-pp-item-count {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+/* Compatibility warning */
+.tn-pp-item-warning {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 1px 6px;
+    border-radius: var(--radius-s);
+    background: color-mix(in srgb, var(--color-orange) 12%, transparent);
+    cursor: pointer;
+    transition: background 0.1s;
+}
+
+.tn-pp-item-warning:hover {
+    background: color-mix(in srgb, var(--color-orange) 22%, transparent);
+}
+
+.tn-pp-warning-icon {
+    display: flex;
+    color: var(--color-orange);
+}
+
+.tn-pp-warning-icon svg {
+    width: 12px;
+    height: 12px;
+}
+
+.tn-pp-warning-text {
+    font-size: 10px;
+    color: var(--color-orange);
+    white-space: nowrap;
+}
+
+/* Conversion menu (inline dropdown from warning) */
+.tn-pp-conversion-menu {
+    position: absolute;
+    right: 0;
+    margin-top: 4px;
+    min-width: 220px;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    box-shadow: var(--shadow-s);
+    z-index: 10001;
+    overflow: hidden;
+}
+
+.tn-pp-conversion-option {
+    padding: 8px 12px;
+    font-size: var(--font-ui-small);
+    cursor: pointer;
+    transition: background 0.1s;
+}
+
+.tn-pp-conversion-option:hover {
+    background: var(--background-modifier-hover);
+}
+
+.tn-pp-conversion-option:not(:last-child) {
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+/* Files list (shown from conversion menu) */
+.tn-pp-files-list {
+    position: absolute;
+    right: 0;
+    margin-top: 4px;
+    min-width: 200px;
+    max-height: 150px;
+    overflow-y: auto;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    box-shadow: var(--shadow-s);
+    z-index: 10001;
+    padding: 4px 0;
+}
+
+.tn-pp-file-item {
+    padding: 4px 10px;
+    font-size: var(--font-ui-smaller);
+    color: var(--text-normal);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tn-pp-file-item--more {
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+/* Add new property */
+.tn-pp-add-section {
+    border-top: 1px solid var(--background-modifier-border);
+    padding: 4px 0;
+}
+
+.tn-pp-add-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    font-size: var(--font-ui-small);
+    color: var(--text-accent);
+    cursor: pointer;
+    transition: background 0.1s;
+}
+
+.tn-pp-add-btn:hover {
+    background: var(--background-modifier-hover);
+}
+
+.tn-pp-add-icon {
+    display: flex;
+}
+
+.tn-pp-add-icon svg {
+    width: 14px;
+    height: 14px;
+}
+
+/* Add form (inline) */
+.tn-pp-add-form {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+}
+
+.tn-pp-add-key {
+    flex: 1;
+    padding: 4px 8px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    background: var(--background-primary);
+    font-size: var(--font-ui-smaller);
+    min-width: 0;
+}
+
+.tn-pp-add-key:focus {
+    outline: none;
+    border-color: var(--interactive-accent);
+}
+
+.tn-pp-add-type {
+    padding: 4px 6px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    background: var(--background-primary);
+    font-size: var(--font-ui-smaller);
+    flex-shrink: 0;
+}
+
+.tn-pp-add-submit,
+.tn-pp-add-cancel {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: var(--radius-s);
+    cursor: pointer;
+    transition: background 0.1s;
+    flex-shrink: 0;
+}
+
+.tn-pp-add-submit:hover {
+    background: color-mix(in srgb, var(--color-green) 20%, transparent);
+    color: var(--color-green);
+}
+
+.tn-pp-add-cancel:hover {
+    background: color-mix(in srgb, var(--color-red) 20%, transparent);
+    color: var(--color-red);
+}
+
+.tn-pp-add-submit svg,
+.tn-pp-add-cancel svg {
+    width: 14px;
+    height: 14px;
+}
+
+/* Empty state */
+.tn-pp-empty {
+    padding: 16px 10px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    font-style: italic;
+}
+
+
 /* ===== BULK-MODAL.CSS ===== */
 /* =====================================================================
    BULK TASK MODAL - Edit Task Modal Inspired
@@ -22257,6 +22641,53 @@ select.tasknotes-settings__card-input {
     border-radius: var(--radius-s);
     font-size: var(--font-ui-smaller);
     color: var(--color-orange);
+}
+
+/* Custom properties inline panel */
+.tn-bulk-modal__custom-props-panel {
+    margin-top: var(--size-4-2);
+    padding: var(--size-4-2) 0;
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+.tn-bulk-modal__custom-props-active {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: var(--size-4-2);
+}
+
+.tn-bulk-modal__custom-prop-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 6px;
+    background: var(--background-modifier-hover);
+    border-radius: var(--radius-m);
+    font-size: var(--font-ui-small);
+}
+
+.tn-bulk-modal__custom-prop-key {
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tn-bulk-modal__custom-prop-remove {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    opacity: 0.6;
+}
+
+.tn-bulk-modal__custom-prop-remove:hover {
+    opacity: 1;
+}
+
+.tn-bulk-modal__custom-prop-remove svg {
+    width: 12px;
+    height: 12px;
 }
 
 /* =====================================================================

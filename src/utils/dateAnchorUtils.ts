@@ -1,6 +1,7 @@
 import type TaskNotesPlugin from "../main";
 import type { TaskInfo, FieldMapping } from "../types";
 import { TFile } from "obsidian";
+import { CORE_PROPERTY_KEYS, normalizeDateValue, keyToDisplayName } from "./propertyDiscoveryUtils";
 
 /**
  * Represents a date property that can serve as a reminder anchor.
@@ -29,46 +30,6 @@ const BUILT_IN_DATE_FIELDS: Array<{
 	{ key: "dateModified", displayName: "Date modified", taskInfoKey: "dateModified" },
 	{ key: "completedDate", displayName: "Completed date", taskInfoKey: "completedDate" },
 ];
-
-/** Keys that are known non-date fields and should never appear as date anchors */
-const NON_DATE_FIELD_KEYS = new Set([
-	"type", "status", "priority", "title", "assignee", "assignees",
-	"creator", "projects", "contexts", "tags", "aliases", "cssclasses",
-	"timeEstimate", "timeEntries", "recurrence", "recurrence_anchor",
-	"archiveTag", "completeInstances", "complete_instances",
-	"skippedInstances", "skipped_instances", "blockedBy",
-	"pomodoros", "icsEventId", "icsEventTag", "tnId", "uid",
-	"reminders", "publish", "permalink", "description",
-]);
-
-/** Regex to match date-like strings (YYYY-MM-DD with optional time) */
-const DATE_LIKE_REGEX = /^\d{4}-\d{2}-\d{2}/;
-
-/**
- * Normalize a frontmatter value that may be a Date object or string into a YYYY-MM-DD string.
- * Obsidian's YAML parser converts bare date values (e.g., `due: 2026-02-11`) into JS Date objects.
- * Returns null if the value is not date-like.
- */
-function normalizeDateValue(value: unknown): string | null {
-	if (value instanceof Date && !isNaN(value.getTime())) {
-		return value.toISOString().slice(0, 10);
-	}
-	if (typeof value === "string" && DATE_LIKE_REGEX.test(value)) {
-		return value;
-	}
-	return null;
-}
-
-/**
- * Convert a snake_case or camelCase key to a human-readable display name.
- * e.g., "review_date" -> "Review date", "followUp" -> "Follow up"
- */
-function keyToDisplayName(key: string): string {
-	return key
-		.replace(/_/g, " ")
-		.replace(/([a-z])([A-Z])/g, "$1 $2")
-		.replace(/^./, (c) => c.toUpperCase());
-}
 
 /**
  * Get all available date properties that can serve as reminder anchors.
@@ -134,8 +95,7 @@ export function getAvailableDateAnchors(
 			const cache = plugin.app.metadataCache.getFileCache(file);
 			if (cache?.frontmatter) {
 				for (const [key, value] of Object.entries(cache.frontmatter)) {
-					if (knownKeys.has(key) || NON_DATE_FIELD_KEYS.has(key)) continue;
-					if (key === "position") continue; // metadataCache internal field
+					if (knownKeys.has(key) || CORE_PROPERTY_KEYS.has(key)) continue;
 
 					// Check if the value looks like a date (handles both strings and Date objects)
 					const dateStr = normalizeDateValue(value);
@@ -155,7 +115,7 @@ export function getAvailableDateAnchors(
 	// Also check task.customProperties for date values not yet found
 	if (task?.customProperties) {
 		for (const [key, value] of Object.entries(task.customProperties)) {
-			if (knownKeys.has(key) || NON_DATE_FIELD_KEYS.has(key)) continue;
+			if (knownKeys.has(key) || CORE_PROPERTY_KEYS.has(key)) continue;
 			const dateStr = normalizeDateValue(value);
 			if (dateStr) {
 				anchors.push({

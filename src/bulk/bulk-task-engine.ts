@@ -28,6 +28,8 @@ export interface BulkCreationOptions {
 	priority?: string;
 	/** Bulk reminders to apply to all tasks */
 	reminders?: Array<{ id?: string; type: string; relatedTo?: string; offset?: string; absoluteTime?: string; description?: string }>;
+	/** Custom frontmatter properties to apply to all tasks */
+	customFrontmatter?: Record<string, any>;
 }
 
 export interface BulkCreationResult {
@@ -248,6 +250,14 @@ export class BulkTaskEngine {
 				absoluteTime: r.absoluteTime,
 				description: r.description,
 			}));
+		}
+
+		// Apply custom frontmatter properties
+		if (options.customFrontmatter) {
+			taskData.customFrontmatter = {
+				...taskData.customFrontmatter,
+				...options.customFrontmatter,
+			};
 		}
 
 		// Auto-set creator from device identity (if configured)

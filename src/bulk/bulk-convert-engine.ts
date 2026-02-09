@@ -26,6 +26,8 @@ export interface BulkConvertOptions {
 	priority?: string;
 	/** Bulk reminders to apply to all converted notes */
 	reminders?: Array<{ id?: string; type: string; relatedTo?: string; offset?: string; absoluteTime?: string; description?: string }>;
+	/** Custom frontmatter properties to apply to all converted notes */
+	customFrontmatter?: Record<string, any>;
 	/** Callback for progress updates */
 	onProgress?: (current: number, total: number, status: string) => void;
 }
@@ -323,6 +325,15 @@ export class BulkConvertEngine {
 						absoluteTime: r.absoluteTime,
 						description: r.description,
 					}));
+				}
+			}
+
+			// Apply custom frontmatter properties
+			if (options.customFrontmatter) {
+				for (const [key, value] of Object.entries(options.customFrontmatter)) {
+					if (value !== null && value !== undefined && value !== "") {
+						frontmatter[key] = value;
+					}
 				}
 			}
 

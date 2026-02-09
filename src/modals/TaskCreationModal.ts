@@ -30,6 +30,8 @@ import { splitListPreservingLinksAndQuotes } from "../utils/stringSplit";
 import { ProjectMetadataResolver, ProjectEntry } from "../utils/projectMetadataResolver";
 import { parseDisplayFieldsRow } from "../utils/projectAutosuggestDisplayFieldsParser";
 import { EmbeddableMarkdownEditor } from "../editor/EmbeddableMarkdownEditor";
+import { type PropertyType } from "../utils/propertyDiscoveryUtils";
+import { createPropertyPicker } from "../ui/PropertyPicker";
 import { createNLPAutocomplete } from "../editor/NLPCodeMirrorAutocomplete";
 
 
@@ -628,6 +630,7 @@ export class TaskCreationModal extends TaskModal {
 	private nlPreviewContainer: HTMLElement;
 	private nlButtonContainer: HTMLElement;
 	private nlpSuggest: NLPSuggest | null = null; // Will be replaced with CodeMirror autocomplete
+	private propertyPickerInstance: { refresh: () => void; destroy: () => void } | null = null;
 
 	// Track event listeners for cleanup
 	private eventListeners: Array<{
@@ -702,6 +705,41 @@ export class TaskCreationModal extends TaskModal {
 		) {
 			this.renderProjectsList();
 		}
+
+		// Add PropertyPicker for discovering and adding custom properties from other tasks
+		this.createPropertyPickerSection(container);
+	}
+
+	private createPropertyPickerSection(container: HTMLElement): void {
+		const userFieldConfigs = this.plugin.settings?.userFields || [];
+		const configuredKeys = new Set(
+			userFieldConfigs.filter((f: any) => f?.key).map((f: any) => f.key)
+		);
+
+		const sectionContainer = container.createDiv("discovered-properties-container");
+		const sectionLabel = sectionContainer.createDiv("detail-label");
+		sectionLabel.createSpan({ text: "Additional properties" });
+		sectionLabel.style.cssText = "color: var(--text-muted); font-size: var(--font-ui-smaller);";
+
+		const pickerContainer = sectionContainer.createDiv("discovered-properties-picker");
+		this.propertyPickerInstance = createPropertyPicker({
+			container: pickerContainer,
+			plugin: this.plugin,
+			excludeKeys: configuredKeys,
+			onSelect: (key: string, type: PropertyType, value?: any) => {
+				let defaultValue: any = value ?? null;
+				if (defaultValue === null) {
+					switch (type) {
+						case "date": defaultValue = ""; break;
+						case "number": defaultValue = 0; break;
+						case "boolean": defaultValue = false; break;
+						case "list": defaultValue = []; break;
+						default: defaultValue = ""; break;
+					}
+				}
+				this.userFields[key] = defaultValue;
+			},
+		});
 	}
 
 	private createNaturalLanguageInput(container: HTMLElement): void {
@@ -1434,6 +1472,12 @@ export class TaskCreationModal extends TaskModal {
 			// NLPSuggest extends AbstractInputSuggest which has a close method
 			this.nlpSuggest.close();
 			this.nlpSuggest = null;
+		}
+
+		// Clean up property picker
+		if (this.propertyPickerInstance) {
+			this.propertyPickerInstance.destroy();
+			this.propertyPickerInstance = null;
 		}
 
 		// Remove all tracked event listeners
