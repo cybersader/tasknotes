@@ -30,6 +30,46 @@ const BUILT_IN_DATE_FIELDS: Array<{
 	{ key: "completedDate", displayName: "Completed date", taskInfoKey: "completedDate" },
 ];
 
+/** Keys that are known non-date fields and should never appear as date anchors */
+const NON_DATE_FIELD_KEYS = new Set([
+	"type", "status", "priority", "title", "assignee", "assignees",
+	"creator", "projects", "contexts", "tags", "aliases", "cssclasses",
+	"timeEstimate", "timeEntries", "recurrence", "recurrence_anchor",
+	"archiveTag", "completeInstances", "complete_instances",
+	"skippedInstances", "skipped_instances", "blockedBy",
+	"pomodoros", "icsEventId", "icsEventTag", "tnId", "uid",
+	"reminders", "publish", "permalink", "description",
+]);
+
+/** Regex to match date-like strings (YYYY-MM-DD with optional time) */
+const DATE_LIKE_REGEX = /^\d{4}-\d{2}-\d{2}/;
+
+/**
+ * Normalize a frontmatter value that may be a Date object or string into a YYYY-MM-DD string.
+ * Obsidian's YAML parser converts bare date values (e.g., `due: 2026-02-11`) into JS Date objects.
+ * Returns null if the value is not date-like.
+ */
+function normalizeDateValue(value: unknown): string | null {
+	if (value instanceof Date && !isNaN(value.getTime())) {
+		return value.toISOString().slice(0, 10);
+	}
+	if (typeof value === "string" && DATE_LIKE_REGEX.test(value)) {
+		return value;
+	}
+	return null;
+}
+
+/**
+ * Convert a snake_case or camelCase key to a human-readable display name.
+ * e.g., "review_date" -> "Review date", "followUp" -> "Follow up"
+ */
+function keyToDisplayName(key: string): string {
+	return key
+		.replace(/_/g, " ")
+		.replace(/([a-z])([A-Z])/g, "$1 $2")
+		.replace(/^./, (c) => c.toUpperCase());
+}
+
 /**
  * Get all available date properties that can serve as reminder anchors.
  * Combines built-in date fields with user-defined date fields from settings.
@@ -62,13 +102,14 @@ export function getAvailableDateAnchors(
 	}
 
 	// Add user-defined date fields from settings
+	const knownKeys = new Set(BUILT_IN_DATE_FIELDS.map((f) => f.key as string));
 	const userFields = plugin.settings?.userFields;
 	if (userFields && Array.isArray(userFields)) {
 		for (const field of userFields) {
-			if (field.type === "date") {
+			if (field.type === "date" && !knownKeys.has(field.key)) {
 				const anchor: DateAnchor = {
 					key: field.key,
-					displayName: field.displayName || field.key,
+					displayName: field.displayName || keyToDisplayName(field.key),
 				};
 
 				// Check customProperties on the task for user field values
@@ -79,7 +120,50 @@ export function getAvailableDateAnchors(
 					}
 				}
 
+				knownKeys.add(field.key);
 				anchors.push(anchor);
+			}
+		}
+	}
+
+	// Auto-discover date properties from task frontmatter
+	// This catches custom date fields that aren't configured as user fields
+	if (task?.path && plugin.app) {
+		const file = plugin.app.vault.getAbstractFileByPath(task.path);
+		if (file instanceof TFile) {
+			const cache = plugin.app.metadataCache.getFileCache(file);
+			if (cache?.frontmatter) {
+				for (const [key, value] of Object.entries(cache.frontmatter)) {
+					if (knownKeys.has(key) || NON_DATE_FIELD_KEYS.has(key)) continue;
+					if (key === "position") continue; // metadataCache internal field
+
+					// Check if the value looks like a date (handles both strings and Date objects)
+					const dateStr = normalizeDateValue(value);
+					if (dateStr) {
+						anchors.push({
+							key,
+							displayName: keyToDisplayName(key),
+							currentValue: dateStr,
+						});
+						knownKeys.add(key);
+					}
+				}
+			}
+		}
+	}
+
+	// Also check task.customProperties for date values not yet found
+	if (task?.customProperties) {
+		for (const [key, value] of Object.entries(task.customProperties)) {
+			if (knownKeys.has(key) || NON_DATE_FIELD_KEYS.has(key)) continue;
+			const dateStr = normalizeDateValue(value);
+			if (dateStr) {
+				anchors.push({
+					key,
+					displayName: keyToDisplayName(key),
+					currentValue: dateStr,
+				});
+				knownKeys.add(key);
 			}
 		}
 	}
@@ -130,8 +214,9 @@ export function resolveAnchorDate(
 			if (cache?.frontmatter) {
 				// Try the anchor key directly (for custom fields stored with their key)
 				const directValue = cache.frontmatter[anchorKey];
-				if (typeof directValue === "string" && directValue) {
-					return directValue;
+				const normalizedDirect = normalizeDateValue(directValue);
+				if (normalizedDirect) {
+					return normalizedDirect;
 				}
 
 				// Try the user-configured field name via FieldMapper
@@ -143,8 +228,9 @@ export function resolveAnchorDate(
 						);
 						if (userFieldName && userFieldName !== anchorKey) {
 							const mappedValue = cache.frontmatter[userFieldName];
-							if (typeof mappedValue === "string" && mappedValue) {
-								return mappedValue;
+							const normalizedMapped = normalizeDateValue(mappedValue);
+							if (normalizedMapped) {
+								return normalizedMapped;
 							}
 						}
 					} catch {
@@ -177,6 +263,6 @@ export function getAnchorDisplayName(
 		if (userField) return userField.displayName || userField.key;
 	}
 
-	// Fallback: return the key itself
-	return anchorKey;
+	// Fallback: convert key to readable name
+	return keyToDisplayName(anchorKey);
 }

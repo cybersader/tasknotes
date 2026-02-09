@@ -870,9 +870,10 @@ export class TaskListView extends BasesViewBase {
 	private registerContainerListeners(): void {
 		if (!this.itemsContainer || this.containerListenersRegistered) return;
 
-		// Register click listener for group header collapse/expand using Component API
+		// Register click and context menu listeners using Component API
 		// This automatically cleans up on component unload
 		this.registerDomEvent(this.itemsContainer, "click", this.handleItemClick);
+		this.registerDomEvent(this.itemsContainer, "contextmenu", this.handleItemContextMenu);
 		this.containerListenersRegistered = true;
 	}
 

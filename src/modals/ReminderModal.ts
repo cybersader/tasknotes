@@ -412,26 +412,20 @@ export class ReminderModal extends Modal {
 
 		new Setting(relativeContainer).setName("Relative to").addDropdown((dropdown) => {
 			const anchors = getAvailableDateAnchors(this.plugin, this.task);
-			const anchorsWithValues = anchors.filter((a) => a.currentValue);
 
-			if (anchorsWithValues.length === 0) {
-				dropdown.addOption("none", "No dates available");
-				dropdown.setDisabled(true);
-			} else {
-				// Show all date anchors - those with values first, then those without
-				for (const anchor of anchorsWithValues) {
-					const label = `${anchor.displayName} (${formatDateForDisplay(anchor.currentValue!)})`;
-					dropdown.addOption(anchor.key, label);
-				}
-				// Also show anchors without values (user may set them later)
-				for (const anchor of anchors) {
-					if (!anchor.currentValue) {
-						dropdown.addOption(anchor.key, `${anchor.displayName} (not set)`);
-					}
-				}
-				dropdown.setValue(this.relativeAnchor);
+			// Always show all date anchors - those with values first, then those without
+			const anchorsWithValues = anchors.filter((a) => a.currentValue);
+			const anchorsWithoutValues = anchors.filter((a) => !a.currentValue);
+
+			for (const anchor of anchorsWithValues) {
+				const label = `${anchor.displayName} (${formatDateForDisplay(anchor.currentValue!)})`;
+				dropdown.addOption(anchor.key, label);
+			}
+			for (const anchor of anchorsWithoutValues) {
+				dropdown.addOption(anchor.key, `${anchor.displayName} (not set)`);
 			}
 
+			dropdown.setValue(this.relativeAnchor);
 			dropdown.onChange((value) => {
 				this.relativeAnchor = value;
 			});

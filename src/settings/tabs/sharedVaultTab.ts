@@ -271,9 +271,21 @@ function renderPersonNotesSourceSection(
 
 			// Person type value - what value identifies a person note
 			group.addSetting((setting) => {
+				const typeProp = plugin.settings.identityTypePropertyName || "type";
+				const descEl = document.createDocumentFragment();
+				descEl.append(
+					Object.assign(document.createElement("span"), { textContent: `Notes with ` }),
+					Object.assign(document.createElement("code"), { textContent: `${typeProp}: <this value>` }),
+					Object.assign(document.createElement("span"), { textContent: ` are treated as person notes. Property name configured in ` }),
+					Object.assign(document.createElement("a"), {
+						textContent: "Task Properties",
+						onclick: () => navigateToTaskProperties(plugin),
+					}),
+				);
+				(descEl.lastChild as HTMLElement).style.cssText = "cursor: pointer; color: var(--text-accent);";
 				setting
 					.setName("Person type value")
-					.setDesc("Value in the type property that identifies person notes")
+					.then((s) => { s.descEl.empty(); s.descEl.append(descEl); })
 					.addText((text) => {
 						text
 							.setPlaceholder("tn-person")
@@ -302,7 +314,7 @@ function renderGroupNotesSection(
 		container,
 		{
 			heading: "Group notes",
-			description: "Groups allow assigning tasks to teams. Group notes need the configured type property value and a members array.",
+			description: `Groups allow assigning tasks to teams. Group notes need "${plugin.settings.identityTypePropertyName || "type"}: ${plugin.settings.groupTypeValue || "tn-group"}" in frontmatter and a members array.`,
 		},
 		(group) => {
 			// Group notes folder - with autocomplete
@@ -363,9 +375,21 @@ function renderGroupNotesSection(
 
 			// Group type value - what value identifies a group note
 			group.addSetting((setting) => {
+				const typeProp = plugin.settings.identityTypePropertyName || "type";
+				const descEl = document.createDocumentFragment();
+				descEl.append(
+					Object.assign(document.createElement("span"), { textContent: `Notes with ` }),
+					Object.assign(document.createElement("code"), { textContent: `${typeProp}: <this value>` }),
+					Object.assign(document.createElement("span"), { textContent: ` are treated as group notes. Property name configured in ` }),
+					Object.assign(document.createElement("a"), {
+						textContent: "Task Properties",
+						onclick: () => navigateToTaskProperties(plugin),
+					}),
+				);
+				(descEl.lastChild as HTMLElement).style.cssText = "cursor: pointer; color: var(--text-accent);";
 				setting
 					.setName("Group type value")
-					.setDesc("Value in the type property that identifies group notes")
+					.then((s) => { s.descEl.empty(); s.descEl.append(descEl); })
 					.addText((text) => {
 						text
 							.setPlaceholder("tn-group")
@@ -609,15 +633,15 @@ function navigateToTaskProperties(plugin: TaskNotesPlugin): void {
 		const tabButton = settingsTab.containerEl.querySelector("#tab-button-task-properties") as HTMLElement;
 		if (tabButton) {
 			tabButton.click();
-			// After tab switch, scroll to Team & Attribution Properties section
-			// Use longer delay to ensure render completes
+			// After tab switch, scroll to the Type Property card
 			setTimeout(() => {
-				const headings = settingsTab.containerEl.querySelectorAll(".setting-item-heading .setting-item-name");
-				for (const heading of headings) {
-					if (heading.textContent?.toLowerCase().includes("team & attribution")) {
-						(heading as HTMLElement).scrollIntoView({ behavior: "smooth", block: "start" });
-						break;
-					}
+				const typeCard = settingsTab.containerEl.querySelector('[data-card-id="property-type"]') as HTMLElement;
+				if (typeCard) {
+					typeCard.scrollIntoView({ behavior: "smooth", block: "start" });
+					// Brief highlight to draw attention
+					typeCard.style.outline = "2px solid var(--text-accent)";
+					typeCard.style.borderRadius = "var(--radius-m)";
+					setTimeout(() => { typeCard.style.outline = ""; typeCard.style.borderRadius = ""; }, 2000);
 				}
 			}, 200);
 		}

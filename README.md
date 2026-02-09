@@ -118,6 +118,86 @@ Natural language parsing: English, German, Spanish, French, Italian, Japanese, D
 
 </details>
 
+## Development
+
+### Quick start
+
+```bash
+bun install              # Install dependencies
+bun run dev              # Watch mode (rebuilds on change)
+bun run build            # Production build (type-check + bundle)
+bun test                 # Run Jest unit/integration tests
+```
+
+Open the dev vault in Obsidian with [Hot Reload](https://github.com/pjeby/hot-reload) for instant iteration.
+
+### Testing
+
+**Unit/Integration tests (Jest):**
+
+```bash
+bun test                 # All tests
+bun run test:unit        # Unit tests only
+bun run test:integration # Integration tests only
+bun run test:coverage    # With coverage report
+```
+
+**E2E tests (Playwright + Chrome DevTools Protocol):**
+
+E2E tests connect to a running Obsidian instance via CDP to test real UI interactions. The upstream developer authored 102+ test specs covering issue regressions, screenshots, and diagnostics.
+
+```bash
+# 1. Build and copy plugin to the isolated e2e vault
+bun run build:test
+
+# 2. Close Obsidian if it's running, then launch with e2e vault
+bun run e2e:launch
+
+# 3. First time only: enable community plugins and TaskNotes in Settings
+# 4. Close Obsidian, then run tests
+bun run e2e
+
+# Or run specific test suites:
+bun run e2e -- e2e/tasknotes.spec.ts                      # Main suite (102+ tests)
+bun run e2e -- e2e/diagnostics/console-capture.spec.ts    # Capture console logs
+bun run e2e -- e2e/issues/issue-1102-frontmatter-status-sync.spec.ts  # Single issue
+```
+
+**Faster iteration (attach to running instance):**
+
+Instead of letting Playwright launch Obsidian each time, start Obsidian manually with the debug port and Playwright will connect to it:
+
+```bash
+# Launch Obsidian with debug port (leave it running)
+"/path/to/Obsidian" --remote-debugging-port=9333
+
+# Run tests against the running instance (skips startup delay)
+bun run e2e
+```
+
+**Platform setup:**
+
+| Platform | Binary Source | Setup |
+|----------|-------------|-------|
+| **Windows** | Auto-detected from `%LOCALAPPDATA%\Obsidian\` | None |
+| **macOS** | Auto-detected from `/Applications/Obsidian.app` | None |
+| **WSL2** | Windows `Obsidian.exe` via `/mnt/c/...` (auto-detected) | None |
+| **Linux native** | Extracted AppImage | `bun run e2e:setup /path/to/Obsidian.AppImage` |
+
+**Key E2E files:**
+
+| File | Purpose |
+|------|---------|
+| `e2e/obsidian.ts` | Launcher: finds binary, spawns Obsidian, connects via CDP |
+| `e2e/tasknotes.spec.ts` | Main test suite (102+ issue-specific tests) |
+| `e2e/issues/` | Per-GitHub-issue regression tests |
+| `e2e/diagnostics/console-capture.spec.ts` | Capture all console output to file |
+| `e2e/docs-screenshots.spec.ts` | Documentation screenshot generation |
+| `tasknotes-e2e-vault/` | Isolated vault for E2E (separate from dev vault) |
+| `playwright.config.ts` | Config: 1 worker, sequential, 60s timeout |
+
+See `knowledge-base/03-reference/architecture/e2e-testing-strategy.md` for the full architecture comparison including [wdio-obsidian-service](https://github.com/jesse-r-s-hines/wdio-obsidian-service) as an alternative.
+
 ## Known limitations
 
 - **System notifications on Windows**: Obsidian may not register as a notification sender with Windows, causing system (OS-level) notifications to silently fail even when permission is granted. This is a [known Electron issue](https://github.com/electron/electron/issues/4973) that affects all Electron apps and requires a fix from the Obsidian team ([related discussion](https://github.com/uphy/obsidian-reminder/issues/73)). **Workaround**: Use "In-app" or "Both" notification delivery type in settings.

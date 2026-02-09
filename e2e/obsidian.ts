@@ -1,12 +1,31 @@
 import { Page, chromium, Browser } from '@playwright/test';
 import * as path from 'path';
 import * as fs from 'fs';
-import { spawn, ChildProcess } from 'child_process';
+import { spawn, ChildProcess, execSync } from 'child_process';
 import * as os from 'os';
 
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 const UNPACKED_DIR = path.join(PROJECT_ROOT, '.obsidian-unpacked');
 const E2E_VAULT_DIR = path.join(PROJECT_ROOT, 'tasknotes-e2e-vault');
+
+/** Detect if running inside WSL2 */
+function isWSL2(): boolean {
+  try {
+    const version = fs.readFileSync('/proc/version', 'utf-8');
+    return /microsoft/i.test(version);
+  } catch {
+    return false;
+  }
+}
+
+/** Convert a WSL2 Linux path to a Windows path (e.g., /mnt/c/... -> C:\...) */
+function toWindowsPath(linuxPath: string): string {
+  try {
+    return execSync(`wslpath -w "${linuxPath}"`, { encoding: 'utf-8' }).trim();
+  } catch {
+    return linuxPath;
+  }
+}
 
 /**
  * Find Obsidian executable based on platform.
@@ -45,6 +64,24 @@ function findObsidianBinary(): string | null {
     }
     return null;
   } else {
+    // WSL2: Use Windows Obsidian.exe via /mnt/c/... path
+    if (isWSL2()) {
+      // Find Windows username from /mnt/c/Users/
+      const usersDir = '/mnt/c/Users';
+      if (fs.existsSync(usersDir)) {
+        const users = fs.readdirSync(usersDir).filter(u =>
+          !['Public', 'Default', 'Default User', 'All Users'].includes(u)
+          && fs.statSync(path.join(usersDir, u)).isDirectory()
+        );
+        for (const user of users) {
+          const candidate = path.join(usersDir, user, 'AppData', 'Local', 'Obsidian', 'Obsidian.exe');
+          if (fs.existsSync(candidate)) {
+            return candidate;
+          }
+        }
+      }
+    }
+
     // Linux: Check for extracted AppImage first, then common locations
     const unpackedBinary = path.join(UNPACKED_DIR, 'obsidian');
     if (fs.existsSync(unpackedBinary)) {
@@ -139,13 +176,16 @@ export async function launchObsidian(): Promise<ObsidianApp> {
     cdpUrl = existingCdpUrl;
   } else {
     // Launch Obsidian manually and connect via CDP
-    // Use obsidian:// URI to open specific vault
-    const vaultUri = `obsidian://open?path=${encodeURIComponent(E2E_VAULT_DIR)}`;
-
-    // Pass the vault path directly as an argument
-    // Use --user-data-dir to force a separate Electron instance (prevents single-instance detection)
-    const userDataDir = path.join(PROJECT_ROOT, '.obsidian-config-e2e');
+    const wsl = isWSL2();
     const platform = os.platform();
+
+    // On WSL2, convert paths to Windows format for the Windows Obsidian.exe
+    const vaultPath = wsl ? toWindowsPath(E2E_VAULT_DIR) : E2E_VAULT_DIR;
+    const vaultUri = `obsidian://open?path=${encodeURIComponent(vaultPath)}`;
+
+    // Use --user-data-dir to force a separate Electron instance (prevents single-instance detection)
+    const userDataDirLinux = path.join(PROJECT_ROOT, '.obsidian-config-e2e');
+    const userDataDir = wsl ? toWindowsPath(userDataDirLinux) : userDataDirLinux;
 
     // Build args based on platform
     const args = [
@@ -154,17 +194,23 @@ export async function launchObsidian(): Promise<ObsidianApp> {
       vaultUri,
     ];
 
-    // Linux needs --no-sandbox for unpacked AppImages
-    if (platform === 'linux') {
+    // Linux (non-WSL2) needs --no-sandbox for unpacked AppImages
+    if (platform === 'linux' && !wsl) {
       args.unshift('--no-sandbox');
     }
 
+    if (wsl) {
+      console.log('WSL2 detected, launching Windows Obsidian.exe with converted paths');
+      console.log(`  Vault path: ${vaultPath}`);
+      console.log(`  User data dir: ${userDataDir}`);
+    }
+
     obsidianProcess = spawn(obsidianBinary, args, {
-      cwd: platform === 'linux' ? path.dirname(obsidianBinary) : PROJECT_ROOT,
+      cwd: (platform === 'linux' && !wsl) ? path.dirname(obsidianBinary) : PROJECT_ROOT,
       stdio: ['ignore', 'pipe', 'pipe'],
       env: {
         ...process.env,
-        OBSIDIAN_CONFIG_DIR: userDataDir,
+        OBSIDIAN_CONFIG_DIR: wsl ? userDataDir : userDataDirLinux,
       },
       detached: false,
     });

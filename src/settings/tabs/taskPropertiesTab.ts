@@ -232,7 +232,25 @@ function navigateToTeamAttribution(plugin: TaskNotesPlugin): void {
 		const tabButton = settingsTab.containerEl.querySelector(
 			"#tab-button-team-attribution"
 		) as HTMLElement;
-		tabButton?.click();
+		if (tabButton) {
+			tabButton.click();
+			// After tab switch, scroll to the Person notes section (where type values are)
+			setTimeout(() => {
+				const headings = settingsTab.containerEl.querySelectorAll(".setting-item-heading .setting-item-name");
+				for (const heading of headings) {
+					if (heading.textContent?.toLowerCase().includes("person notes")) {
+						const settingItem = (heading as HTMLElement).closest(".setting-item") as HTMLElement;
+						if (settingItem) {
+							settingItem.scrollIntoView({ behavior: "smooth", block: "start" });
+							settingItem.style.outline = "2px solid var(--text-accent)";
+							settingItem.style.borderRadius = "var(--radius-m)";
+							setTimeout(() => { settingItem.style.outline = ""; settingItem.style.borderRadius = ""; }, 2000);
+						}
+						break;
+					}
+				}
+			}, 200);
+		}
 	}
 }
 
@@ -323,17 +341,42 @@ function renderTypePropertyCard(
 	translate: (key: TranslationKey, params?: Record<string, string | number>) => string
 ): void {
 	const propName = plugin.settings.identityTypePropertyName || "type";
-	const taskValue = plugin.settings.taskTypeValue || "tn-task";
 
 	// Create description element
 	const descriptionEl = createCardDescription(
-		"Property used to identify note types. Task type value is set here; person/group values are in Team & Attribution."
+		"Frontmatter property used to classify notes as person or group. Person/group type values are configured in Team & Attribution. Task identification uses a separate setting in General."
 	);
 
 	// Property name input
-	const propertyNameInput = createCardInput("text", "type", propName);
+	const propertyNameInput = createCardInput("text", "tnType", propName);
 	propertyNameInput.addEventListener("change", () => {
-		const cleaned = propertyNameInput.value.trim() || "type";
+		const cleaned = propertyNameInput.value.trim() || "tnType";
+		const oldPropName = plugin.settings.identityTypePropertyName || "tnType";
+
+		if (cleaned !== oldPropName) {
+			// Count notes using the OLD property name
+			const personValue = plugin.settings.personTypeValue || "tn-person";
+			const groupValue = plugin.settings.groupTypeValue || "tn-group";
+			let personCount = 0;
+			let groupCount = 0;
+			for (const file of plugin.app.vault.getMarkdownFiles()) {
+				const fm = plugin.app.metadataCache.getFileCache(file)?.frontmatter;
+				if (!fm || !fm[oldPropName]) continue;
+				if (fm[oldPropName] === personValue) personCount++;
+				if (fm[oldPropName] === groupValue) groupCount++;
+			}
+
+			if (personCount > 0 || groupCount > 0) {
+				const parts: string[] = [];
+				if (personCount > 0) parts.push(`${personCount} person note${personCount === 1 ? "" : "s"}`);
+				if (groupCount > 0) parts.push(`${groupCount} group note${groupCount === 1 ? "" : "s"}`);
+				new Notice(
+					`Warning: ${parts.join(" and ")} currently use "${oldPropName}" and won't be recognized with the new name "${cleaned}". You'll need to update their frontmatter manually.`,
+					8000
+				);
+			}
+		}
+
 		plugin.settings.identityTypePropertyName = cleaned;
 
 		// Update header secondary text
@@ -341,25 +384,7 @@ function renderTypePropertyCard(
 		if (card) {
 			const secondaryText = card.querySelector(".tasknotes-settings__card-header-secondary");
 			if (secondaryText) {
-				secondaryText.textContent = `${cleaned}: ${plugin.settings.taskTypeValue || "tn-task"}`;
-			}
-		}
-
-		save();
-	});
-
-	// Task type value input
-	const taskValueInput = createCardInput("text", "tn-task", taskValue);
-	taskValueInput.addEventListener("change", () => {
-		const cleaned = taskValueInput.value.trim() || "tn-task";
-		plugin.settings.taskTypeValue = cleaned;
-
-		// Update header secondary text
-		const card = container.querySelector('[data-card-id="property-type"]');
-		if (card) {
-			const secondaryText = card.querySelector(".tasknotes-settings__card-header-secondary");
-			if (secondaryText) {
-				secondaryText.textContent = `${plugin.settings.identityTypePropertyName || "type"}: ${cleaned}`;
+				secondaryText.textContent = cleaned;
 			}
 		}
 
@@ -368,11 +393,13 @@ function renderTypePropertyCard(
 
 	// Link to Team & Attribution for person/group values
 	const linkEl = document.createElement("div");
-	linkEl.className = "tasknotes-settings__card-link";
-	linkEl.innerHTML = `<span class="tasknotes-settings__card-link-text">Person and group type values → <a class="clickable-icon" data-action="team-attribution">Team & Attribution</a></span>`;
-	linkEl.querySelector("[data-action]")?.addEventListener("click", () => {
-		navigateToTeamAttribution(plugin);
-	});
+	linkEl.style.cssText = "font-size: var(--font-ui-small); color: var(--text-muted); margin-top: var(--size-4-1);";
+	const linkText = document.createTextNode("Person and group type values \u2192 ");
+	const linkAnchor = document.createElement("a");
+	linkAnchor.textContent = "Team & Attribution";
+	linkAnchor.style.cssText = "cursor: pointer; color: var(--text-accent);";
+	linkAnchor.addEventListener("click", () => navigateToTeamAttribution(plugin));
+	linkEl.append(linkText, linkAnchor);
 
 	createCard(container, {
 		id: "property-type",
@@ -380,7 +407,7 @@ function renderTypePropertyCard(
 		defaultCollapsed: true,
 		header: {
 			primaryText: "Type property",
-			secondaryText: `${propName}: ${taskValue}`,
+			secondaryText: propName,
 			meta: [createStatusBadge("Enabled", "default")],
 		},
 		content: {
@@ -388,7 +415,6 @@ function renderTypePropertyCard(
 				rows: [
 					{ label: "", input: descriptionEl, fullWidth: true },
 					{ label: "Property name", input: propertyNameInput },
-					{ label: "Task type value", input: taskValueInput },
 					{ label: "", input: linkEl, fullWidth: true },
 				],
 			}],
