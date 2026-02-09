@@ -73,6 +73,10 @@ export class TaskEditModal extends TaskModal {
 		return this.task.path;
 	}
 
+	protected override getTaskPath(): string {
+		return this.task.path || "";
+	}
+
 	getModalTitle(): string {
 		return this.t("modals.taskEdit.title");
 	}

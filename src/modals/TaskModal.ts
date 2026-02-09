@@ -1507,6 +1507,11 @@ export abstract class TaskModal extends Modal {
 		menu.show(event);
 	}
 
+	/** Override in subclasses to provide the task's file path (for anchor discovery). */
+	protected getTaskPath(): string {
+		return "";
+	}
+
 	protected showReminderContextMenu(event: UIEvent): void {
 		// Create a temporary task info object for the context menu
 		const tempTask: TaskInfo = {
@@ -1515,9 +1520,10 @@ export abstract class TaskModal extends Modal {
 			priority: this.priority,
 			due: this.dueDate,
 			scheduled: this.scheduledDate,
-			path: "", // Will be set when saving
+			path: this.getTaskPath(),
 			archived: false,
 			reminders: this.reminders,
+			customProperties: { ...this.userFields },
 		};
 
 		const menu = new ReminderContextMenu(
