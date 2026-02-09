@@ -687,6 +687,25 @@
     color: var(--text-error);
 }
 
+/* Date and Reminder Controls (Bulk Convert Mode) */
+.tn-bulk-date-input {
+    min-width: 150px;
+}
+
+.tn-bulk-reminder-dropdown {
+    min-width: 150px;
+}
+
+.tn-bulk-reminder-setting {
+    position: relative;
+}
+
+.tn-bulk-reminder-hint {
+    color: var(--text-warning);
+    font-size: 0.85em;
+    margin-top: 4px;
+}
+
 /* ================================================
    ASSIGNEE DROPDOWN (Bulk Task Modal)
    ================================================ */

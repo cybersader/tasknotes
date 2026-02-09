@@ -488,11 +488,11 @@ export const DEFAULT_SETTINGS: TaskNotesSettings = {
 	groupNotesFolder: "", // Defaults to same as personNotesFolder when empty
 	groupNotesTag: "",
 	groupNoteMappings: [],
-	// Configurable type property names (for enterprise compatibility)
-	identityTypePropertyName: "type", // Default property name for person/group type detection
-	personTypeValue: "person", // Default value that identifies person notes
-	groupTypeValue: "group", // Default value that identifies group notes
-	taskTypeValue: "task", // Default value that identifies task notes for Bases interceptor
+	// Configurable type property names (for enterprise compatibility - namespaced defaults)
+	identityTypePropertyName: "type", // Default property name for type detection
+	personTypeValue: "tn-person", // Default value that identifies person notes
+	groupTypeValue: "tn-group", // Default value that identifies group notes
+	taskTypeValue: "tn-task", // Default value that identifies task notes for Bases interceptor
 	// Vault-wide notification settings
 	vaultWideNotifications: DEFAULT_VAULT_WIDE_NOTIFICATIONS,
 	// Debug logging (off by default)

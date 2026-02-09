@@ -18,6 +18,16 @@ export interface BulkCreationOptions {
 	onProgress?: (current: number, total: number, status: string) => void;
 	/** Paths to person or group notes to assign all tasks to (will be formatted as wikilinks) */
 	assignees?: string[];
+	/** Bulk due date to apply to all tasks (YYYY-MM-DD) */
+	dueDate?: string;
+	/** Bulk scheduled date to apply to all tasks (YYYY-MM-DD) */
+	scheduledDate?: string;
+	/** Bulk status to apply to all tasks */
+	status?: string;
+	/** Bulk priority to apply to all tasks */
+	priority?: string;
+	/** Bulk reminders to apply to all tasks */
+	reminders?: Array<{ id?: string; type: string; relatedTo?: string; offset?: string; absoluteTime?: string; description?: string }>;
 }
 
 export interface BulkCreationResult {
@@ -200,18 +210,44 @@ export class BulkTaskEngine {
 			taskData.projects = [projectLink];
 		}
 
-		// Copy relevant properties from source
-		if (props.due) {
+		// Apply bulk values first, then source properties can override if present
+		// Bulk values take priority (user explicitly set them in the modal)
+		if (options.dueDate) {
+			taskData.due = options.dueDate;
+		} else if (props.due) {
 			taskData.due = String(props.due);
 		}
-		if (props.scheduled) {
+
+		if (options.scheduledDate) {
+			taskData.scheduled = options.scheduledDate;
+		} else if (props.scheduled) {
 			taskData.scheduled = String(props.scheduled);
 		}
-		if (props.priority) {
+
+		if (options.status) {
+			taskData.status = options.status;
+		}
+
+		if (options.priority) {
+			taskData.priority = options.priority;
+		} else if (props.priority) {
 			taskData.priority = String(props.priority);
 		}
+
 		if (props.contexts && Array.isArray(props.contexts)) {
 			taskData.contexts = props.contexts.map(String);
+		}
+
+		// Apply bulk reminders if provided
+		if (options.reminders && options.reminders.length > 0) {
+			taskData.reminders = options.reminders.map(r => ({
+				id: r.id || `rem_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+				type: r.type as "relative" | "absolute",
+				relatedTo: r.relatedTo as "due" | "scheduled" | undefined,
+				offset: r.offset,
+				absoluteTime: r.absoluteTime,
+				description: r.description,
+			}));
 		}
 
 		// Auto-set creator from device identity (if configured)

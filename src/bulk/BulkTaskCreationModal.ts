@@ -5,7 +5,7 @@
  *   - Convert: Add task metadata to existing notes in-place
  */
 
-import { App, Modal, Notice, Setting } from "obsidian";
+import { App, Modal, Notice, Setting, setIcon, setTooltip } from "obsidian";
 import TaskNotesPlugin from "../main";
 import { BasesDataItem } from "../bases/helpers";
 import { BulkTaskEngine, BulkCreationOptions, BulkCreationResult } from "./bulk-task-engine";
@@ -13,6 +13,11 @@ import { BulkConvertEngine, BulkConvertOptions, BulkConvertResult, ConvertPreChe
 import { PersonNoteInfo } from "../identity/PersonNoteService";
 import { GroupNoteMapping } from "../identity/GroupRegistry";
 import { createPersonGroupPicker } from "../ui/PersonGroupPicker";
+import { DateContextMenu } from "../components/DateContextMenu";
+import { StatusContextMenu } from "../components/StatusContextMenu";
+import { PriorityContextMenu } from "../components/PriorityContextMenu";
+import { ReminderModal } from "../modals/ReminderModal";
+import { Reminder, TaskInfo } from "../types";
 
 type BulkMode = "generate" | "convert";
 
@@ -52,15 +57,34 @@ export class BulkTaskCreationModal extends Modal {
 	private skipAlreadyTasks = true;
 	private applyDefaults = true;
 	private linkToBase = true;
+	private dueDate = "";
+	private scheduledDate = "";
+
+	// Bulk values (shared across modes where applicable)
+	private bulkStatus = "";
+	private bulkPriority = "";
+	private bulkReminders: Reminder[] = []; // Stackable reminders via ReminderModal
 
 	// UI element references
+	private bodyContainer: HTMLElement | null = null;
 	private optionsContainer: HTMLElement | null = null;
-	private previewContainer: HTMLElement | null = null;
+	private itemsContainer: HTMLElement | null = null;
+	private itemsListContainer: HTMLElement | null = null;
+	private itemsExpanded = false;
 	private statusContainer: HTMLElement | null = null;
-	private compatibilityContainer: HTMLElement | null = null;
-	private compatibilityExpanded = false;
+	private compatContainer: HTMLElement | null = null;
 	private actionButton: HTMLButtonElement | null = null;
 	private progressBar: HTMLElement | null = null;
+	private progressBarInner: HTMLElement | null = null;
+
+	// Action bar icon references (for visual state updates)
+	private dueIcon: HTMLElement | null = null;
+	private scheduledIcon: HTMLElement | null = null;
+	private statusIcon: HTMLElement | null = null;
+	private priorityIcon: HTMLElement | null = null;
+	private reminderIcon: HTMLElement | null = null;
+	private assigneeIcon: HTMLElement | null = null;
+	private reminderWarning: HTMLElement | null = null;
 
 	constructor(
 		app: App,
@@ -80,41 +104,46 @@ export class BulkTaskCreationModal extends Modal {
 	}
 
 	onOpen() {
-		const { contentEl } = this;
+		const { contentEl, modalEl } = this;
 		contentEl.empty();
-		contentEl.addClass("tn-bulk-creation-modal");
+
+		// Add modal classes for new styling
+		modalEl.addClass("tn-bulk-modal");
+		contentEl.addClass("tn-bulk-modal__content");
 
 		// Discover persons synchronously (fast - reads from cache/files)
 		this.discoveredPersons = this.plugin.personNoteService?.discoverPersons() || [];
 		// Start with empty groups - will update async
 		this.discoveredGroups = [];
 
-		// Header + item count
-		contentEl.createEl("h2", { text: "Bulk tasking" });
-		contentEl.createDiv({
-			cls: "tn-bulk-summary",
-			text: `${this.items.length} item${this.items.length !== 1 ? "s" : ""} from this view`,
-		});
+		// Header with icon, title, and summary
+		this.renderHeader(contentEl);
 
-		// Mode selector
-		this.renderModeSelector(contentEl);
+		// Mode tabs (segmented control)
+		this.renderModeTabs(contentEl);
 
-		// Preview section
-		this.renderPreview(contentEl);
+		// Scrollable body container
+		this.bodyContainer = contentEl.createDiv({ cls: "tn-bulk-modal__body" });
+
+		// Action bar (icon-based bulk values)
+		this.renderActionBar(this.bodyContainer);
+
+		// Assignees section (PersonGroupPicker)
+		this.renderAssigneeSection(this.bodyContainer);
+
+		// Items section (expandable)
+		this.renderItemsSection(this.bodyContainer);
 
 		// Options section (dynamic per mode)
-		this.optionsContainer = contentEl.createDiv({ cls: "tn-bulk-options-section" });
+		this.optionsContainer = this.bodyContainer.createDiv({ cls: "tn-bulk-modal__section" });
 		this.rebuildOptions();
 
-		// Compatibility panel (Convert mode only)
-		this.compatibilityContainer = contentEl.createDiv({ cls: "tn-bulk-compatibility-panel" });
-		this.compatibilityContainer.style.display = this.mode === "convert" ? "block" : "none";
+		// Compatibility section (inline badges, Convert mode only)
+		this.compatContainer = this.bodyContainer.createDiv({ cls: "tn-bulk-modal__section" });
+		this.compatContainer.style.display = this.mode === "convert" ? "block" : "none";
 
-		// Status/progress section
-		this.statusContainer = contentEl.createDiv({ cls: "tn-bulk-status" });
-
-		// Action buttons
-		this.renderActions(contentEl);
+		// Sticky footer with status, progress, and buttons
+		this.renderFooter(contentEl);
 
 		// Initial pre-check
 		this.runPreCheck();
@@ -124,15 +153,519 @@ export class BulkTaskCreationModal extends Modal {
 	}
 
 	/**
-	 * Discover groups asynchronously and rebuild the options section.
+	 * Discover groups asynchronously and rebuild the assignee section.
 	 */
 	private async discoverGroupsAsync() {
 		if (this.plugin.groupRegistry) {
 			this.discoveredGroups = await this.plugin.groupRegistry.discoverGroups();
-			// Rebuild options to include groups in the picker
-			if (this.discoveredGroups.length > 0 && this.mode === "generate") {
-				this.rebuildOptions();
+			// Rebuild assignee section to include groups in the picker
+			if (this.discoveredGroups.length > 0) {
+				this.rebuildActionBarAndAssignees();
 			}
+		}
+	}
+
+	/**
+	 * Render the modal header with icon, title, and summary.
+	 */
+	private renderHeader(container: HTMLElement) {
+		const header = container.createDiv({ cls: "tn-bulk-modal__header" });
+
+		// Icon
+		const iconEl = header.createDiv({ cls: "tn-bulk-modal__icon" });
+		setIcon(iconEl, "list-plus");
+
+		// Title
+		header.createEl("h2", {
+			cls: "tn-bulk-modal__title",
+			text: "Bulk tasking",
+		});
+
+		// Summary
+		header.createSpan({
+			cls: "tn-bulk-modal__summary",
+			text: `${this.items.length} item${this.items.length !== 1 ? "s" : ""}`,
+		});
+	}
+
+	/**
+	 * Render mode tabs as a segmented control.
+	 */
+	private renderModeTabs(container: HTMLElement) {
+		const tabsContainer = container.createDiv({ cls: "tn-bulk-modal__mode-tabs" });
+
+		// Generate tab
+		const generateTab = tabsContainer.createEl("button", {
+			cls: `tn-bulk-modal__tab ${this.mode === "generate" ? "tn-bulk-modal__tab--active" : ""}`,
+			text: "Generate new tasks",
+		});
+		generateTab.addEventListener("click", () => {
+			if (this.mode !== "generate") {
+				this.mode = "generate";
+				this.onModeChanged();
+				this.updateTabStyles(tabsContainer);
+			}
+		});
+
+		// Convert tab
+		const convertTab = tabsContainer.createEl("button", {
+			cls: `tn-bulk-modal__tab ${this.mode === "convert" ? "tn-bulk-modal__tab--active" : ""}`,
+			text: "Convert to tasks",
+		});
+		convertTab.addEventListener("click", () => {
+			if (this.mode !== "convert") {
+				this.mode = "convert";
+				this.onModeChanged();
+				this.updateTabStyles(tabsContainer);
+			}
+		});
+	}
+
+	/**
+	 * Update tab active states.
+	 */
+	private updateTabStyles(tabsContainer: HTMLElement) {
+		const tabs = tabsContainer.querySelectorAll(".tn-bulk-modal__tab");
+		tabs.forEach((tab, index) => {
+			if ((index === 0 && this.mode === "generate") || (index === 1 && this.mode === "convert")) {
+				tab.addClass("tn-bulk-modal__tab--active");
+			} else {
+				tab.removeClass("tn-bulk-modal__tab--active");
+			}
+		});
+	}
+
+	/**
+	 * Render the icon action bar for bulk values.
+	 */
+	private renderActionBar(container: HTMLElement) {
+		const section = container.createDiv({ cls: "tn-bulk-modal__section" });
+
+		// Section header with label and help icon
+		const header = section.createDiv({ cls: "tn-bulk-modal__section-header" });
+		header.createSpan({ cls: "tn-bulk-modal__section-label", text: "BULK VALUES" });
+
+		const helpIcon = header.createSpan({ cls: "tn-bulk-modal__help" });
+		setIcon(helpIcon, "help-circle");
+		setTooltip(helpIcon, "Set values to apply to all items. Click an icon to set a value.");
+
+		// Action bar with icons - same for both modes
+		const actionBar = section.createDiv({ cls: "tn-bulk-modal__action-bar" });
+
+		// Date icons
+		this.dueIcon = this.createActionIcon(actionBar, "calendar", "Due date", () => this.openDueDatePicker());
+		this.scheduledIcon = this.createActionIcon(actionBar, "calendar-clock", "Scheduled date", () => this.openScheduledDatePicker());
+
+		actionBar.createDiv({ cls: "tn-bulk-modal__action-separator" });
+
+		// Status and Priority
+		this.statusIcon = this.createActionIcon(actionBar, "circle-dot", "Status", () => this.openStatusPicker());
+		this.priorityIcon = this.createActionIcon(actionBar, "flag", "Priority", () => this.openPriorityPicker());
+
+		actionBar.createDiv({ cls: "tn-bulk-modal__action-separator" });
+
+		// Reminders
+		this.reminderIcon = this.createActionIcon(actionBar, "bell", "Reminders", () => this.openReminderPicker());
+
+		// Update icon states
+		this.updateActionIconStates();
+	}
+
+	/**
+	 * Render the ASSIGNEES section with PersonGroupPicker.
+	 */
+	private renderAssigneeSection(container: HTMLElement) {
+		const section = container.createDiv({ cls: "tn-bulk-modal__section" });
+		this.renderAssigneeSectionInto(section);
+	}
+
+	/**
+	 * Create an action icon button.
+	 */
+	private createActionIcon(
+		container: HTMLElement,
+		iconName: string,
+		tooltip: string,
+		onClick: () => void
+	): HTMLElement {
+		const iconBtn = container.createEl("button", { cls: "tn-bulk-modal__action-icon" });
+		setIcon(iconBtn, iconName);
+		setTooltip(iconBtn, tooltip);
+		iconBtn.addEventListener("click", onClick);
+		return iconBtn;
+	}
+
+	/**
+	 * Update visual state of action icons (show dot when value is set).
+	 */
+	private updateActionIconStates() {
+		// Due date
+		if (this.dueIcon) {
+			this.dueIcon.toggleClass("has-value", !!this.dueDate);
+			setTooltip(this.dueIcon, this.dueDate ? `Due: ${this.dueDate}` : "Due date");
+		}
+
+		// Scheduled date
+		if (this.scheduledIcon) {
+			this.scheduledIcon.toggleClass("has-value", !!this.scheduledDate);
+			setTooltip(this.scheduledIcon, this.scheduledDate ? `Scheduled: ${this.scheduledDate}` : "Scheduled date");
+		}
+
+		// Status
+		if (this.statusIcon) {
+			this.statusIcon.toggleClass("has-value", !!this.bulkStatus);
+			setTooltip(this.statusIcon, this.bulkStatus ? `Status: ${this.bulkStatus}` : "Status");
+		}
+
+		// Priority
+		if (this.priorityIcon) {
+			this.priorityIcon.toggleClass("has-value", !!this.bulkPriority);
+			setTooltip(this.priorityIcon, this.bulkPriority ? `Priority: ${this.bulkPriority}` : "Priority");
+		}
+
+		// Reminders (stackable)
+		if (this.reminderIcon) {
+			const hasReminders = this.bulkReminders.length > 0;
+			this.reminderIcon.toggleClass("has-value", hasReminders);
+
+			// Update tooltip with count
+			const count = this.bulkReminders.length;
+			const tooltip = count > 0
+				? `${count} reminder${count !== 1 ? "s" : ""} set`
+				: "Reminders";
+			setTooltip(this.reminderIcon, tooltip);
+
+			// Update data-count attribute for CSS badge (optional)
+			this.reminderIcon.setAttribute("data-count", String(count));
+		}
+
+		// Assignee
+		if (this.assigneeIcon) {
+			this.assigneeIcon.toggleClass("has-value", this.selectedAssignees.length > 0);
+			const count = this.selectedAssignees.length;
+			setTooltip(this.assigneeIcon, count > 0 ? `${count} assignee${count !== 1 ? "s" : ""} selected` : "Assignee");
+		}
+
+		// Show/hide reminder warning (when reminders set but no dates)
+		if (this.reminderWarning) {
+			const hasReminders = this.bulkReminders.length > 0;
+			const hasDate = !!this.dueDate || !!this.scheduledDate;
+			const showWarning = hasReminders && !hasDate;
+			this.reminderWarning.style.display = showWarning ? "block" : "none";
+		}
+	}
+
+	/**
+	 * Render the expandable items section.
+	 */
+	private renderItemsSection(container: HTMLElement) {
+		const section = container.createDiv({ cls: "tn-bulk-modal__section" });
+
+		// Section header
+		const header = section.createDiv({ cls: "tn-bulk-modal__section-header" });
+		header.createSpan({ cls: "tn-bulk-modal__section-label", text: "ITEMS" });
+
+		// Summary row (clickable to expand)
+		this.itemsContainer = section.createDiv({ cls: "tn-bulk-modal__items-summary" });
+		this.updateItemsSummary();
+
+		// Expandable list
+		this.itemsListContainer = section.createDiv({ cls: "tn-bulk-modal__items-list" });
+		this.populateItemsList();
+
+		// Click to expand/collapse
+		this.itemsContainer.addEventListener("click", () => {
+			this.itemsExpanded = !this.itemsExpanded;
+			this.itemsListContainer?.toggleClass("is-expanded", this.itemsExpanded);
+			const expandBtn = this.itemsContainer?.querySelector(".tn-bulk-modal__expand-btn");
+			expandBtn?.toggleClass("is-expanded", this.itemsExpanded);
+		});
+	}
+
+	/**
+	 * Update the items summary display.
+	 */
+	private updateItemsSummary() {
+		if (!this.itemsContainer) return;
+		this.itemsContainer.empty();
+
+		const countSpan = this.itemsContainer.createSpan({ cls: "tn-bulk-modal__items-count" });
+		countSpan.textContent = `${this.items.length} item${this.items.length !== 1 ? "s" : ""} selected`;
+
+		// Expand button (text chevron - setIcon SVG doesn't render reliably here)
+		const expandBtn = this.itemsContainer.createEl("button", {
+			cls: `tn-bulk-modal__expand-btn ${this.itemsExpanded ? "is-expanded" : ""}`,
+			text: "▾",
+		});
+	}
+
+	/**
+	 * Populate the expandable items list.
+	 */
+	private populateItemsList() {
+		if (!this.itemsListContainer) return;
+		this.itemsListContainer.empty();
+
+		const maxItems = 20;
+		const itemsToShow = this.items.slice(0, maxItems);
+
+		for (const item of itemsToShow) {
+			const itemEl = this.itemsListContainer.createDiv({ cls: "tn-bulk-modal__item" });
+			const title = this.extractTitle(item);
+			itemEl.createSpan({ cls: "tn-bulk-modal__item-title", text: title });
+		}
+
+		if (this.items.length > maxItems) {
+			this.itemsListContainer.createDiv({
+				cls: "tn-bulk-modal__items-more",
+				text: `...and ${this.items.length - maxItems} more`,
+			});
+		}
+	}
+
+	/**
+	 * Update items list with skip badges based on pre-check results.
+	 */
+	private updateItemsWithSkipBadges(skipPaths: Set<string>, badgeText: string) {
+		if (!this.itemsListContainer) return;
+
+		const items = this.itemsListContainer.querySelectorAll(".tn-bulk-modal__item");
+		const maxItems = 20;
+
+		for (let i = 0; i < Math.min(this.items.length, maxItems); i++) {
+			const item = this.items[i];
+			const itemEl = items[i] as HTMLElement;
+			if (!itemEl) continue;
+
+			const isSkipped = item.path && skipPaths.has(item.path);
+
+			if (isSkipped) {
+				itemEl.addClass("tn-bulk-modal__item--skipped");
+				let badge = itemEl.querySelector(".tn-bulk-modal__item-badge") as HTMLElement;
+				if (!badge) {
+					badge = itemEl.createSpan({ cls: "tn-bulk-modal__item-badge", text: badgeText });
+				} else {
+					badge.textContent = badgeText;
+				}
+			} else {
+				itemEl.removeClass("tn-bulk-modal__item--skipped");
+				const badge = itemEl.querySelector(".tn-bulk-modal__item-badge");
+				if (badge) badge.remove();
+			}
+		}
+	}
+
+	/**
+	 * Render the sticky footer with status, progress, and buttons.
+	 */
+	private renderFooter(container: HTMLElement) {
+		const footer = container.createDiv({ cls: "tn-bulk-modal__footer" });
+
+		// Status message
+		this.statusContainer = footer.createDiv({ cls: "tn-bulk-modal__status" });
+
+		// Progress bar (hidden initially)
+		this.progressBar = footer.createDiv({ cls: "tn-bulk-modal__progress" });
+		this.progressBarInner = this.progressBar.createDiv({ cls: "tn-bulk-modal__progress-bar" });
+
+		// Buttons
+		const buttonsContainer = footer.createDiv({ cls: "tn-bulk-modal__buttons" });
+
+		// Cancel button
+		const cancelBtn = buttonsContainer.createEl("button", {
+			text: "Cancel",
+		});
+		cancelBtn.addEventListener("click", () => this.close());
+
+		// Action button
+		this.actionButton = buttonsContainer.createEl("button", {
+			text: this.getActionButtonText(),
+			cls: "mod-cta",
+		});
+		this.actionButton.addEventListener("click", () => this.executeAction());
+	}
+
+	// ============================================================
+	// Picker methods for action bar icons
+	// ============================================================
+
+	/**
+	 * Open the due date picker.
+	 */
+	private openDueDatePicker() {
+		if (!this.dueIcon) return;
+
+		const menu = new DateContextMenu({
+			currentValue: this.dueDate || undefined,
+			title: "Set due date",
+			plugin: this.plugin,
+			app: this.app,
+			onSelect: (date: string | null) => {
+				this.dueDate = date || "";
+				this.updateActionIconStates();
+			},
+		});
+		menu.showAtElement(this.dueIcon);
+	}
+
+	/**
+	 * Open the scheduled date picker.
+	 */
+	private openScheduledDatePicker() {
+		if (!this.scheduledIcon) return;
+
+		const menu = new DateContextMenu({
+			currentValue: this.scheduledDate || undefined,
+			title: "Set scheduled date",
+			plugin: this.plugin,
+			app: this.app,
+			onSelect: (date: string | null) => {
+				this.scheduledDate = date || "";
+				this.updateActionIconStates();
+			},
+		});
+		menu.showAtElement(this.scheduledIcon);
+	}
+
+	/**
+	 * Open the status picker.
+	 */
+	private openStatusPicker() {
+		if (!this.statusIcon) return;
+
+		const menu = new StatusContextMenu({
+			currentValue: this.bulkStatus,
+			plugin: this.plugin,
+			onSelect: (status: string) => {
+				this.bulkStatus = status;
+				this.updateActionIconStates();
+			},
+		});
+		menu.showAtElement(this.statusIcon);
+	}
+
+	/**
+	 * Open the priority picker.
+	 */
+	private openPriorityPicker() {
+		if (!this.priorityIcon) return;
+
+		const menu = new PriorityContextMenu({
+			currentValue: this.bulkPriority,
+			plugin: this.plugin,
+			onSelect: (priority: string) => {
+				this.bulkPriority = priority;
+				this.updateActionIconStates();
+			},
+		});
+		menu.showAtElement(this.priorityIcon);
+	}
+
+	/**
+	 * Open the reminder picker using ReminderModal for stackable reminders.
+	 */
+	private openReminderPicker() {
+		if (!this.reminderIcon) return;
+
+		// Create a temporary TaskInfo object for the ReminderModal
+		// The modal needs due/scheduled dates to calculate relative reminders
+		const tempTask: TaskInfo = {
+			title: "Bulk Task",
+			status: this.bulkStatus || "",
+			priority: this.bulkPriority || "",
+			due: this.dueDate || undefined,
+			scheduled: this.scheduledDate || undefined,
+			path: "", // No path - this is a bulk operation
+			archived: false,
+			reminders: [...this.bulkReminders],
+		};
+
+		// Check if we have dates for relative reminders
+		if (!this.dueDate && !this.scheduledDate) {
+			new Notice("Set a due or scheduled date to add relative reminders");
+		}
+
+		const modal = new ReminderModal(
+			this.app,
+			this.plugin,
+			tempTask,
+			(updatedReminders) => {
+				this.bulkReminders = updatedReminders;
+				this.updateActionIconStates();
+			}
+		);
+		modal.open();
+	}
+
+	/**
+	 * Open the assignee picker.
+	 */
+	private openAssigneePicker() {
+		// For assignees, we need a modal or popover with the PersonGroupPicker
+		// For now, use a simple approach - create a temporary container
+		// TODO: Implement proper popover with PersonGroupPicker
+
+		const { Menu } = require("obsidian");
+		const menu = new Menu();
+
+		// Add persons
+		for (const person of this.discoveredPersons) {
+			const isSelected = this.selectedAssignees.includes(person.path);
+			menu.addItem((item: any) => {
+				item.setTitle(person.displayName);
+				if (isSelected) {
+					item.setIcon("check");
+				}
+				item.onClick(() => {
+					if (isSelected) {
+						this.selectedAssignees = this.selectedAssignees.filter(p => p !== person.path);
+					} else {
+						this.selectedAssignees.push(person.path);
+					}
+					this.updateActionIconStates();
+				});
+			});
+		}
+
+		// Separator if both exist
+		if (this.discoveredPersons.length > 0 && this.discoveredGroups.length > 0) {
+			menu.addSeparator();
+		}
+
+		// Add groups
+		for (const group of this.discoveredGroups) {
+			const isSelected = this.selectedAssignees.includes(group.notePath);
+			menu.addItem((item: any) => {
+				item.setTitle(`👥 ${group.displayName}`);
+				if (isSelected) {
+					item.setIcon("check");
+				}
+				item.onClick(() => {
+					if (isSelected) {
+						this.selectedAssignees = this.selectedAssignees.filter(p => p !== group.notePath);
+					} else {
+						this.selectedAssignees.push(group.notePath);
+					}
+					this.updateActionIconStates();
+				});
+			});
+		}
+
+		// Clear option
+		if (this.selectedAssignees.length > 0) {
+			menu.addSeparator();
+			menu.addItem((item: any) => {
+				item.setTitle("Clear all");
+				item.onClick(() => {
+					this.selectedAssignees = [];
+					this.updateActionIconStates();
+				});
+			});
+		}
+
+		if (this.assigneeIcon) {
+			const rect = this.assigneeIcon.getBoundingClientRect();
+			menu.showAtPosition({ x: rect.left, y: rect.bottom });
 		}
 	}
 
@@ -153,27 +686,7 @@ export class BulkTaskCreationModal extends Modal {
 	}
 
 	/**
-	 * Render the mode selector dropdown.
-	 */
-	private renderModeSelector(container: HTMLElement) {
-		const modeSection = container.createDiv({ cls: "tn-bulk-mode-section" });
-
-		new Setting(modeSection)
-			.setName("Mode")
-			.addDropdown((dropdown) =>
-				dropdown
-					.addOption("generate", "Generate new tasks")
-					.addOption("convert", "Convert to tasks")
-					.setValue(this.mode)
-					.onChange((value) => {
-						this.mode = value as BulkMode;
-						this.onModeChanged();
-					})
-			);
-	}
-
-	/**
-	 * Handle mode change: update description, options, button text, and re-run pre-check.
+	 * Handle mode change: update UI, rebuild sections, and re-run pre-check.
 	 */
 	private onModeChanged() {
 		// Update action button text
@@ -182,14 +695,17 @@ export class BulkTaskCreationModal extends Modal {
 			this.actionButton.disabled = false;
 		}
 
+		// Rebuild action bar and assignee section for new mode
+		this.rebuildActionBarAndAssignees();
+
 		// Rebuild options for new mode
 		this.rebuildOptions();
 
-		// Show/hide compatibility panel (Convert mode only)
-		if (this.compatibilityContainer) {
-			this.compatibilityContainer.style.display = this.mode === "convert" ? "block" : "none";
+		// Show/hide compatibility section (Convert mode only)
+		if (this.compatContainer) {
+			this.compatContainer.style.display = this.mode === "convert" ? "block" : "none";
 			if (this.mode !== "convert") {
-				this.compatibilityContainer.empty();
+				this.compatContainer.empty();
 			}
 		}
 
@@ -198,36 +714,116 @@ export class BulkTaskCreationModal extends Modal {
 	}
 
 	/**
-	 * Render the preview section showing first few items.
+	 * Rebuild the action bar and assignee sections.
+	 * Used on mode change and when groups are discovered async.
 	 */
-	private renderPreview(container: HTMLElement) {
-		const previewSection = container.createDiv({ cls: "tn-bulk-preview-section" });
-		this.previewContainer = previewSection.createDiv({ cls: "tn-bulk-preview" });
-		this.updatePreview();
+	private rebuildActionBarAndAssignees() {
+		if (!this.bodyContainer) return;
+
+		// Clean up existing picker
+		this.assigneePicker?.destroy();
+		this.assigneePicker = null;
+
+		// Find and remove existing action bar and assignee sections (first two sections)
+		const sections = this.bodyContainer.querySelectorAll(".tn-bulk-modal__section");
+		if (sections.length >= 2) {
+			sections[0].remove(); // Action bar
+			sections[1].remove(); // Assignees (now at index 0 after removal)
+		} else if (sections.length >= 1) {
+			sections[0].remove(); // Action bar
+		}
+
+		// Recreate both sections at the beginning
+		const assigneeSection = this.bodyContainer.createDiv({ cls: "tn-bulk-modal__section" });
+		const actionBarSection = this.bodyContainer.createDiv({ cls: "tn-bulk-modal__section" });
+
+		// Insert in correct order (action bar first, then assignees)
+		this.bodyContainer.insertBefore(actionBarSection, this.bodyContainer.firstChild);
+		this.bodyContainer.insertBefore(assigneeSection, actionBarSection.nextSibling);
+
+		// Render content
+		this.renderActionBarInto(actionBarSection);
+		this.renderAssigneeSectionInto(assigneeSection);
 	}
 
 	/**
-	 * Update the preview list.
+	 * Render assignee section content into a container.
 	 */
-	private updatePreview() {
-		if (!this.previewContainer) return;
-		this.previewContainer.empty();
+	private renderAssigneeSectionInto(section: HTMLElement) {
+		// Section header
+		const header = section.createDiv({ cls: "tn-bulk-modal__section-header" });
+		header.createSpan({ cls: "tn-bulk-modal__section-label", text: "ASSIGNEES" });
 
-		const maxPreview = this.items.length > 5 ? 3 : 5;
-		const itemsToShow = this.items.slice(0, maxPreview);
+		const helpIcon = header.createSpan({ cls: "tn-bulk-modal__help" });
+		setIcon(helpIcon, "help-circle");
+		setTooltip(helpIcon, "Assign tasks to people or groups. Supports multiple assignees.");
 
-		for (const item of itemsToShow) {
-			const itemEl = this.previewContainer.createDiv({ cls: "tn-bulk-preview-item" });
-			const title = this.extractTitle(item);
-			itemEl.createSpan({ cls: "tn-bulk-preview-title", text: title });
+		// Check if persons/groups available
+		const hasAssignees = this.discoveredPersons.length > 0 || this.discoveredGroups.length > 0;
+
+		if (!hasAssignees) {
+			const emptyMsg = section.createDiv({ cls: "tn-bulk-modal__section-summary" });
+			emptyMsg.textContent = "No person or group notes found in vault.";
+			return;
 		}
 
-		if (this.items.length > maxPreview) {
-			const moreEl = this.previewContainer.createDiv({ cls: "tn-bulk-preview-more" });
-			moreEl.createSpan({
-				text: `... and ${this.items.length - maxPreview} more`,
-			});
-		}
+		// Picker container
+		const pickerContainer = section.createDiv({ cls: "tn-bulk-modal__assignee-picker" });
+
+		// Create the PersonGroupPicker
+		this.assigneePicker = createPersonGroupPicker({
+			container: pickerContainer,
+			persons: this.discoveredPersons,
+			groups: this.discoveredGroups,
+			multiSelect: true,
+			placeholder: "Search people or groups...",
+			initialSelection: this.selectedAssignees,
+			onChange: (paths) => {
+				this.selectedAssignees = paths;
+			},
+		});
+	}
+
+	/**
+	 * Render action bar content into a container.
+	 * Shows same icons for both modes - unified bulk values.
+	 */
+	private renderActionBarInto(section: HTMLElement) {
+		// Section header with label and help icon
+		const header = section.createDiv({ cls: "tn-bulk-modal__section-header" });
+		header.createSpan({ cls: "tn-bulk-modal__section-label", text: "BULK VALUES" });
+
+		const helpIcon = header.createSpan({ cls: "tn-bulk-modal__help" });
+		setIcon(helpIcon, "help-circle");
+		setTooltip(helpIcon, "Set values to apply to all items. Click an icon to set a value.");
+
+		// Action bar with icons - same for both modes
+		const actionBar = section.createDiv({ cls: "tn-bulk-modal__action-bar" });
+
+		// Date icons
+		this.dueIcon = this.createActionIcon(actionBar, "calendar", "Due date", () => this.openDueDatePicker());
+		this.scheduledIcon = this.createActionIcon(actionBar, "calendar-clock", "Scheduled date", () => this.openScheduledDatePicker());
+
+		actionBar.createDiv({ cls: "tn-bulk-modal__action-separator" });
+
+		// Status and Priority
+		this.statusIcon = this.createActionIcon(actionBar, "circle-dot", "Status", () => this.openStatusPicker());
+		this.priorityIcon = this.createActionIcon(actionBar, "flag", "Priority", () => this.openPriorityPicker());
+
+		actionBar.createDiv({ cls: "tn-bulk-modal__action-separator" });
+
+		// Reminders
+		this.reminderIcon = this.createActionIcon(actionBar, "bell", "Reminders", () => this.openReminderPicker());
+
+		// Reminder warning (hidden by default, shown when reminders set but no dates)
+		this.reminderWarning = section.createDiv({
+			cls: "tn-bulk-modal__reminder-warning",
+			text: "⚠ Set a due or scheduled date for relative reminders to work",
+		});
+		this.reminderWarning.style.display = "none";
+
+		// Update icon states
+		this.updateActionIconStates();
 	}
 
 	/**
@@ -246,9 +842,21 @@ export class BulkTaskCreationModal extends Modal {
 
 	/**
 	 * Render Generate-mode options.
+	 * Note: Assignees are now set via the action bar icon.
 	 */
 	private renderGenerateOptions(container: HTMLElement) {
-		new Setting(container)
+		// Section header
+		const header = container.createDiv({ cls: "tn-bulk-modal__section-header" });
+		header.createSpan({ cls: "tn-bulk-modal__section-label", text: "OPTIONS" });
+
+		const helpIcon = header.createSpan({ cls: "tn-bulk-modal__help" });
+		setIcon(helpIcon, "help-circle");
+		setTooltip(helpIcon, "Configure how new task files are created. See Settings → Task properties for defaults.");
+
+		// Options container
+		const optionsBox = container.createDiv({ cls: "tn-bulk-modal__options" });
+
+		new Setting(optionsBox)
 			.setName("Skip existing")
 			.setDesc("Skip items that already have tasks linked to them")
 			.addToggle((toggle) =>
@@ -258,7 +866,7 @@ export class BulkTaskCreationModal extends Modal {
 				})
 			);
 
-		new Setting(container)
+		new Setting(optionsBox)
 			.setName("Link to source")
 			.setDesc("Add source note as project in each created task")
 			.addToggle((toggle) =>
@@ -266,46 +874,25 @@ export class BulkTaskCreationModal extends Modal {
 					this.useParentAsProject = value;
 				})
 			);
-
-		// Assignee dropdown (only show if persons or groups exist)
-		const hasAssignees = this.discoveredPersons.length > 0 || this.discoveredGroups.length > 0;
-		if (hasAssignees) {
-			this.renderAssigneeDropdown(container);
-		}
-	}
-
-	/**
-	 * Render the assignee picker with multi-select support.
-	 */
-	private renderAssigneeDropdown(container: HTMLElement) {
-		const setting = new Setting(container)
-			.setName("Assign to")
-			.setDesc("Assign all created tasks to people or groups");
-
-		// Create picker container in the control element
-		const pickerContainer = setting.controlEl.createDiv({
-			cls: "tn-assignee-picker-container",
-		});
-
-		// Create the PersonGroupPicker
-		this.assigneePicker = createPersonGroupPicker({
-			container: pickerContainer,
-			persons: this.discoveredPersons,
-			groups: this.discoveredGroups,
-			multiSelect: true,
-			placeholder: "Search people or groups...",
-			initialSelection: this.selectedAssignees,
-			onChange: (selectedPaths) => {
-				this.selectedAssignees = selectedPaths;
-			},
-		});
 	}
 
 	/**
 	 * Render Convert-mode options.
+	 * Note: Date/reminder values are now set via the action bar icons.
 	 */
 	private renderConvertOptions(container: HTMLElement) {
-		new Setting(container)
+		// Section header
+		const header = container.createDiv({ cls: "tn-bulk-modal__section-header" });
+		header.createSpan({ cls: "tn-bulk-modal__section-label", text: "OPTIONS" });
+
+		const helpIcon = header.createSpan({ cls: "tn-bulk-modal__help" });
+		setIcon(helpIcon, "help-circle");
+		setTooltip(helpIcon, "Configure how notes are converted to tasks. See Settings → Task properties for defaults.");
+
+		// Options container
+		const optionsBox = container.createDiv({ cls: "tn-bulk-modal__options" });
+
+		new Setting(optionsBox)
 			.setName("Skip notes already recognized as tasks")
 			.setDesc("Skip items that TaskNotes already identifies as tasks")
 			.addToggle((toggle) =>
@@ -315,9 +902,9 @@ export class BulkTaskCreationModal extends Modal {
 				})
 			);
 
-		new Setting(container)
+		new Setting(optionsBox)
 			.setName("Apply default values")
-			.setDesc("Add default status, priority, and creation date to converted notes")
+			.setDesc("Add default status, priority, and creation date")
 			.addToggle((toggle) =>
 				toggle.setValue(this.applyDefaults).onChange((value) => {
 					this.applyDefaults = value;
@@ -326,45 +913,15 @@ export class BulkTaskCreationModal extends Modal {
 
 		// Only show "Link to base view" if we know the base file path
 		if (this.baseFilePath) {
-			new Setting(container)
+			new Setting(optionsBox)
 				.setName("Link to base view")
-				.setDesc("Add a project link to the base view that triggered this conversion")
+				.setDesc("Add a project link to this base view")
 				.addToggle((toggle) =>
 					toggle.setValue(this.linkToBase).onChange((value) => {
 						this.linkToBase = value;
 					})
 				);
 		}
-	}
-
-	/**
-	 * Render the action buttons.
-	 */
-	private renderActions(container: HTMLElement) {
-		const actionsEl = container.createDiv({ cls: "tn-bulk-actions" });
-
-		// Progress bar (hidden initially)
-		this.progressBar = actionsEl.createDiv({ cls: "tn-bulk-progress" });
-		this.progressBar.style.display = "none";
-		const progressInner = this.progressBar.createDiv({ cls: "tn-bulk-progress-bar" });
-		progressInner.style.width = "0%";
-
-		// Button container
-		const buttonContainer = actionsEl.createDiv({ cls: "tn-bulk-buttons" });
-
-		// Cancel button
-		const cancelBtn = buttonContainer.createEl("button", {
-			text: "Cancel",
-			cls: "mod-warning",
-		});
-		cancelBtn.addEventListener("click", () => this.close());
-
-		// Action button (text depends on mode)
-		this.actionButton = buttonContainer.createEl("button", {
-			text: this.getActionButtonText(),
-			cls: "mod-cta",
-		});
-		this.actionButton.addEventListener("click", () => this.executeAction());
 	}
 
 	/**
@@ -402,17 +959,19 @@ export class BulkTaskCreationModal extends Modal {
 		this.statusContainer.empty();
 		if (preCheck.toSkip > 0) {
 			this.statusContainer.createSpan({
-				text: `Will create ${preCheck.toCreate} task${preCheck.toCreate !== 1 ? "s" : ""}, skip ${preCheck.toSkip} existing`,
-				cls: "tn-bulk-status-info",
+				text: `Ready to create ${preCheck.toCreate} task${preCheck.toCreate !== 1 ? "s" : ""}, skip ${preCheck.toSkip} existing`,
 			});
 		} else {
 			this.statusContainer.createSpan({
-				text: `Will create ${preCheck.toCreate} task${preCheck.toCreate !== 1 ? "s" : ""}`,
-				cls: "tn-bulk-status-info",
+				text: `Ready to create ${preCheck.toCreate} task${preCheck.toCreate !== 1 ? "s" : ""}`,
 			});
 		}
 
-		this.updatePreviewWithSkipped(preCheck.existing, "exists");
+		// Update items list with skip badges
+		this.updateItemsWithSkipBadges(preCheck.existing, "exists");
+
+		// Update items summary with skip count
+		this.updateItemsSummaryWithSkips(preCheck.toSkip);
 
 		if (this.actionButton) {
 			this.actionButton.disabled = preCheck.toCreate === 0;
@@ -427,18 +986,30 @@ export class BulkTaskCreationModal extends Modal {
 
 		const preCheck = await this.convertEngine.preCheck(this.items);
 
-		// Clear the simple status (we use compatibility panel instead)
+		// Update status with ready count
 		this.statusContainer.empty();
+		this.statusContainer.createSpan({
+			text: `Ready to convert ${preCheck.toConvert} markdown file${preCheck.toConvert !== 1 ? "s" : ""}`,
+		});
 
-		// Render the rich compatibility panel
-		this.renderCompatibilityPanel(preCheck);
+		// Render the inline compatibility badges
+		this.renderCompatibilityBadges(preCheck);
 
-		// Mark skipped items in preview
+		// Calculate total skips
+		const totalSkips = (this.skipAlreadyTasks ? preCheck.alreadyTasks : 0) + preCheck.nonMarkdown;
+
+		// Update items with skip badges
+		const allSkipPaths = new Set<string>();
 		if (this.skipAlreadyTasks) {
-			this.updatePreviewWithSkippedMulti(preCheck.alreadyTaskPaths, preCheck.nonMarkdownPaths);
-		} else {
-			this.updatePreviewWithSkippedMulti(new Set(), preCheck.nonMarkdownPaths);
+			preCheck.alreadyTaskPaths.forEach(p => allSkipPaths.add(p));
 		}
+		preCheck.nonMarkdownPaths.forEach(p => allSkipPaths.add(p));
+
+		// Repopulate items list with badges
+		this.populateItemsListWithBadges(preCheck.alreadyTaskPaths, preCheck.nonMarkdownPaths);
+
+		// Update items summary
+		this.updateItemsSummaryWithSkips(totalSkips);
 
 		if (this.actionButton) {
 			this.actionButton.disabled = preCheck.toConvert === 0;
@@ -446,143 +1017,124 @@ export class BulkTaskCreationModal extends Modal {
 	}
 
 	/**
-	 * Update preview to show which items will be skipped.
+	 * Update items summary to show skip count.
 	 */
-	private updatePreviewWithSkipped(existingPaths: Set<string>, badgeText = "exists") {
-		if (!this.previewContainer) return;
+	private updateItemsSummaryWithSkips(skipCount: number) {
+		if (!this.itemsContainer) return;
 
-		const items = this.previewContainer.querySelectorAll(".tn-bulk-preview-item");
-		const maxPreview = this.items.length > 5 ? 3 : 5;
+		const countSpan = this.itemsContainer.querySelector(".tn-bulk-modal__items-count");
+		if (countSpan) {
+			countSpan.textContent = `${this.items.length} item${this.items.length !== 1 ? "s" : ""} selected`;
+		}
 
-		for (let i = 0; i < Math.min(this.items.length, maxPreview); i++) {
-			const item = this.items[i];
-			const itemEl = items[i] as HTMLElement;
-			if (!itemEl) continue;
-
-			if (item.path && existingPaths.has(item.path)) {
-				itemEl.addClass("tn-bulk-preview-skipped");
-				// Add or update skipped indicator
-				let badge = itemEl.querySelector(".tn-bulk-skip-badge") as HTMLElement;
-				if (!badge) {
-					badge = itemEl.createSpan({ cls: "tn-bulk-skip-badge", text: badgeText });
-				} else {
-					badge.textContent = badgeText;
+		// Add or update skip count span
+		let skipSpan = this.itemsContainer.querySelector(".tn-bulk-modal__items-skip-count") as HTMLElement;
+		if (skipCount > 0) {
+			if (!skipSpan) {
+				skipSpan = this.itemsContainer.createSpan({ cls: "tn-bulk-modal__items-skip-count" });
+				// Insert before expand button
+				const expandBtn = this.itemsContainer.querySelector(".tn-bulk-modal__expand-btn");
+				if (expandBtn) {
+					this.itemsContainer.insertBefore(skipSpan, expandBtn);
 				}
-			} else {
-				itemEl.removeClass("tn-bulk-preview-skipped");
-				const badge = itemEl.querySelector(".tn-bulk-skip-badge");
-				if (badge) badge.remove();
 			}
+			skipSpan.textContent = `(${skipCount} will be skipped)`;
+		} else if (skipSpan) {
+			skipSpan.remove();
 		}
 	}
 
 	/**
-	 * Update preview with multiple skip reasons (already task, non-markdown).
+	 * Populate items list with appropriate skip badges for convert mode.
 	 */
-	private updatePreviewWithSkippedMulti(alreadyTaskPaths: Set<string>, nonMarkdownPaths: Set<string>) {
-		if (!this.previewContainer) return;
+	private populateItemsListWithBadges(alreadyTaskPaths: Set<string>, nonMarkdownPaths: Set<string>) {
+		if (!this.itemsListContainer) return;
+		this.itemsListContainer.empty();
 
-		const items = this.previewContainer.querySelectorAll(".tn-bulk-preview-item");
-		const maxPreview = this.items.length > 5 ? 3 : 5;
+		const maxItems = 20;
+		const itemsToShow = this.items.slice(0, maxItems);
 
-		for (let i = 0; i < Math.min(this.items.length, maxPreview); i++) {
-			const item = this.items[i];
-			const itemEl = items[i] as HTMLElement;
-			if (!itemEl) continue;
-
+		for (const item of itemsToShow) {
 			const isAlreadyTask = item.path && alreadyTaskPaths.has(item.path);
 			const isNonMarkdown = item.path && nonMarkdownPaths.has(item.path);
+			const isSkipped = (isAlreadyTask && this.skipAlreadyTasks) || isNonMarkdown;
 
-			if (isAlreadyTask || isNonMarkdown) {
-				itemEl.addClass("tn-bulk-preview-skipped");
-				const badgeText = isNonMarkdown ? "non-markdown" : "already task";
-				let badge = itemEl.querySelector(".tn-bulk-skip-badge") as HTMLElement;
-				if (!badge) {
-					badge = itemEl.createSpan({ cls: "tn-bulk-skip-badge", text: badgeText });
-				} else {
-					badge.textContent = badgeText;
-				}
-			} else {
-				itemEl.removeClass("tn-bulk-preview-skipped");
-				const badge = itemEl.querySelector(".tn-bulk-skip-badge");
-				if (badge) badge.remove();
+			const itemEl = this.itemsListContainer.createDiv({
+				cls: `tn-bulk-modal__item ${isSkipped ? "tn-bulk-modal__item--skipped" : ""}`,
+			});
+
+			const title = this.extractTitle(item);
+			itemEl.createSpan({ cls: "tn-bulk-modal__item-title", text: title });
+
+			if (isNonMarkdown) {
+				itemEl.createSpan({ cls: "tn-bulk-modal__item-badge", text: "non-markdown" });
+			} else if (isAlreadyTask && this.skipAlreadyTasks) {
+				itemEl.createSpan({ cls: "tn-bulk-modal__item-badge", text: "already task" });
 			}
+		}
+
+		if (this.items.length > maxItems) {
+			this.itemsListContainer.createDiv({
+				cls: "tn-bulk-modal__items-more",
+				text: `...and ${this.items.length - maxItems} more`,
+			});
 		}
 	}
 
 	/**
-	 * Render the compatibility panel showing file type breakdown for Convert mode.
+	 * Render inline compatibility badges (Convert mode).
 	 */
-	private renderCompatibilityPanel(preCheck: ConvertPreCheckResult) {
-		if (!this.compatibilityContainer) return;
-		this.compatibilityContainer.empty();
+	private renderCompatibilityBadges(preCheck: ConvertPreCheckResult) {
+		if (!this.compatContainer) return;
+		this.compatContainer.empty();
 
-		// Header
-		this.compatibilityContainer.createDiv({
-			cls: "tn-bulk-compatibility-header",
-			text: "Compatibility check",
-		});
+		// Section header
+		const header = this.compatContainer.createDiv({ cls: "tn-bulk-modal__section-header" });
+		header.createSpan({ cls: "tn-bulk-modal__section-label", text: "COMPATIBILITY" });
 
-		// Ready to convert row
-		const readyRow = this.compatibilityContainer.createDiv({ cls: "tn-bulk-compatibility-row" });
-		readyRow.createSpan({ cls: "tn-bulk-compatibility-icon ready", text: "✓" });
-		readyRow.createSpan({
-			text: `Ready to convert: ${preCheck.toConvert} markdown file${preCheck.toConvert !== 1 ? "s" : ""}`,
-		});
+		// Badges container
+		const badgesContainer = this.compatContainer.createDiv({ cls: "tn-bulk-modal__compat" });
 
-		// Already tasks row (if any and skipping)
-		if (preCheck.alreadyTasks > 0 && this.skipAlreadyTasks) {
-			const taskRow = this.compatibilityContainer.createDiv({ cls: "tn-bulk-compatibility-row" });
-			taskRow.createSpan({ cls: "tn-bulk-compatibility-icon skip", text: "⊘" });
-			taskRow.createSpan({
-				text: `Skip (already tasks): ${preCheck.alreadyTasks} file${preCheck.alreadyTasks !== 1 ? "s" : ""}`,
-			});
+		// Ready badge
+		const readyBadge = badgesContainer.createSpan({ cls: "tn-bulk-modal__compat-badge tn-bulk-modal__compat-badge--ready" });
+		readyBadge.createSpan({ text: `${preCheck.toConvert} ready ✓` });
+
+		// Skip badge (if any)
+		const skipCount = (this.skipAlreadyTasks ? preCheck.alreadyTasks : 0) + preCheck.nonMarkdown;
+		if (skipCount > 0) {
+			const skipBadge = badgesContainer.createSpan({ cls: "tn-bulk-modal__compat-badge tn-bulk-modal__compat-badge--skip" });
+			skipBadge.createSpan({ text: `${skipCount} skipped` });
 		}
 
-		// Non-markdown row (if any)
+		// Show details button (if non-markdown files exist)
 		if (preCheck.nonMarkdown > 0) {
-			const nonMdRow = this.compatibilityContainer.createDiv({ cls: "tn-bulk-compatibility-row" });
-			nonMdRow.createSpan({ cls: "tn-bulk-compatibility-icon error", text: "✗" });
-			nonMdRow.createSpan({
-				text: `Skip (non-markdown): ${preCheck.nonMarkdown} file${preCheck.nonMarkdown !== 1 ? "s" : ""}`,
+			const detailsBtn = badgesContainer.createEl("button", {
+				cls: "tn-bulk-modal__compat-details-btn",
+				text: "Show details",
 			});
 
-			// Expandable breakdown toggle
-			const toggleRow = this.compatibilityContainer.createDiv({ cls: "tn-bulk-compatibility-toggle" });
-			const toggleBtn = toggleRow.createEl("button", {
-				cls: "tn-bulk-compatibility-toggle-btn",
-				text: this.compatibilityExpanded ? "▼ Incompatible files" : "▶ Incompatible files",
-			});
+			const detailsContainer = this.compatContainer.createDiv({ cls: "tn-bulk-modal__compat-details" });
 
-			// Breakdown container
-			const breakdownEl = this.compatibilityContainer.createDiv({
-				cls: `tn-bulk-compatibility-breakdown ${this.compatibilityExpanded ? "expanded" : ""}`,
-			});
+			detailsBtn.addEventListener("click", () => {
+				const isExpanded = detailsContainer.hasClass("is-expanded");
+				detailsContainer.toggleClass("is-expanded", !isExpanded);
+				detailsBtn.textContent = isExpanded ? "Show details" : "Hide details";
 
-			// Populate breakdown with filenames
-			this.populateFileBreakdown(breakdownEl, preCheck.fileTypeBreakdown);
-
-			// Toggle click handler
-			toggleBtn.addEventListener("click", () => {
-				this.compatibilityExpanded = !this.compatibilityExpanded;
-				toggleBtn.textContent = this.compatibilityExpanded ? "▼ Incompatible files" : "▶ Incompatible files";
-				if (this.compatibilityExpanded) {
-					breakdownEl.addClass("expanded");
-				} else {
-					breakdownEl.removeClass("expanded");
+				if (!isExpanded && detailsContainer.childElementCount === 0) {
+					// Populate details
+					this.populateFileBreakdown(detailsContainer, preCheck.fileTypeBreakdown);
 				}
 			});
 		}
 
 		// Warning if high skip ratio
 		const totalItems = this.items.length;
-		const skipCount = preCheck.alreadyTasks + preCheck.nonMarkdown;
 		const skipRatio = totalItems > 0 ? skipCount / totalItems : 0;
 
-		if (skipRatio > 0.25 && skipCount > 0) {
-			const warningEl = this.compatibilityContainer.createDiv({ cls: "tn-bulk-compatibility-warning" });
+		if (skipRatio > 0.5 && skipCount > 0) {
+			const warningEl = this.compatContainer.createDiv({ cls: "tn-bulk-modal__compat-warning" });
 			const percent = Math.round(skipRatio * 100);
-			warningEl.createSpan({ text: `⚠ ${percent}% of selected files will be skipped` });
+			warningEl.textContent = `⚠ ${percent}% of selected files will be skipped`;
 		}
 	}
 
@@ -647,18 +1199,22 @@ export class BulkTaskCreationModal extends Modal {
 
 		this.actionButton.disabled = true;
 		this.actionButton.textContent = "Generating...";
-		this.progressBar.style.display = "block";
-
-		const progressInner = this.progressBar.querySelector(".tn-bulk-progress-bar") as HTMLElement;
+		this.progressBar.addClass("is-visible");
 
 		const options: BulkCreationOptions = {
 			skipExisting: this.skipExisting,
 			useParentAsProject: this.useParentAsProject,
 			assignees: this.selectedAssignees.length > 0 ? this.selectedAssignees : undefined,
+			// Unified bulk values
+			dueDate: this.dueDate || undefined,
+			scheduledDate: this.scheduledDate || undefined,
+			status: this.bulkStatus || undefined,
+			priority: this.bulkPriority || undefined,
+			reminders: this.bulkReminders.length > 0 ? this.bulkReminders : undefined,
 			onProgress: (current, total, status) => {
 				const percent = Math.round((current / total) * 100);
-				if (progressInner) {
-					progressInner.style.width = `${percent}%`;
+				if (this.progressBarInner) {
+					this.progressBarInner.style.width = `${percent}%`;
 				}
 				if (this.statusContainer) {
 					this.statusContainer.empty();
@@ -682,7 +1238,7 @@ export class BulkTaskCreationModal extends Modal {
 
 			this.statusContainer.createSpan({
 				text: resultText,
-				cls: result.failed > 0 ? "tn-bulk-status-warning" : "tn-bulk-status-success",
+				cls: result.failed > 0 ? "tn-bulk-modal__status--warning" : "tn-bulk-modal__status--success",
 			});
 
 			new Notice(resultText);
@@ -694,14 +1250,14 @@ export class BulkTaskCreationModal extends Modal {
 			this.statusContainer.empty();
 			this.statusContainer.createSpan({
 				text: `Error: ${errorMsg}`,
-				cls: "tn-bulk-status-error",
+				cls: "tn-bulk-modal__status--error",
 			});
 
 			new Notice(`Bulk task generation failed: ${errorMsg}`);
 
 			this.actionButton.disabled = false;
 			this.actionButton.textContent = "Retry";
-			this.progressBar.style.display = "none";
+			this.progressBar.removeClass("is-visible");
 		}
 	}
 
@@ -713,18 +1269,21 @@ export class BulkTaskCreationModal extends Modal {
 
 		this.actionButton.disabled = true;
 		this.actionButton.textContent = "Converting...";
-		this.progressBar.style.display = "block";
-
-		const progressInner = this.progressBar.querySelector(".tn-bulk-progress-bar") as HTMLElement;
+		this.progressBar.addClass("is-visible");
 
 		const options: BulkConvertOptions = {
 			applyDefaults: this.applyDefaults,
 			linkToBase: this.linkToBase && !!this.baseFilePath,
 			baseFilePath: this.baseFilePath,
+			dueDate: this.dueDate || undefined,
+			scheduledDate: this.scheduledDate || undefined,
+			status: this.bulkStatus || undefined,
+			priority: this.bulkPriority || undefined,
+			reminders: this.bulkReminders.length > 0 ? this.bulkReminders : undefined,
 			onProgress: (current, total, status) => {
 				const percent = Math.round((current / total) * 100);
-				if (progressInner) {
-					progressInner.style.width = `${percent}%`;
+				if (this.progressBarInner) {
+					this.progressBarInner.style.width = `${percent}%`;
 				}
 				if (this.statusContainer) {
 					this.statusContainer.empty();
@@ -748,7 +1307,7 @@ export class BulkTaskCreationModal extends Modal {
 
 			this.statusContainer.createSpan({
 				text: resultText,
-				cls: result.failed > 0 ? "tn-bulk-status-warning" : "tn-bulk-status-success",
+				cls: result.failed > 0 ? "tn-bulk-modal__status--warning" : "tn-bulk-modal__status--success",
 			});
 
 			new Notice(resultText);
@@ -760,14 +1319,14 @@ export class BulkTaskCreationModal extends Modal {
 			this.statusContainer.empty();
 			this.statusContainer.createSpan({
 				text: `Error: ${errorMsg}`,
-				cls: "tn-bulk-status-error",
+				cls: "tn-bulk-modal__status--error",
 			});
 
 			new Notice(`Bulk conversion failed: ${errorMsg}`);
 
 			this.actionButton.disabled = false;
 			this.actionButton.textContent = "Retry";
-			this.progressBar.style.display = "none";
+			this.progressBar.removeClass("is-visible");
 		}
 	}
 

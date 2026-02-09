@@ -4,6 +4,21 @@ All notable changes to this TaskNotes fork will be documented in this file.
 
 This fork (`cybersader/tasknotes`) adds bulk tasking, notifications, and other enhancements to the upstream [TaskNotes](https://github.com/callumalpass/tasknotes) plugin.
 
+## [4.3.22] - 2026-02-09
+
+### Changed
+- **Bulk modal UI overhaul**: Complete redesign matching Edit Task modal polish
+  - Icon-based action bar for bulk values (due, scheduled, status, priority, reminders)
+  - Underline-style mode tabs (Generate / Convert) replacing segmented control
+  - PersonGroupPicker integration for assignee selection with search and multi-select
+  - Expandable items section with skip badges and item counts
+  - Inline compatibility badges in Convert mode (ready/skipped counts)
+  - Fixed-height modal (80vh) to prevent layout shift when switching tabs
+  - Stackable reminders via ReminderModal (multiple reminders per bulk operation)
+  - Unified bulk values across both Generate and Convert modes
+  - Inline warning when reminders set without due/scheduled date
+  - New BEM-scoped CSS (`styles/bulk-modal.css`)
+
 ## [4.3.21] - 2026-02-07
 
 ### Fixed

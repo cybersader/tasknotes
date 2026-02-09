@@ -312,6 +312,91 @@ function renderNoteUuidPropertyCard(
 }
 
 /**
+ * Render the Type property card - for task/person/group identification
+ * Controls the frontmatter property name and task type value.
+ * Person/group type values are configured in Team & Attribution tab.
+ */
+function renderTypePropertyCard(
+	container: HTMLElement,
+	plugin: TaskNotesPlugin,
+	save: () => void,
+	translate: (key: TranslationKey, params?: Record<string, string | number>) => string
+): void {
+	const propName = plugin.settings.identityTypePropertyName || "type";
+	const taskValue = plugin.settings.taskTypeValue || "tn-task";
+
+	// Create description element
+	const descriptionEl = createCardDescription(
+		"Property used to identify note types. Task type value is set here; person/group values are in Team & Attribution."
+	);
+
+	// Property name input
+	const propertyNameInput = createCardInput("text", "type", propName);
+	propertyNameInput.addEventListener("change", () => {
+		const cleaned = propertyNameInput.value.trim() || "type";
+		plugin.settings.identityTypePropertyName = cleaned;
+
+		// Update header secondary text
+		const card = container.querySelector('[data-card-id="property-type"]');
+		if (card) {
+			const secondaryText = card.querySelector(".tasknotes-settings__card-header-secondary");
+			if (secondaryText) {
+				secondaryText.textContent = `${cleaned}: ${plugin.settings.taskTypeValue || "tn-task"}`;
+			}
+		}
+
+		save();
+	});
+
+	// Task type value input
+	const taskValueInput = createCardInput("text", "tn-task", taskValue);
+	taskValueInput.addEventListener("change", () => {
+		const cleaned = taskValueInput.value.trim() || "tn-task";
+		plugin.settings.taskTypeValue = cleaned;
+
+		// Update header secondary text
+		const card = container.querySelector('[data-card-id="property-type"]');
+		if (card) {
+			const secondaryText = card.querySelector(".tasknotes-settings__card-header-secondary");
+			if (secondaryText) {
+				secondaryText.textContent = `${plugin.settings.identityTypePropertyName || "type"}: ${cleaned}`;
+			}
+		}
+
+		save();
+	});
+
+	// Link to Team & Attribution for person/group values
+	const linkEl = document.createElement("div");
+	linkEl.className = "tasknotes-settings__card-link";
+	linkEl.innerHTML = `<span class="tasknotes-settings__card-link-text">Person and group type values → <a class="clickable-icon" data-action="team-attribution">Team & Attribution</a></span>`;
+	linkEl.querySelector("[data-action]")?.addEventListener("click", () => {
+		navigateToTeamAttribution(plugin);
+	});
+
+	createCard(container, {
+		id: "property-type",
+		collapsible: true,
+		defaultCollapsed: true,
+		header: {
+			primaryText: "Type property",
+			secondaryText: `${propName}: ${taskValue}`,
+			meta: [createStatusBadge("Enabled", "default")],
+		},
+		content: {
+			sections: [{
+				rows: [
+					{ label: "", input: descriptionEl, fullWidth: true },
+					{ label: "Property name", input: propertyNameInput },
+					{ label: "Task type value", input: taskValueInput },
+					{ label: "", input: linkEl, fullWidth: true },
+				],
+			}],
+		},
+	});
+}
+
+/**
  * Convert property values between text and list types across all task files
  */
 async function convertPropertyType(
@@ -840,6 +925,9 @@ export function renderTaskPropertiesTab(
 
 	// Note UUID Property Card (special - not in fieldMapping, uses separate settings)
 	renderNoteUuidPropertyCard(container, plugin, save, translate);
+
+	// Type Property Card (for task/person/group identification)
+	renderTypePropertyCard(container, plugin, save, translate);
 
 	// ===== FEATURE PROPERTIES SECTION =====
 	createSectionHeader(container, translate("settings.taskProperties.sections.featureProperties"));

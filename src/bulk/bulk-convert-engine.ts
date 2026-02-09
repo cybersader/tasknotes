@@ -16,6 +16,16 @@ export interface BulkConvertOptions {
 	linkToBase?: boolean;
 	/** Path of the .base file to link to */
 	baseFilePath?: string;
+	/** Due date to set on all converted notes (YYYY-MM-DD format) */
+	dueDate?: string;
+	/** Scheduled/start date to set on all converted notes (YYYY-MM-DD format) */
+	scheduledDate?: string;
+	/** Bulk status to apply (overrides defaults) */
+	status?: string;
+	/** Bulk priority to apply (overrides defaults) */
+	priority?: string;
+	/** Bulk reminders to apply to all converted notes */
+	reminders?: Array<{ id?: string; type: string; relatedTo?: string; offset?: string; absoluteTime?: string; description?: string }>;
 	/** Callback for progress updates */
 	onProgress?: (current: number, total: number, status: string) => void;
 }
@@ -221,17 +231,27 @@ export class BulkConvertEngine {
 				}
 			}
 
-			// Step 2: Apply defaults (only if missing)
-			if (options.applyDefaults) {
-				const statusField = fieldMapper.toUserField("status");
-				if (frontmatter[statusField] === undefined) {
-					frontmatter[statusField] = settings.defaultTaskStatus || "open";
-				}
+			// Step 2: Apply status and priority
+			// Bulk values take precedence over defaults
+			const statusField = fieldMapper.toUserField("status");
+			if (options.status) {
+				// Bulk status specified - apply it
+				frontmatter[statusField] = options.status;
+			} else if (options.applyDefaults && frontmatter[statusField] === undefined) {
+				// No bulk status, apply default if missing
+				frontmatter[statusField] = settings.defaultTaskStatus || "open";
+			}
 
-				const priorityField = fieldMapper.toUserField("priority");
-				if (frontmatter[priorityField] === undefined) {
-					frontmatter[priorityField] = settings.defaultTaskPriority || "normal";
-				}
+			const priorityField = fieldMapper.toUserField("priority");
+			if (options.priority) {
+				// Bulk priority specified - apply it
+				frontmatter[priorityField] = options.priority;
+			} else if (options.applyDefaults && frontmatter[priorityField] === undefined) {
+				// No bulk priority, apply default if missing
+				frontmatter[priorityField] = settings.defaultTaskPriority || "normal";
+			}
+
+			if (options.applyDefaults) {
 
 				const dateCreatedField = fieldMapper.toUserField("dateCreated");
 				if (frontmatter[dateCreatedField] === undefined) {
@@ -271,6 +291,38 @@ export class BulkConvertEngine {
 							frontmatter[projectsField].push(link);
 						}
 					}
+				}
+			}
+
+			// Step 2.6: Apply due date if specified (only if missing)
+			if (options.dueDate) {
+				const dueField = fieldMapper.toUserField("due");
+				if (frontmatter[dueField] === undefined) {
+					frontmatter[dueField] = options.dueDate;
+				}
+			}
+
+			// Step 2.7: Apply scheduled date if specified (only if missing)
+			if (options.scheduledDate) {
+				const scheduledField = fieldMapper.toUserField("scheduled");
+				if (frontmatter[scheduledField] === undefined) {
+					frontmatter[scheduledField] = options.scheduledDate;
+				}
+			}
+
+			// Step 2.8: Apply bulk reminders if provided
+			if (options.reminders && options.reminders.length > 0) {
+				const remindersField = fieldMapper.toUserField("reminders");
+				if (frontmatter[remindersField] === undefined) {
+					// Apply all bulk reminders with unique IDs
+					frontmatter[remindersField] = options.reminders.map(r => ({
+						id: r.id || `rem_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+						type: r.type,
+						relatedTo: r.relatedTo,
+						offset: r.offset,
+						absoluteTime: r.absoluteTime,
+						description: r.description,
+					}));
 				}
 			}
 

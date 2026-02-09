@@ -50,9 +50,6 @@ export function renderSharedVaultTab(
 	// Section 3.5: Group Notes - Configure group notes for team assignment
 	renderGroupNotesSection(container, plugin, save, t);
 
-	// Section 3.6: Type Property Configuration - Enterprise compatibility
-	renderTypePropertySection(container, plugin, save, t);
-
 	// Section 4: Your Identity - Device registration
 	renderYourIdentitySection(container, plugin, save, t);
 
@@ -271,6 +268,22 @@ function renderPersonNotesSourceSection(
 					save();
 				});
 			});
+
+			// Person type value - what value identifies a person note
+			group.addSetting((setting) => {
+				setting
+					.setName("Person type value")
+					.setDesc("Value in the type property that identifies person notes")
+					.addText((text) => {
+						text
+							.setPlaceholder("tn-person")
+							.setValue(plugin.settings.personTypeValue)
+							.onChange(async (value) => {
+								plugin.settings.personTypeValue = value.trim() || "tn-person";
+								save();
+							});
+					});
+			});
 		}
 	);
 }
@@ -289,7 +302,7 @@ function renderGroupNotesSection(
 		container,
 		{
 			heading: "Group notes",
-			description: "Groups allow assigning tasks to teams. Group notes have type: group in frontmatter with a members array.",
+			description: "Groups allow assigning tasks to teams. Group notes need the configured type property value and a members array.",
 		},
 		(group) => {
 			// Group notes folder - with autocomplete
@@ -348,6 +361,22 @@ function renderGroupNotesSection(
 				});
 			});
 
+			// Group type value - what value identifies a group note
+			group.addSetting((setting) => {
+				setting
+					.setName("Group type value")
+					.setDesc("Value in the type property that identifies group notes")
+					.addText((text) => {
+						text
+							.setPlaceholder("tn-group")
+							.setValue(plugin.settings.groupTypeValue)
+							.onChange(async (value) => {
+								plugin.settings.groupTypeValue = value.trim() || "tn-group";
+								save();
+							});
+					});
+			});
+
 			// Discovered groups display
 			group.addSetting((setting) => {
 				setting
@@ -384,103 +413,6 @@ function renderGroupNotesSection(
 
 				// Initial load
 				refreshGroups();
-			});
-		}
-	);
-}
-
-/**
- * Section 3.6: Type Property Configuration
- * Configure the frontmatter property and values used to identify person/group notes.
- * This allows enterprise users to use custom property names if "type" conflicts with other plugins.
- */
-function renderTypePropertySection(
-	container: HTMLElement,
-	plugin: TaskNotesPlugin,
-	save: () => void,
-	_t: (key: TranslationKey) => string
-): void {
-	createSettingGroup(
-		container,
-		{
-			heading: "Type property configuration",
-			description: "Configure how TaskNotes identifies person and group notes. Change these if 'type: person' conflicts with other plugins.",
-		},
-		(group) => {
-			// Type property name
-			group.addSetting((setting) => {
-				setting
-					.setName("Type property name")
-					.setDesc("The frontmatter property used to identify note types (default: type)")
-					.addText((text) => {
-						text
-							.setPlaceholder("type")
-							.setValue(plugin.settings.identityTypePropertyName)
-							.onChange(async (value) => {
-								plugin.settings.identityTypePropertyName = value.trim() || "type";
-								save();
-							});
-					});
-			});
-
-			// Person type value
-			group.addSetting((setting) => {
-				setting
-					.setName("Person type value")
-					.setDesc("The value that identifies a note as a person (default: person)")
-					.addText((text) => {
-						text
-							.setPlaceholder("person")
-							.setValue(plugin.settings.personTypeValue)
-							.onChange(async (value) => {
-								plugin.settings.personTypeValue = value.trim() || "person";
-								save();
-							});
-					});
-			});
-
-			// Group type value
-			group.addSetting((setting) => {
-				setting
-					.setName("Group type value")
-					.setDesc("The value that identifies a note as a group (default: group)")
-					.addText((text) => {
-						text
-							.setPlaceholder("group")
-							.setValue(plugin.settings.groupTypeValue)
-							.onChange(async (value) => {
-								plugin.settings.groupTypeValue = value.trim() || "group";
-								save();
-							});
-					});
-			});
-
-			// Task type value (for future Bases interceptor)
-			group.addSetting((setting) => {
-				setting
-					.setName("Task type value")
-					.setDesc("The value that identifies a note as a task (default: task). Used by Bases integration.")
-					.addText((text) => {
-						text
-							.setPlaceholder("task")
-							.setValue(plugin.settings.taskTypeValue)
-							.onChange(async (value) => {
-								plugin.settings.taskTypeValue = value.trim() || "task";
-								save();
-							});
-					});
-			});
-
-			// Example display
-			group.addSetting((setting) => {
-				const propName = plugin.settings.identityTypePropertyName || "type";
-				const personVal = plugin.settings.personTypeValue || "person";
-				const groupVal = plugin.settings.groupTypeValue || "group";
-				const taskVal = plugin.settings.taskTypeValue || "task";
-
-				setting
-					.setName("Current configuration")
-					.setDesc(`Person notes: ${propName}: ${personVal} | Group notes: ${propName}: ${groupVal} | Task notes: ${propName}: ${taskVal}`);
 			});
 		}
 	);

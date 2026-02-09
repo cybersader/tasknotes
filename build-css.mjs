@@ -44,7 +44,8 @@ const CSS_FILES = [
     'styles/upcoming-view.css',      // UpcomingView (Todoist-style aggregated notifications)
     'styles/toast-notification.css', // ToastNotification (compact bottom-right indicator)
     'styles/person-avatar.css',       // PersonAvatar (circular avatar with initials)
-    'styles/person-group-picker.css'  // PersonGroupPicker (multi-select with search)
+    'styles/person-group-picker.css', // PersonGroupPicker (multi-select with search)
+    'styles/bulk-modal.css'           // BulkTaskCreationModal (Edit Task modal inspired)
 ];
 
 const MAIN_CSS_TEMPLATE = `/* TaskNotes Plugin Styles */
