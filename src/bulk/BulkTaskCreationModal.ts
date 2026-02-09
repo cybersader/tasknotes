@@ -830,9 +830,17 @@ export class BulkTaskCreationModal extends Modal {
 	private rebuildActionBarAndAssignees() {
 		if (!this.bodyContainer) return;
 
-		// Clean up existing picker
+		// Clean up existing pickers
 		this.assigneePicker?.destroy();
 		this.assigneePicker = null;
+		if (this.propertyPickerInstance) {
+			this.propertyPickerInstance.destroy();
+			this.propertyPickerInstance = null;
+		}
+		if (this.customPropsPanel) {
+			this.customPropsPanel.remove();
+			this.customPropsPanel = null;
+		}
 
 		// Find and remove existing action bar and assignee sections (first two sections)
 		const sections = this.bodyContainer.querySelectorAll(".tn-bulk-modal__section");
@@ -924,6 +932,11 @@ export class BulkTaskCreationModal extends Modal {
 
 		// Reminders
 		this.reminderIcon = this.createActionIcon(actionBar, "bell", "Reminders", () => this.openReminderPicker());
+
+		actionBar.createDiv({ cls: "tn-bulk-modal__action-separator" });
+
+		// Custom properties
+		this.customPropsIcon = this.createActionIcon(actionBar, "braces", "Custom properties", () => this.toggleCustomPropertiesPanel());
 
 		// Reminder warning (hidden by default, shown when reminders set but no dates)
 		this.reminderWarning = section.createDiv({

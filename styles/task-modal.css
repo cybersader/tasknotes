@@ -269,6 +269,16 @@
     letter-spacing: 0.5px;
 }
 
+/* Discovered properties section in Edit Task modal */
+.discovered-properties-container .discovered-properties-fields .setting-item {
+    border-top: none;
+    padding: var(--size-4-1) 0;
+}
+
+.discovered-properties-container .discovered-properties-picker {
+    margin-top: var(--size-4-2);
+}
+
 .modal-header-icon .svg-icon {
     width: 20px !important;
     height: 20px !important;

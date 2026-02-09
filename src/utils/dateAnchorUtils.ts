@@ -1,7 +1,7 @@
 import type TaskNotesPlugin from "../main";
 import type { TaskInfo, FieldMapping } from "../types";
 import { TFile } from "obsidian";
-import { CORE_PROPERTY_KEYS, normalizeDateValue, keyToDisplayName } from "./propertyDiscoveryUtils";
+import { buildSkipKeys, normalizeDateValue, keyToDisplayName } from "./propertyDiscoveryUtils";
 
 /**
  * Represents a date property that can serve as a reminder anchor.
@@ -48,7 +48,7 @@ export function getAvailableDateAnchors(
 	// Add built-in date fields
 	for (const field of BUILT_IN_DATE_FIELDS) {
 		const anchor: DateAnchor = {
-			key: field.key,
+			key: field.key as string,
 			displayName: field.displayName,
 		};
 
@@ -63,7 +63,11 @@ export function getAvailableDateAnchors(
 	}
 
 	// Add user-defined date fields from settings
-	const knownKeys = new Set(BUILT_IN_DATE_FIELDS.map((f) => f.key as string));
+	// buildSkipKeys includes CORE_PROPERTY_KEYS + FieldMapper-mapped frontmatter names
+	const knownKeys = buildSkipKeys(plugin);
+	// Also add built-in internal keys (some may differ from mapped names)
+	for (const f of BUILT_IN_DATE_FIELDS) knownKeys.add(f.key as string);
+
 	const userFields = plugin.settings?.userFields;
 	if (userFields && Array.isArray(userFields)) {
 		for (const field of userFields) {
@@ -95,7 +99,7 @@ export function getAvailableDateAnchors(
 			const cache = plugin.app.metadataCache.getFileCache(file);
 			if (cache?.frontmatter) {
 				for (const [key, value] of Object.entries(cache.frontmatter)) {
-					if (knownKeys.has(key) || CORE_PROPERTY_KEYS.has(key)) continue;
+					if (knownKeys.has(key)) continue;
 
 					// Check if the value looks like a date (handles both strings and Date objects)
 					const dateStr = normalizeDateValue(value);
@@ -115,7 +119,7 @@ export function getAvailableDateAnchors(
 	// Also check task.customProperties for date values not yet found
 	if (task?.customProperties) {
 		for (const [key, value] of Object.entries(task.customProperties)) {
-			if (knownKeys.has(key) || CORE_PROPERTY_KEYS.has(key)) continue;
+			if (knownKeys.has(key)) continue;
 			const dateStr = normalizeDateValue(value);
 			if (dateStr) {
 				anchors.push({

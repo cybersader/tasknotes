@@ -73,6 +73,22 @@ export const CORE_PROPERTY_KEYS = new Set([
 	"position",
 ]);
 
+/**
+ * Build the full set of property keys to skip during discovery.
+ * Includes CORE_PROPERTY_KEYS plus FieldMapper-mapped frontmatter names
+ * (e.g., internal "due" maps to frontmatter "due_date" — both skipped).
+ */
+export function buildSkipKeys(plugin: TaskNotesPlugin): Set<string> {
+	const skip = new Set(CORE_PROPERTY_KEYS);
+	const mapping = plugin.settings?.fieldMapping;
+	if (mapping) {
+		for (const val of Object.values(mapping)) {
+			if (typeof val === "string" && val) skip.add(val);
+		}
+	}
+	return skip;
+}
+
 // ── Shared utility functions ──────────────────────────────────
 
 /** Regex to match date-like strings (YYYY-MM-DD with optional time) */
@@ -146,8 +162,10 @@ export function discoverCustomProperties(
 	const cache = plugin.app.metadataCache.getFileCache(file);
 	if (!cache?.frontmatter) return results;
 
+	const skipKeys = buildSkipKeys(plugin);
+
 	for (const [key, value] of Object.entries(cache.frontmatter)) {
-		if (CORE_PROPERTY_KEYS.has(key)) continue;
+		if (skipKeys.has(key)) continue;
 		if (excludeKeys?.has(key)) continue;
 
 		const type = detectPropertyType(value);
@@ -185,6 +203,8 @@ export function buildPropertyCatalog(
 ): PropertyCatalogEntry[] {
 	if (!plugin.app) return [];
 
+	const skipKeys = buildSkipKeys(plugin);
+
 	// key -> { typeBreakdown, files by type }
 	const catalog = new Map<string, {
 		typeBreakdown: Record<string, number>;
@@ -200,7 +220,7 @@ export function buildPropertyCatalog(
 		if (!cache?.frontmatter) continue;
 
 		for (const [key, value] of Object.entries(cache.frontmatter)) {
-			if (CORE_PROPERTY_KEYS.has(key)) continue;
+			if (skipKeys.has(key)) continue;
 			if (excludeKeys?.has(key)) continue;
 
 			const type = detectPropertyType(value);

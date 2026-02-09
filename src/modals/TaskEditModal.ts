@@ -1,5 +1,5 @@
 /* eslint-disable no-console, @typescript-eslint/no-non-null-assertion */
-import { App, Notice, TFile, TAbstractFile, Setting, setIcon, setTooltip } from "obsidian";
+import { App, Notice, TFile, TAbstractFile, Setting } from "obsidian";
 import TaskNotesPlugin from "../main";
 import { TaskModal } from "./TaskModal";
 import { TaskDependency, TaskInfo } from "../types";
@@ -482,22 +482,16 @@ export class TaskEditModal extends TaskModal {
 			userFieldConfigs.filter((f: any) => f?.key).map((f: any) => f.key)
 		);
 
-		// Only show section if there are discovered properties or we want to allow adding new ones
 		const hasDiscovered = this.discoveredProperties.length > 0;
 
-		const sectionContainer = container.createDiv("discovered-properties-container");
+		// Use same separator pattern as user fields section
+		const sectionContainer = container.createDiv("discovered-properties-container user-fields-separator");
 
-		// Section label
-		const sectionLabel = sectionContainer.createDiv("detail-label");
-		const labelRow = sectionLabel.createDiv({ cls: "tn-pp-label-row" });
-		labelRow.createSpan({ text: "Additional properties" });
-
-		// If there are no properties, show collapsed by default with just the picker
-		if (!hasDiscovered) {
-			labelRow.style.cssText = "cursor: pointer; color: var(--text-muted);";
-			const expandIcon = labelRow.createSpan({ cls: "tn-pp-expand-icon" });
-			setIcon(expandIcon, "plus");
-		}
+		// Section label matching the existing "CUSTOM FIELDS" pattern
+		sectionContainer.createDiv({
+			text: "Additional properties",
+			cls: "detail-label-section",
+		});
 
 		// Editable fields for discovered properties
 		const fieldsContainer = sectionContainer.createDiv("discovered-properties-fields");
