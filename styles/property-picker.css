@@ -24,7 +24,7 @@
 
 .tn-pp-search-icon {
     position: absolute;
-    left: 8px;
+    left: 10px;
     top: 50%;
     transform: translateY(-50%);
     display: flex;
@@ -41,7 +41,8 @@
 
 .tn-pp-search {
     width: 100%;
-    padding: 6px 10px 6px 32px;
+    box-sizing: border-box;
+    padding: 6px 10px 6px 34px;
     border: 1px solid var(--background-modifier-border);
     border-radius: var(--radius-s);
     background: var(--background-primary);

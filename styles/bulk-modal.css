@@ -119,6 +119,21 @@
     flex: 1;
     overflow-y: auto;
     padding-right: var(--size-4-1);
+    position: relative;
+}
+
+/* Scroll affordance: gradient fade at bottom to hint more content below */
+.tn-bulk-modal__body::after {
+    content: '';
+    position: sticky;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: block;
+    height: 32px;
+    background: linear-gradient(to bottom, transparent, var(--modal-background));
+    pointer-events: none;
+    margin-top: -32px;
 }
 
 /* =====================================================================
@@ -264,11 +279,9 @@
     color: var(--color-orange);
 }
 
-/* Custom properties inline panel */
+/* Custom properties panel */
 .tn-bulk-modal__custom-props-panel {
-    margin-top: var(--size-4-2);
     padding: var(--size-4-2) 0;
-    border-top: 1px solid var(--background-modifier-border);
 }
 
 .tn-bulk-modal__custom-props-active {

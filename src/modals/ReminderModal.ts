@@ -413,16 +413,50 @@ export class ReminderModal extends Modal {
 		new Setting(relativeContainer).setName("Relative to").addDropdown((dropdown) => {
 			const anchors = getAvailableDateAnchors(this.plugin, this.task);
 
-			// Always show all date anchors - those with values first, then those without
-			const anchorsWithValues = anchors.filter((a) => a.currentValue);
-			const anchorsWithoutValues = anchors.filter((a) => !a.currentValue);
+			// Group anchors by origin for visual clarity
+			const coreAnchors = anchors.filter((a) => a.origin === "core");
+			const settingsAnchors = anchors.filter((a) => a.origin === "settings");
+			const discoveredAnchors = anchors.filter((a) => a.origin === "discovered");
 
-			for (const anchor of anchorsWithValues) {
-				const label = `${anchor.displayName} (${formatDateForDisplay(anchor.currentValue!)})`;
-				dropdown.addOption(anchor.key, label);
+			// Helper to format an anchor label with date value
+			const formatLabel = (anchor: typeof anchors[0]) => {
+				const dateInfo = anchor.currentValue
+					? ` (${formatDateForDisplay(anchor.currentValue)})`
+					: " (not set)";
+				return `${anchor.displayName}${dateInfo}`;
+			};
+
+			// Add core anchors (always present)
+			for (const anchor of coreAnchors) {
+				dropdown.addOption(anchor.key, formatLabel(anchor));
 			}
-			for (const anchor of anchorsWithoutValues) {
-				dropdown.addOption(anchor.key, `${anchor.displayName} (not set)`);
+
+			// Add settings-defined anchors with prefix
+			if (settingsAnchors.length > 0) {
+				// Use a disabled separator option to visually group
+				dropdown.addOption("__sep_settings__", "\u2500\u2500 User fields \u2500\u2500");
+				for (const anchor of settingsAnchors) {
+					dropdown.addOption(anchor.key, formatLabel(anchor));
+				}
+			}
+
+			// Add discovered anchors with prefix
+			if (discoveredAnchors.length > 0) {
+				dropdown.addOption("__sep_discovered__", "\u2500\u2500 Discovered \u2500\u2500");
+				for (const anchor of discoveredAnchors) {
+					dropdown.addOption(anchor.key, formatLabel(anchor));
+				}
+			}
+
+			// Disable separator options (not selectable)
+			const selectEl = dropdown.selectEl;
+			for (const opt of Array.from(selectEl.options)) {
+				if (opt.value.startsWith("__sep_")) {
+					opt.disabled = true;
+					opt.style.fontWeight = "600";
+					opt.style.color = "var(--text-muted)";
+					opt.style.fontSize = "0.85em";
+				}
 			}
 
 			dropdown.setValue(this.relativeAnchor);

@@ -22029,7 +22029,7 @@ select.tasknotes-settings__card-input {
 
 .tn-pp-search-icon {
     position: absolute;
-    left: 8px;
+    left: 10px;
     top: 50%;
     transform: translateY(-50%);
     display: flex;
@@ -22046,7 +22046,8 @@ select.tasknotes-settings__card-input {
 
 .tn-pp-search {
     width: 100%;
-    padding: 6px 10px 6px 32px;
+    box-sizing: border-box;
+    padding: 6px 10px 6px 34px;
     border: 1px solid var(--background-modifier-border);
     border-radius: var(--radius-s);
     background: var(--background-primary);
@@ -22511,6 +22512,21 @@ select.tasknotes-settings__card-input {
     flex: 1;
     overflow-y: auto;
     padding-right: var(--size-4-1);
+    position: relative;
+}
+
+/* Scroll affordance: gradient fade at bottom to hint more content below */
+.tn-bulk-modal__body::after {
+    content: '';
+    position: sticky;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: block;
+    height: 32px;
+    background: linear-gradient(to bottom, transparent, var(--modal-background));
+    pointer-events: none;
+    margin-top: -32px;
 }
 
 /* =====================================================================
@@ -22656,11 +22672,9 @@ select.tasknotes-settings__card-input {
     color: var(--color-orange);
 }
 
-/* Custom properties inline panel */
+/* Custom properties panel */
 .tn-bulk-modal__custom-props-panel {
-    margin-top: var(--size-4-2);
     padding: var(--size-4-2) 0;
-    border-top: 1px solid var(--background-modifier-border);
 }
 
 .tn-bulk-modal__custom-props-active {

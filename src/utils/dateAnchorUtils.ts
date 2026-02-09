@@ -4,6 +4,14 @@ import { TFile } from "obsidian";
 import { buildSkipKeys, normalizeDateValue, keyToDisplayName } from "./propertyDiscoveryUtils";
 
 /**
+ * Where a date anchor originates from.
+ * - "core": Built-in TaskNotes fields (due, scheduled, dateCreated, etc.)
+ * - "settings": User-defined fields configured in Settings → User fields
+ * - "discovered": Auto-discovered from task frontmatter (not configured anywhere)
+ */
+export type DateAnchorOrigin = "core" | "settings" | "discovered";
+
+/**
  * Represents a date property that can serve as a reminder anchor.
  */
 export interface DateAnchor {
@@ -13,6 +21,8 @@ export interface DateAnchor {
 	displayName: string;
 	/** Current date value on the task, if available */
 	currentValue?: string;
+	/** Where this anchor originates from */
+	origin: DateAnchorOrigin;
 }
 
 /**
@@ -50,6 +60,7 @@ export function getAvailableDateAnchors(
 		const anchor: DateAnchor = {
 			key: field.key as string,
 			displayName: field.displayName,
+			origin: "core",
 		};
 
 		if (task) {
@@ -75,6 +86,7 @@ export function getAvailableDateAnchors(
 				const anchor: DateAnchor = {
 					key: field.key,
 					displayName: field.displayName || keyToDisplayName(field.key),
+					origin: "settings",
 				};
 
 				// Check customProperties on the task for user field values
@@ -108,6 +120,7 @@ export function getAvailableDateAnchors(
 							key,
 							displayName: keyToDisplayName(key),
 							currentValue: dateStr,
+							origin: "discovered",
 						});
 						knownKeys.add(key);
 					}
@@ -126,6 +139,7 @@ export function getAvailableDateAnchors(
 					key,
 					displayName: keyToDisplayName(key),
 					currentValue: dateStr,
+					origin: "discovered",
 				});
 				knownKeys.add(key);
 			}

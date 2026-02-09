@@ -275,8 +275,9 @@ export class BulkTaskCreationModal extends Modal {
 		// Update icon states
 		this.updateActionIconStates();
 
-		// Custom properties section (below action bar, within same section)
-		this.renderCustomPropertiesSection(section);
+		// Custom properties as its own section (separate from Bulk Values)
+		const customSection = container.createDiv({ cls: "tn-bulk-modal__section" });
+		this.renderCustomPropertiesSection(customSection);
 	}
 
 	/**
@@ -380,7 +381,7 @@ export class BulkTaskCreationModal extends Modal {
 
 		const helpIcon = header.createSpan({ cls: "tn-bulk-modal__help" });
 		setIcon(helpIcon, "help-circle");
-		setTooltip(helpIcon, "Add custom frontmatter properties to all items. Search for properties used across your task files, or create new ones.");
+		setTooltip(helpIcon, "Add extra frontmatter fields (e.g., review_date, client, effort_hours) to every item in this batch. Search existing properties used across your task files, or create new ones. These are written as YAML frontmatter on each file.");
 
 		this.customPropsPanel = parentSection.createDiv({ cls: "tn-bulk-modal__custom-props-panel" });
 
@@ -829,25 +830,29 @@ export class BulkTaskCreationModal extends Modal {
 			this.customPropsPanel = null;
 		}
 
-		// Find and remove existing action bar and assignee sections (first two sections)
+		// Remove the first 3 sections (action bar, custom props, assignees)
 		const sections = this.bodyContainer.querySelectorAll(".tn-bulk-modal__section");
-		if (sections.length >= 2) {
-			sections[0].remove(); // Action bar
-			sections[1].remove(); // Assignees (now at index 0 after removal)
-		} else if (sections.length >= 1) {
-			sections[0].remove(); // Action bar
+		const toRemove = Math.min(sections.length, 3);
+		for (let i = 0; i < toRemove; i++) {
+			sections[i].remove();
 		}
 
-		// Recreate both sections at the beginning
-		const assigneeSection = this.bodyContainer.createDiv({ cls: "tn-bulk-modal__section" });
+		// Recreate sections at the beginning in correct order:
+		// 1. Action bar (Bulk Values)
+		// 2. Custom Properties
+		// 3. Assignees
 		const actionBarSection = this.bodyContainer.createDiv({ cls: "tn-bulk-modal__section" });
+		const customPropsSection = this.bodyContainer.createDiv({ cls: "tn-bulk-modal__section" });
+		const assigneeSection = this.bodyContainer.createDiv({ cls: "tn-bulk-modal__section" });
 
-		// Insert in correct order (action bar first, then assignees)
-		this.bodyContainer.insertBefore(actionBarSection, this.bodyContainer.firstChild);
-		this.bodyContainer.insertBefore(assigneeSection, actionBarSection.nextSibling);
+		// Insert in correct order at the beginning
+		this.bodyContainer.insertBefore(assigneeSection, this.bodyContainer.firstChild);
+		this.bodyContainer.insertBefore(customPropsSection, assigneeSection);
+		this.bodyContainer.insertBefore(actionBarSection, customPropsSection);
 
 		// Render content
 		this.renderActionBarInto(actionBarSection);
+		this.renderCustomPropertiesSection(customPropsSection);
 		this.renderAssigneeSectionInto(assigneeSection);
 	}
 
@@ -929,9 +934,6 @@ export class BulkTaskCreationModal extends Modal {
 
 		// Update icon states
 		this.updateActionIconStates();
-
-		// Custom properties section (below action bar, within same section)
-		this.renderCustomPropertiesSection(section);
 	}
 
 	/**
