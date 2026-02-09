@@ -22047,7 +22047,7 @@ select.tasknotes-settings__card-input {
 .tn-pp-search {
     width: 100%;
     box-sizing: border-box;
-    padding: 6px 10px 6px 34px;
+    padding: 6px 10px 6px 34px !important;
     border: 1px solid var(--background-modifier-border);
     border-radius: var(--radius-s);
     background: var(--background-primary);

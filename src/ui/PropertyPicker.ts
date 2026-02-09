@@ -106,6 +106,8 @@ export function createPropertyPicker(options: PropertyPickerOptions): {
 			placeholder: "Search properties...",
 		},
 	});
+	// Inline style to override Obsidian's input padding (higher specificity than class selectors)
+	searchInput.style.paddingLeft = "34px";
 
 	const toggleContainer = headerRow.createDiv({ cls: "tn-pp-toggle-container" });
 	const toggleLabel = toggleContainer.createEl("label", {
