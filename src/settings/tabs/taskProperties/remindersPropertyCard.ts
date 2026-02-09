@@ -1,5 +1,6 @@
 import TaskNotesPlugin from "../../../main";
 import { DefaultReminder } from "../../../types/settings";
+import { getAvailableDateAnchors, getAnchorDisplayName } from "../../../utils/dateAnchorUtils";
 import type { TranslationKey } from "../../../i18n";
 import {
 	createCard,
@@ -128,7 +129,7 @@ function renderRemindersList(
 	}
 
 	plugin.settings.taskCreationDefaults.defaultReminders.forEach((reminder, index) => {
-		const timingText = formatReminderTiming(reminder, translate);
+		const timingText = formatReminderTiming(reminder, translate, plugin);
 
 		const descInput = createCardInput(
 			"text",
@@ -159,14 +160,14 @@ function renderRemindersList(
 					".tasknotes-settings__card-secondary-text"
 				);
 				if (secondaryText) {
-					secondaryText.textContent = formatReminderTiming(reminder, translate);
+					secondaryText.textContent = formatReminderTiming(reminder, translate, plugin);
 				}
 			}
 		};
 
 		const configRows =
 			reminder.type === "relative"
-				? renderRelativeReminderConfig(reminder, updateCallback, translate)
+				? renderRelativeReminderConfig(reminder, updateCallback, translate, plugin)
 				: renderAbsoluteReminderConfig(reminder, updateCallback, translate);
 
 		const card = createCard(container, {
@@ -229,7 +230,8 @@ function renderRemindersList(
 function renderRelativeReminderConfig(
 	reminder: DefaultReminder,
 	updateItem: (updates: Partial<DefaultReminder>) => void,
-	translate: TranslateFn
+	translate: TranslateFn,
+	plugin: TaskNotesPlugin
 ): CardRow[] {
 	const offsetInput = createCardNumberInput(0, undefined, 1, reminder.offset);
 	offsetInput.addEventListener("input", () => {
@@ -262,18 +264,14 @@ function renderRelativeReminderConfig(
 		updateItem({ direction: directionSelect.value as "before" | "after" });
 	});
 
-	const relatedToSelect = createCardSelect(
-		[
-			{ value: "due", label: translate("settings.defaults.reminders.relatedTo.due") },
-			{
-				value: "scheduled",
-				label: translate("settings.defaults.reminders.relatedTo.scheduled"),
-			},
-		],
-		reminder.relatedTo
-	);
+	const anchors = getAvailableDateAnchors(plugin);
+	const anchorOptions = anchors.map((a) => ({
+		value: a.key,
+		label: a.displayName,
+	}));
+	const relatedToSelect = createCardSelect(anchorOptions, reminder.relatedTo);
 	relatedToSelect.addEventListener("change", () => {
-		updateItem({ relatedTo: relatedToSelect.value as "due" | "scheduled" });
+		updateItem({ relatedTo: relatedToSelect.value });
 	});
 
 	return [
@@ -316,7 +314,8 @@ function renderAbsoluteReminderConfig(
 
 function formatReminderTiming(
 	reminder: DefaultReminder,
-	translate: TranslateFn
+	translate: TranslateFn,
+	plugin: TaskNotesPlugin
 ): string {
 	if (reminder.type === "relative") {
 		const direction =
@@ -327,10 +326,7 @@ function formatReminderTiming(
 			`settings.defaults.reminders.units.${reminder.unit || "hours"}` as TranslationKey
 		);
 		const offset = reminder.offset ?? 1;
-		const relatedTo =
-			reminder.relatedTo === "due"
-				? translate("settings.defaults.reminders.relatedTo.due")
-				: translate("settings.defaults.reminders.relatedTo.scheduled");
+		const relatedTo = getAnchorDisplayName(reminder.relatedTo || "due", plugin).toLowerCase();
 		return `${offset} ${unit} ${direction} ${relatedTo}`;
 	} else {
 		const date = reminder.absoluteDate || translate("settings.defaults.reminders.fields.date");

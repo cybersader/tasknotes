@@ -2,6 +2,7 @@ import { App, Modal, Setting, setIcon, Notice, setTooltip } from "obsidian";
 import TaskNotesPlugin from "../main";
 import { TaskInfo, Reminder } from "../types";
 import { formatDateForDisplay } from "../utils/dateUtils";
+import { getAvailableDateAnchors, resolveAnchorDate, getAnchorDisplayName } from "../utils/dateAnchorUtils";
 
 export class ReminderModal extends Modal {
 	private plugin: TaskNotesPlugin;
@@ -13,7 +14,7 @@ export class ReminderModal extends Modal {
 
 	// Form state
 	private selectedType: "absolute" | "relative" = "relative";
-	private relativeAnchor: "due" | "scheduled" = "due";
+	private relativeAnchor: string = "due";
 	private relativeOffset = 15;
 	private relativeUnit: "minutes" | "hours" | "days" = "minutes";
 	private relativeDirection: "before" | "after" = "before";
@@ -260,16 +261,17 @@ export class ReminderModal extends Modal {
 			return "Absolute reminder";
 		} else {
 			// For relative reminders, show the timing relative to task date
-			const anchor = reminder.relatedTo === "due" ? "due date" : "scheduled date";
+			const anchor = getAnchorDisplayName(reminder.relatedTo || "due", this.plugin).toLowerCase();
 			const offset = this.formatOffset(reminder.offset || "");
 			return `${offset} ${anchor}`;
 		}
 	}
 
 	private renderQuickActions(section: HTMLElement): void {
-		// Only show quick actions if task has due/scheduled dates
-		const hasDates = this.task.due || this.task.scheduled;
-		if (!hasDates) return;
+		// Only show quick actions if task has at least one date anchor with a value
+		const anchors = getAvailableDateAnchors(this.plugin, this.task);
+		const firstAnchorWithValue = anchors.find((a) => a.currentValue);
+		if (!firstAnchorWithValue) return;
 
 		const quickActions = section.createDiv({ cls: "reminder-modal__quick-actions" });
 
@@ -282,9 +284,10 @@ export class ReminderModal extends Modal {
 			{ label: "1d", fullLabel: "1 day before", offset: "-P1D", icon: "calendar" },
 		];
 
-		commonReminders.forEach(({ label, fullLabel, offset, icon }) => {
-			const anchor = this.task.due ? "due" : "scheduled";
+		const anchor = firstAnchorWithValue.key;
+		const anchorLabel = firstAnchorWithValue.displayName.toLowerCase();
 
+		commonReminders.forEach(({ label, fullLabel, offset, icon }) => {
 			const quickBtn = buttonsContainer.createEl("button", {
 				cls: "reminder-modal__quick-btn",
 			});
@@ -298,7 +301,7 @@ export class ReminderModal extends Modal {
 			});
 
 			// Use Obsidian's native tooltip
-			setTooltip(quickBtn, `Add reminder ${fullLabel} ${anchor} date`);
+			setTooltip(quickBtn, `Add reminder ${fullLabel} ${anchorLabel}`);
 
 			quickBtn.onclick = async () => {
 				await this.addQuickReminder(anchor, offset, fullLabel);
@@ -307,7 +310,7 @@ export class ReminderModal extends Modal {
 	}
 
 	private async addQuickReminder(
-		anchor: "due" | "scheduled",
+		anchor: string,
 		offset: string,
 		description: string
 	): Promise<void> {
@@ -408,26 +411,29 @@ export class ReminderModal extends Modal {
 		});
 
 		new Setting(relativeContainer).setName("Relative to").addDropdown((dropdown) => {
-			const options: any = {};
-			if (this.task.due) {
-				options.due = `Due date (${formatDateForDisplay(this.task.due)})`;
-			}
-			if (this.task.scheduled) {
-				options.scheduled = `Scheduled date (${formatDateForDisplay(this.task.scheduled)})`;
-			}
+			const anchors = getAvailableDateAnchors(this.plugin, this.task);
+			const anchorsWithValues = anchors.filter((a) => a.currentValue);
 
-			if (Object.keys(options).length === 0) {
-				options.none = "No dates available";
+			if (anchorsWithValues.length === 0) {
+				dropdown.addOption("none", "No dates available");
 				dropdown.setDisabled(true);
 			} else {
-				Object.entries(options).forEach(([key, label]) => {
-					dropdown.addOption(key, label as string);
-				});
+				// Show all date anchors - those with values first, then those without
+				for (const anchor of anchorsWithValues) {
+					const label = `${anchor.displayName} (${formatDateForDisplay(anchor.currentValue!)})`;
+					dropdown.addOption(anchor.key, label);
+				}
+				// Also show anchors without values (user may set them later)
+				for (const anchor of anchors) {
+					if (!anchor.currentValue) {
+						dropdown.addOption(anchor.key, `${anchor.displayName} (not set)`);
+					}
+				}
 				dropdown.setValue(this.relativeAnchor);
 			}
 
 			dropdown.onChange((value) => {
-				this.relativeAnchor = value as "due" | "scheduled";
+				this.relativeAnchor = value;
 			});
 		});
 
@@ -535,7 +541,7 @@ export class ReminderModal extends Modal {
 
 	private createReminder(
 		type: "absolute" | "relative",
-		anchor: "due" | "scheduled",
+		anchor: string,
 		offset: number,
 		unit: "minutes" | "hours" | "days",
 		direction: "before" | "after",
@@ -547,9 +553,10 @@ export class ReminderModal extends Modal {
 
 		if (type === "relative") {
 			// Check if anchor date exists
-			const anchorDate = anchor === "due" ? this.task.due : this.task.scheduled;
+			const anchorDate = resolveAnchorDate(this.task, anchor, this.plugin);
 			if (!anchorDate) {
-				new Notice(`Cannot create reminder: Task has no ${anchor} date`);
+				const anchorName = getAnchorDisplayName(anchor, this.plugin);
+				new Notice(`Cannot create reminder: Task has no ${anchorName}`);
 				return null;
 			}
 
@@ -597,7 +604,7 @@ export class ReminderModal extends Modal {
 		if (reminder.type === "absolute") {
 			return "Absolute reminder";
 		} else {
-			const anchor = reminder.relatedTo === "due" ? "due date" : "scheduled date";
+			const anchor = getAnchorDisplayName(reminder.relatedTo || "due", this.plugin).toLowerCase();
 			const offset = this.formatOffset(reminder.offset || "");
 			return `${offset} ${anchor}`;
 		}
@@ -623,7 +630,7 @@ export class ReminderModal extends Modal {
 		if (reminder.type === "absolute") {
 			return `At ${formatDateForDisplay(reminder.absoluteTime || "")}`;
 		} else {
-			const anchor = reminder.relatedTo === "due" ? "due date" : "scheduled date";
+			const anchor = getAnchorDisplayName(reminder.relatedTo || "due", this.plugin).toLowerCase();
 			const offset = this.formatOffset(reminder.offset || "");
 			return `${offset} ${anchor}`;
 		}

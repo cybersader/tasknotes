@@ -443,7 +443,7 @@ export interface DefaultReminder {
 	id: string;
 	type: "relative" | "absolute";
 	// For relative reminders
-	relatedTo?: "due" | "scheduled";
+	relatedTo?: string; // Any date property (e.g., "due", "scheduled", custom date fields)
 	offset?: number; // Amount in specified unit
 	unit?: "minutes" | "hours" | "days";
 	direction?: "before" | "after";

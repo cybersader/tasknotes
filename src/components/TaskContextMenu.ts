@@ -3,6 +3,7 @@ import TaskNotesPlugin from "../main";
 import { TaskDependency, TaskInfo } from "../types";
 import { formatDateForStorage } from "../utils/dateUtils";
 import { ReminderModal } from "../modals/ReminderModal";
+import { getAvailableDateAnchors, resolveAnchorDate } from "../utils/dateAnchorUtils";
 import { CalendarExportService } from "../services/CalendarExportService";
 import { showConfirmationModal } from "../modals/ConfirmationModal";
 import { DateContextMenu } from "./DateContextMenu";
@@ -201,21 +202,17 @@ export class TaskContextMenu {
 
 			const submenu = (item as any).setSubmenu();
 
-			// Quick Add sections
-			this.addQuickRemindersSection(
-				submenu,
-				task,
-				plugin,
-				"due",
-				this.t("contextMenus.task.remindBeforeDue")
-			);
-			this.addQuickRemindersSection(
-				submenu,
-				task,
-				plugin,
-				"scheduled",
-				this.t("contextMenus.task.remindBeforeScheduled")
-			);
+			// Quick Add sections - dynamically enumerate all date anchors
+			const anchors = getAvailableDateAnchors(plugin, task);
+			for (const anchor of anchors) {
+				this.addQuickRemindersSection(
+					submenu,
+					task,
+					plugin,
+					anchor.key,
+					`Remind before ${anchor.displayName.toLowerCase()}`,
+				);
+			}
 
 			submenu.addSeparator();
 
@@ -1583,10 +1580,10 @@ export class TaskContextMenu {
 		submenu: any,
 		task: TaskInfo,
 		plugin: TaskNotesPlugin,
-		anchor: "due" | "scheduled",
+		anchor: string,
 		title: string
 	): void {
-		const anchorDate = anchor === "due" ? task.due : task.scheduled;
+		const anchorDate = resolveAnchorDate(task, anchor, plugin);
 
 		if (!anchorDate) {
 			// If no anchor date, show disabled option
@@ -1628,7 +1625,7 @@ export class TaskContextMenu {
 	private async addQuickReminder(
 		task: TaskInfo,
 		plugin: TaskNotesPlugin,
-		anchor: "due" | "scheduled",
+		anchor: string,
 		offset: string,
 		description: string
 	): Promise<void> {

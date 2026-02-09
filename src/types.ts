@@ -487,7 +487,7 @@ export interface Reminder {
 	type: "absolute" | "relative";
 
 	// For relative reminders
-	relatedTo?: "due" | "scheduled"; // The anchor date property
+	relatedTo?: string; // The anchor date property (e.g., "due", "scheduled", "dateCreated", or custom date fields)
 	offset?: string; // ISO 8601 duration format, e.g., "-PT5M", "-PT1H", "-P2D"
 
 	// For absolute reminders

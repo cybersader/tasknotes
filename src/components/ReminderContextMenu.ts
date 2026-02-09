@@ -3,6 +3,7 @@ import TaskNotesPlugin from "../main";
 import { TaskInfo, Reminder } from "../types";
 import { ReminderModal } from "../modals/ReminderModal";
 import { ContextMenu } from "./ContextMenu";
+import { getAvailableDateAnchors, resolveAnchorDate } from "../utils/dateAnchorUtils";
 
 export class ReminderContextMenu {
 	private plugin: TaskNotesPlugin;
@@ -25,17 +26,15 @@ export class ReminderContextMenu {
 	show(event: UIEvent): void {
 		const menu = new ContextMenu();
 
-		// Quick Add sections
-		this.addQuickRemindersSection(
-			menu,
-			"due",
-			this.plugin.i18n.translate("components.reminderContextMenu.remindBeforeDue")
-		);
-		this.addQuickRemindersSection(
-			menu,
-			"scheduled",
-			this.plugin.i18n.translate("components.reminderContextMenu.remindBeforeScheduled")
-		);
+		// Quick Add sections - dynamically enumerate all date anchors
+		const anchors = getAvailableDateAnchors(this.plugin, this.task);
+		for (const anchor of anchors) {
+			this.addQuickRemindersSection(
+				menu,
+				anchor.key,
+				`Remind before ${anchor.displayName.toLowerCase()}`,
+			);
+		}
 
 		menu.addSeparator();
 
@@ -66,8 +65,8 @@ export class ReminderContextMenu {
 		menu.show(event)
 	}
 
-	private addQuickRemindersSection(menu: Menu, anchor: "due" | "scheduled", title: string): void {
-		const anchorDate = anchor === "due" ? this.task.due : this.task.scheduled;
+	private addQuickRemindersSection(menu: Menu, anchor: string, title: string): void {
+		const anchorDate = resolveAnchorDate(this.task, anchor, this.plugin);
 
 		if (!anchorDate) {
 			// If no anchor date, show disabled option
@@ -85,7 +84,7 @@ export class ReminderContextMenu {
 		})
 	}
 
-	private addQuickReminderSubmenu(subMenu: Menu, anchor: "due" | "scheduled"): void {
+	private addQuickReminderSubmenu(subMenu: Menu, anchor: string): void {
 		const quickOptions = [
 			{
 				label: this.plugin.i18n.translate(
@@ -129,7 +128,7 @@ export class ReminderContextMenu {
 	}
 
 	private async addQuickReminder(
-		anchor: "due" | "scheduled",
+		anchor: string,
 		offset: string,
 		description: string
 	): Promise<void> {

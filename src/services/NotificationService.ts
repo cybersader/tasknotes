@@ -4,6 +4,7 @@ import TaskNotesPlugin from "../main";
 import { TaskInfo, Reminder, EVENT_TASK_UPDATED } from "../types";
 import { parseDateToLocal } from "../utils/dateUtils";
 import { shouldNotifyForTask } from "../utils/assigneeFilter";
+import { resolveAnchorDate, getAnchorDisplayName } from "../utils/dateAnchorUtils";
 
 interface NotificationQueueItem {
 	taskPath: string;
@@ -179,7 +180,7 @@ export class NotificationService {
 					return null;
 				}
 
-				const anchorDateStr = reminder.relatedTo === "due" ? task.due : task.scheduled;
+				const anchorDateStr = resolveAnchorDate(task, reminder.relatedTo!, this.plugin);
 				if (!anchorDateStr) {
 					return null;
 				}
@@ -332,7 +333,7 @@ export class NotificationService {
 		if (reminder.type === "absolute") {
 			return `Reminder: ${task.title}`;
 		} else {
-			const anchor = reminder.relatedTo === "due" ? "due" : "scheduled";
+			const anchor = getAnchorDisplayName(reminder.relatedTo || "due", this.plugin).toLowerCase();
 			const offset = this.formatDurationForDisplay(reminder.offset || "");
 
 			if (offset.startsWith("-")) {

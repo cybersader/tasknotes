@@ -243,7 +243,7 @@ export class BulkTaskEngine {
 			taskData.reminders = options.reminders.map(r => ({
 				id: r.id || `rem_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
 				type: r.type as "relative" | "absolute",
-				relatedTo: r.relatedTo as "due" | "scheduled" | undefined,
+				relatedTo: r.relatedTo,
 				offset: r.offset,
 				absoluteTime: r.absoluteTime,
 				description: r.description,

@@ -4,6 +4,26 @@ All notable changes to this TaskNotes fork will be documented in this file.
 
 This fork (`cybersader/tasknotes`) adds bulk tasking, notifications, and other enhancements to the upstream [TaskNotes](https://github.com/callumalpass/tasknotes) plugin.
 
+## [4.3.23] - 2026-02-09
+
+### Added
+- **Dynamic reminder anchors**: Reminders can now be relative to ANY date property, not just due/scheduled
+  - Built-in anchors: due, scheduled, dateCreated, dateModified, completedDate
+  - Custom date fields from user-configured properties are automatically discovered
+  - Edit Task modal reminder dropdown shows all available date anchors with current values
+  - Right-click context menu quick reminders dynamically list all anchors with values
+  - Settings > Default Reminders dropdown enumerates all date properties
+  - Bulk task creation applies reminders with any anchor type
+  - New utility: `dateAnchorUtils.ts` for centralized anchor discovery and resolution
+
+### Changed
+- `Reminder.relatedTo` type widened from `"due" | "scheduled"` to `string` for extensibility
+- NotificationService uses dynamic anchor resolution instead of hardcoded due/scheduled check
+- ReminderModal uses dynamic dropdown instead of hardcoded two-option select
+- ReminderContextMenu dynamically iterates all date anchors instead of two hardcoded sections
+- TaskContextMenu quick reminders use dynamic anchor discovery
+- Settings remindersPropertyCard uses dynamic anchor list
+
 ## [4.3.22] - 2026-02-09
 
 ### Changed
