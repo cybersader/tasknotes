@@ -80,12 +80,27 @@ export const CORE_PROPERTY_KEYS = new Set([
  */
 export function buildSkipKeys(plugin: TaskNotesPlugin): Set<string> {
 	const skip = new Set(CORE_PROPERTY_KEYS);
-	const mapping = plugin.settings?.fieldMapping;
+	const settings = plugin.settings;
+	if (!settings) return skip;
+
+	// Add FieldMapper-mapped frontmatter names
+	const mapping = settings.fieldMapping;
 	if (mapping) {
 		for (const val of Object.values(mapping)) {
 			if (typeof val === "string" && val) skip.add(val);
 		}
 	}
+
+	// Add task identification property (e.g., "isTask", "tnType", or whatever the user configured)
+	if (settings.taskIdentificationMethod === "property" && settings.taskPropertyName) {
+		skip.add(settings.taskPropertyName);
+	}
+
+	// Add identity type property used for person/group detection
+	if (settings.identityTypePropertyName) {
+		skip.add(settings.identityTypePropertyName);
+	}
+
 	return skip;
 }
 

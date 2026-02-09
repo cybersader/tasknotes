@@ -69,7 +69,6 @@ export class BulkTaskCreationModal extends Modal {
 	private bulkCustomProperties: Record<string, any> = {}; // Custom properties from PropertyPicker
 	private propertyPickerInstance: { refresh: () => void; destroy: () => void } | null = null;
 	private customPropsPanel: HTMLElement | null = null;
-	private customPropsIcon: HTMLElement | null = null;
 
 	// UI element references
 	private bodyContainer: HTMLElement | null = null;
@@ -273,13 +272,11 @@ export class BulkTaskCreationModal extends Modal {
 		// Reminders
 		this.reminderIcon = this.createActionIcon(actionBar, "bell", "Reminders", () => this.openReminderPicker());
 
-		actionBar.createDiv({ cls: "tn-bulk-modal__action-separator" });
-
-		// Custom properties
-		this.customPropsIcon = this.createActionIcon(actionBar, "braces", "Custom properties", () => this.toggleCustomPropertiesPanel());
-
 		// Update icon states
 		this.updateActionIconStates();
+
+		// Custom properties section (below action bar, within same section)
+		this.renderCustomPropertiesSection(section);
 	}
 
 	/**
@@ -357,15 +354,6 @@ export class BulkTaskCreationModal extends Modal {
 			setTooltip(this.assigneeIcon, count > 0 ? `${count} assignee${count !== 1 ? "s" : ""} selected` : "Assignee");
 		}
 
-		// Custom properties
-		if (this.customPropsIcon) {
-			const count = Object.keys(this.bulkCustomProperties).length;
-			this.customPropsIcon.toggleClass("has-value", count > 0);
-			setTooltip(this.customPropsIcon, count > 0
-				? `${count} custom propert${count !== 1 ? "ies" : "y"} set`
-				: "Custom properties");
-		}
-
 		// Show/hide reminder warning (when reminders set but no dates)
 		if (this.reminderWarning) {
 			const hasReminders = this.bulkReminders.length > 0;
@@ -376,25 +364,25 @@ export class BulkTaskCreationModal extends Modal {
 	}
 
 	/**
-	 * Toggle the custom properties inline panel below the action bar.
+	 * Render the custom properties section with heading, help tip, and PropertyPicker.
+	 * Follows the same pattern as BULK VALUES and ASSIGNEES sections.
 	 */
-	private toggleCustomPropertiesPanel() {
-		if (this.customPropsPanel) {
-			// Destroy picker and remove panel
-			if (this.propertyPickerInstance) {
-				this.propertyPickerInstance.destroy();
-				this.propertyPickerInstance = null;
-			}
-			this.customPropsPanel.remove();
-			this.customPropsPanel = null;
-			return;
+	private renderCustomPropertiesSection(parentSection: HTMLElement) {
+		// Clean up existing picker if re-rendering
+		if (this.propertyPickerInstance) {
+			this.propertyPickerInstance.destroy();
+			this.propertyPickerInstance = null;
 		}
 
-		// Find the action bar section to insert after
-		const actionBarSection = this.customPropsIcon?.closest(".tn-bulk-modal__section");
-		if (!actionBarSection) return;
+		// Subsection header with label and help icon
+		const header = parentSection.createDiv({ cls: "tn-bulk-modal__section-header" });
+		header.createSpan({ cls: "tn-bulk-modal__section-label", text: "CUSTOM PROPERTIES" });
 
-		this.customPropsPanel = actionBarSection.createDiv({ cls: "tn-bulk-modal__custom-props-panel" });
+		const helpIcon = header.createSpan({ cls: "tn-bulk-modal__help" });
+		setIcon(helpIcon, "help-circle");
+		setTooltip(helpIcon, "Add custom frontmatter properties to all items. Search for properties used across your task files, or create new ones.");
+
+		this.customPropsPanel = parentSection.createDiv({ cls: "tn-bulk-modal__custom-props-panel" });
 
 		// Create PropertyPicker with item paths from current view
 		const itemPaths = this.items
@@ -418,12 +406,11 @@ export class BulkTaskCreationModal extends Modal {
 					}
 				}
 				this.bulkCustomProperties[key] = defaultValue;
-				this.updateActionIconStates();
 				this.renderCustomPropsActiveList();
 			},
 		});
 
-		// Render active custom properties
+		// Render active custom properties (if any were set before a re-render)
 		this.renderCustomPropsActiveList();
 	}
 
@@ -933,11 +920,6 @@ export class BulkTaskCreationModal extends Modal {
 		// Reminders
 		this.reminderIcon = this.createActionIcon(actionBar, "bell", "Reminders", () => this.openReminderPicker());
 
-		actionBar.createDiv({ cls: "tn-bulk-modal__action-separator" });
-
-		// Custom properties
-		this.customPropsIcon = this.createActionIcon(actionBar, "braces", "Custom properties", () => this.toggleCustomPropertiesPanel());
-
 		// Reminder warning (hidden by default, shown when reminders set but no dates)
 		this.reminderWarning = section.createDiv({
 			cls: "tn-bulk-modal__reminder-warning",
@@ -947,6 +929,9 @@ export class BulkTaskCreationModal extends Modal {
 
 		// Update icon states
 		this.updateActionIconStates();
+
+		// Custom properties section (below action bar, within same section)
+		this.renderCustomPropertiesSection(section);
 	}
 
 	/**

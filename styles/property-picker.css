@@ -25,10 +25,13 @@
 .tn-pp-search-icon {
     position: absolute;
     left: 8px;
+    top: 50%;
+    transform: translateY(-50%);
     display: flex;
     align-items: center;
     color: var(--text-muted);
     pointer-events: none;
+    z-index: 1;
 }
 
 .tn-pp-search-icon svg {
@@ -38,7 +41,7 @@
 
 .tn-pp-search {
     width: 100%;
-    padding: 6px 10px 6px 28px;
+    padding: 6px 10px 6px 32px;
     border: 1px solid var(--background-modifier-border);
     border-radius: var(--radius-s);
     background: var(--background-primary);

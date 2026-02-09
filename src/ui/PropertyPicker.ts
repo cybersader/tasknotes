@@ -108,12 +108,15 @@ export function createPropertyPicker(options: PropertyPickerOptions): {
 	});
 
 	const toggleContainer = headerRow.createDiv({ cls: "tn-pp-toggle-container" });
-	const toggleLabel = toggleContainer.createEl("label", { cls: "tn-pp-toggle-label" });
+	const toggleLabel = toggleContainer.createEl("label", {
+		cls: "tn-pp-toggle-label",
+		attr: { title: "When enabled, shows properties from all task files in the vault instead of just this task" },
+	});
 	const toggleCheckbox = toggleLabel.createEl("input", {
 		attr: { type: "checkbox" },
 		cls: "tn-pp-toggle-checkbox",
 	});
-	toggleLabel.createSpan({ text: "All tasks", cls: "tn-pp-toggle-text" });
+	toggleLabel.createSpan({ text: "Vault-wide", cls: "tn-pp-toggle-text" });
 
 	// Dropdown container - appended to body to escape modal overflow
 	const dropdown = document.body.createDiv({ cls: "tn-pp-dropdown" });
