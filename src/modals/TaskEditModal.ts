@@ -491,9 +491,9 @@ export class TaskEditModal extends TaskModal {
 		// Use same separator pattern as user fields section
 		const sectionContainer = container.createDiv("discovered-properties-container user-fields-separator");
 
-		// Section label matching the existing "CUSTOM FIELDS" pattern
+		// Section label matching the bulk modal's "CUSTOM PROPERTIES" heading
 		sectionContainer.createDiv({
-			text: "Additional properties",
+			text: "Custom properties",
 			cls: "detail-label-section",
 		});
 
@@ -554,14 +554,14 @@ export class TaskEditModal extends TaskModal {
 
 			const setting = new Setting(container).setName(prop.displayName);
 
-			// Add remove button
+			// Add hide button (hides from this modal view, does NOT delete from file)
 			setting.addExtraButton((btn) => {
-				btn.setIcon("x")
-					.setTooltip("Remove property")
+				btn.setIcon("eye-off")
+					.setTooltip("Hide from this view (does not delete from file)")
 					.onClick(() => {
-						// Set to null to mark for removal
-						this.userFields[prop.key] = null;
-						// Remove from discovered list
+						// Remove from discovered list so it's hidden, but do NOT set to null
+						// (setting to null would delete the property from frontmatter on save)
+						delete this.userFields[prop.key];
 						const idx = this.discoveredProperties.findIndex(p => p.key === prop.key);
 						if (idx >= 0) this.discoveredProperties.splice(idx, 1);
 						// Re-render
