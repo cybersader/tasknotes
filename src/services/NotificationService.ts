@@ -18,6 +18,7 @@ export class NotificationService {
 	private broadScanInterval?: number;
 	private quickCheckInterval?: number;
 	private processedReminders: Set<string> = new Set(); // Track processed reminders to avoid duplicates
+	private sessionFiredReminders: Set<string> = new Set(); // Track persistent/overdue reminders fired this scan cycle
 	private taskUpdateListener?: EventRef;
 	private lastBroadScanTime: number = Date.now();
 	private lastQuickCheckTime: number = Date.now();
@@ -67,6 +68,7 @@ export class NotificationService {
 		}
 		this.notificationQueue = [];
 		this.processedReminders.clear();
+		this.sessionFiredReminders.clear();
 	}
 
 	private startBroadScan(): void {
@@ -110,6 +112,8 @@ export class NotificationService {
 	private async scanTasksAndBuildQueue(): Promise<void> {
 		// Clear existing queue and rebuild
 		this.notificationQueue = [];
+		// Clear session-fired set so persistent/overdue reminders can re-fire
+		this.sessionFiredReminders.clear();
 
 		// Get all tasks from the cache
 		const tasks = await this.plugin.cacheManager.getAllTasks();
@@ -123,10 +127,6 @@ export class NotificationService {
 		const assigneeFieldName = this.plugin.settings.assigneeFieldName || "assignee";
 
 		for (const task of tasks) {
-			if (!task.reminders || task.reminders.length === 0) {
-				continue;
-			}
-
 			// Skip tasks not assigned to current user (when filtering enabled)
 			if (filterByAssignee) {
 				const file = this.plugin.app.vault.getAbstractFileByPath(task.path);
@@ -139,23 +139,62 @@ export class NotificationService {
 				}
 			}
 
-			for (const reminder of task.reminders) {
-				// Skip if already processed
-				const reminderId = `${task.path}-${reminder.id}`;
-				if (this.processedReminders.has(reminderId)) {
-					continue;
+			// Process explicit reminders
+			if (task.reminders && task.reminders.length > 0) {
+				for (const reminder of task.reminders) {
+					// Skip if already processed
+					const reminderId = `${task.path}-${reminder.id}`;
+					if (this.processedReminders.has(reminderId)) {
+						continue;
+					}
+
+					const notifyAt = this.calculateNotificationTime(task, reminder);
+					if (notifyAt === null) {
+						continue;
+					}
+
+					// Add to queue if within the next scan window
+					if (notifyAt > now && notifyAt <= windowEnd) {
+						this.notificationQueue.push({
+							taskPath: task.path,
+							reminder,
+							notifyAt,
+						});
+					}
+				}
+			}
+
+			// Generate and process virtual reminders from global rules
+			const virtualReminders = this.generateVirtualReminders(task);
+			for (const vReminder of virtualReminders) {
+				const reminderId = `${task.path}-${vReminder.id}`;
+				if (this.processedReminders.has(reminderId)) continue;
+				if (this.sessionFiredReminders.has(reminderId)) continue;
+
+				let notifyAt = this.calculateNotificationTime(task, vReminder);
+				if (notifyAt === null) continue;
+
+				// Handle past notification times based on semantic type
+				if (notifyAt <= now) {
+					if (vReminder.semanticType === "lead-time" || vReminder.semanticType === "start-date") {
+						// One-shot: missed window, skip
+						continue;
+					} else if (vReminder.semanticType === "overdue" && vReminder.repeatIntervalHours) {
+						// Overdue: advance to next valid fire time
+						const intervalMs = Math.max(vReminder.repeatIntervalHours * 3600000, 3600000); // Min 1h
+						while (notifyAt <= now) {
+							notifyAt += intervalMs;
+						}
+					} else if (vReminder.semanticType === "due-date") {
+						// Persistent: fire soon (within next check cycle)
+						notifyAt = now + 1000;
+					}
 				}
 
-				const notifyAt = this.calculateNotificationTime(task, reminder);
-				if (notifyAt === null) {
-					continue;
-				}
-
-				// Add to queue if within the next scan window
 				if (notifyAt > now && notifyAt <= windowEnd) {
 					this.notificationQueue.push({
 						taskPath: task.path,
-						reminder,
+						reminder: vReminder,
 						notifyAt,
 					});
 				}
@@ -164,6 +203,67 @@ export class NotificationService {
 
 		// Sort queue by notification time
 		this.notificationQueue.sort((a, b) => a.notifyAt - b.notifyAt);
+	}
+
+	/**
+	 * Generate virtual reminders for a task based on enabled global reminder rules.
+	 * Virtual reminders are never persisted to frontmatter — they exist only at runtime.
+	 */
+	private generateVirtualReminders(task: TaskInfo): Reminder[] {
+		const rules = this.plugin.settings.globalReminderRules;
+		if (!rules || rules.length === 0) return [];
+
+		// Skip completed tasks entirely
+		if (this.plugin.statusManager.isCompletedStatus(task.status)) {
+			return [];
+		}
+
+		const virtualReminders: Reminder[] = [];
+		const skippedRules: string[] = [];
+
+		for (const rule of rules) {
+			if (!rule.enabled) continue;
+
+			// Check if task has the anchor property
+			const anchorDate = resolveAnchorDate(task, rule.anchorProperty, this.plugin);
+			if (!anchorDate) {
+				skippedRules.push(`${rule.id}:no-anchor`);
+				continue;
+			}
+
+			// Skip if explicit reminder with same semantic type exists
+			if (rule.skipIfExplicitExists && task.reminders) {
+				const hasExplicit = task.reminders.some(
+					(r) => r.semanticType === rule.semanticType && !r.isVirtual
+				);
+				if (hasExplicit) {
+					skippedRules.push(`${rule.id}:explicit-exists`);
+					continue;
+				}
+			}
+
+			virtualReminders.push({
+				id: `virtual_${rule.id}`,
+				type: "relative",
+				relatedTo: rule.anchorProperty,
+				offset: rule.offset,
+				description: rule.description,
+				semanticType: rule.semanticType,
+				isVirtual: true,
+				sourceRuleId: rule.id,
+				...(rule.repeatIntervalHours ? { repeatIntervalHours: rule.repeatIntervalHours } : {}),
+			});
+		}
+
+		if (virtualReminders.length > 0 || skippedRules.length > 0) {
+			console.log(
+				`[NotificationService] Virtual reminders for ${task.path}: ` +
+				`generated=[${virtualReminders.map((r) => r.sourceRuleId).join(", ")}], ` +
+				`skipped=[${skippedRules.join(", ")}]`
+			);
+		}
+
+		return virtualReminders;
 	}
 
 	private calculateNotificationTime(task: TaskInfo, reminder: Reminder): number | null {
@@ -234,6 +334,7 @@ export class NotificationService {
 	private checkNotificationQueue(): void {
 		const now = Date.now();
 		const toRemove: number[] = [];
+		const toRequeue: NotificationQueueItem[] = [];
 
 		for (let i = 0; i < this.notificationQueue.length; i++) {
 			const item = this.notificationQueue[i];
@@ -243,9 +344,27 @@ export class NotificationService {
 				this.triggerNotification(item);
 				toRemove.push(i);
 
-				// Mark as processed to avoid duplicates
 				const reminderId = `${item.taskPath}-${item.reminder.id}`;
-				this.processedReminders.add(reminderId);
+				const semanticType = item.reminder.semanticType;
+
+				if (semanticType === "due-date") {
+					// Persistent: don't add to processedReminders — will re-fire on next broad scan
+					this.sessionFiredReminders.add(reminderId);
+					console.log(`[NotificationService] Persistent reminder fired for ${item.taskPath}, will re-fire next scan`);
+				} else if (semanticType === "overdue" && item.reminder.repeatIntervalHours) {
+					// Overdue: re-queue with next interval
+					this.sessionFiredReminders.add(reminderId);
+					const intervalMs = Math.max(item.reminder.repeatIntervalHours * 3600000, 3600000); // Min 1h
+					toRequeue.push({
+						taskPath: item.taskPath,
+						reminder: item.reminder,
+						notifyAt: item.notifyAt + intervalMs,
+					});
+					console.log(`[NotificationService] Overdue reminder re-queued for ${item.taskPath} in ${item.reminder.repeatIntervalHours}h`);
+				} else {
+					// One-shot (lead-time, start-date, custom): mark as processed
+					this.processedReminders.add(reminderId);
+				}
 			} else {
 				// Queue is sorted, so we can break early
 				break;
@@ -255,6 +374,12 @@ export class NotificationService {
 		// Remove triggered items from queue
 		for (let i = toRemove.length - 1; i >= 0; i--) {
 			this.notificationQueue.splice(toRemove[i], 1);
+		}
+
+		// Re-queue overdue reminders with next interval
+		if (toRequeue.length > 0) {
+			this.notificationQueue.push(...toRequeue);
+			this.notificationQueue.sort((a, b) => a.notifyAt - b.notifyAt);
 		}
 	}
 
@@ -385,6 +510,16 @@ export class NotificationService {
 		keysToRemove.forEach((key) => this.processedReminders.delete(key));
 	}
 
+	private clearSessionFiredRemindersForTask(taskPath: string): void {
+		const keysToRemove: string[] = [];
+		for (const key of this.sessionFiredReminders) {
+			if (key.startsWith(`${taskPath}-`)) {
+				keysToRemove.push(key);
+			}
+		}
+		keysToRemove.forEach((key) => this.sessionFiredReminders.delete(key));
+	}
+
 	private setupTaskUpdateListener(): void {
 		this.taskUpdateListener = this.plugin.emitter.on(
 			EVENT_TASK_UPDATED,
@@ -398,6 +533,19 @@ export class NotificationService {
 
 				// Clear processed reminders for this task so they can trigger again if needed
 				this.clearProcessedRemindersForTask(path);
+				this.clearSessionFiredRemindersForTask(path);
+
+				// If task is now completed, block all virtual reminders and stop
+				if (this.plugin.statusManager.isCompletedStatus(updatedTask.status)) {
+					const rules = this.plugin.settings.globalReminderRules;
+					if (rules) {
+						for (const rule of rules) {
+							this.processedReminders.add(`${path}-virtual_${rule.id}`);
+						}
+					}
+					console.log(`[NotificationService] Task completed, cancelled virtual reminders for ${path}`);
+					return;
+				}
 
 				// Skip tasks not assigned to current user (per-device scope)
 				if (this.plugin.devicePrefs.getFilterByAssignment()) {
@@ -438,10 +586,43 @@ export class NotificationService {
 							});
 						}
 					}
-
-					// Re-sort queue by notification time
-					this.notificationQueue.sort((a, b) => a.notifyAt - b.notifyAt);
 				}
+
+				// Re-evaluate virtual reminders for the updated task
+				const virtualReminders = this.generateVirtualReminders(updatedTask);
+				for (const vReminder of virtualReminders) {
+					const reminderId = `${path}-${vReminder.id}`;
+					if (this.processedReminders.has(reminderId)) continue;
+					if (this.sessionFiredReminders.has(reminderId)) continue;
+
+					let notifyAt = this.calculateNotificationTime(updatedTask, vReminder);
+					if (notifyAt === null) continue;
+
+					// Handle past notification times based on semantic type
+					if (notifyAt <= now) {
+						if (vReminder.semanticType === "lead-time" || vReminder.semanticType === "start-date") {
+							continue;
+						} else if (vReminder.semanticType === "overdue" && vReminder.repeatIntervalHours) {
+							const intervalMs = Math.max(vReminder.repeatIntervalHours * 3600000, 3600000);
+							while (notifyAt <= now) {
+								notifyAt += intervalMs;
+							}
+						} else if (vReminder.semanticType === "due-date") {
+							notifyAt = now + 1000;
+						}
+					}
+
+					if (notifyAt > now && notifyAt <= windowEnd) {
+						this.notificationQueue.push({
+							taskPath: path,
+							reminder: vReminder,
+							notifyAt,
+						});
+					}
+				}
+
+				// Re-sort queue by notification time
+				this.notificationQueue.sort((a, b) => a.notifyAt - b.notifyAt);
 			}
 		);
 	}

@@ -311,6 +311,8 @@ export interface TaskNotesSettings {
 	// Note UUID settings (for persistent identity across renames)
 	noteUuidPropertyName: string; // Empty = feature disabled
 	noteUuidAutoGenerate: boolean;
+	// Global reminder rules (virtual reminders applied to all tasks at runtime)
+	globalReminderRules: GlobalReminderRule[];
 	// Upcoming View date format settings
 	upcomingViewDateFormat: "iso" | "us" | "eu" | "relative" | "rich" | "custom";
 	upcomingViewCustomDateFormat: string; // date-fns format string when "custom"
@@ -437,6 +439,37 @@ export interface ReminderTypeSettings {
 	scheduled: TimeCategoryBehavior;
 	/** Base query notifications (different paradigm - about query results, not individual items) */
 	queryBased: TimeCategoryBehavior;
+}
+
+/**
+ * Semantic type of a reminder, describing its behavioral intent.
+ * Determines persistence, repeat logic, and auto-cancellation behavior.
+ */
+export type ReminderSemanticType =
+	| "lead-time"    // Fire X before anchor date, one-shot, dismissed forever
+	| "due-date"     // Fire on due date, persistent until task completed
+	| "overdue"      // Fire after due date, repeats at interval until actioned
+	| "start-date"   // Fire on start/scheduled date, one-shot
+	| "custom";      // User-defined, no special semantics (existing behavior)
+
+/**
+ * Global reminder rule that applies to all tasks at runtime.
+ * Virtual reminders are generated during evaluation — never written to task frontmatter.
+ */
+export interface GlobalReminderRule {
+	id: string;
+	enabled: boolean;
+	semanticType: ReminderSemanticType;
+	/** Human-readable description (e.g., "1 day before due") */
+	description: string;
+	/** Date property to anchor to (e.g., "due", "scheduled") */
+	anchorProperty: string;
+	/** ISO 8601 offset from anchor (e.g., "-P1D" for 1 day before, "PT0S" for at time) */
+	offset: string;
+	/** For overdue: repeat interval in hours (0 = don't repeat) */
+	repeatIntervalHours?: number;
+	/** Skip if task already has an explicit reminder with this semanticType */
+	skipIfExplicitExists: boolean;
 }
 
 export interface DefaultReminder {

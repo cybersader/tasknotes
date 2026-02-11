@@ -859,6 +859,21 @@ export function renderFeaturesTab(
 						navigateToNotificationScope(plugin);
 					});
 				});
+
+				// Cross-link to reminder configuration
+				group.addSetting((setting) => {
+					const descEl = setting.descEl;
+					setting.setName("Reminder configuration");
+					descEl.appendText("Configure default and global reminders for new and existing tasks. ");
+					const reminderLink = descEl.createEl("a", {
+						text: "Task Properties \u2192 Reminders \u2192",
+						href: "#",
+					});
+					reminderLink.addEventListener("click", (e) => {
+						e.preventDefault();
+						navigateToRemindersProperty(plugin);
+					});
+				});
 			}
 
 			// ─────────────────────────────────────────────────────────────
@@ -1339,6 +1354,36 @@ function scrollToBaseNotifications(container: HTMLElement): void {
 		if (heading.textContent?.toLowerCase().includes("base notifications")) {
 			(heading as HTMLElement).scrollIntoView({ behavior: "smooth", block: "start" });
 			break;
+		}
+	}
+}
+
+/**
+ * Navigate to Task Properties tab and scroll to the Reminders property card.
+ */
+function navigateToRemindersProperty(plugin: TaskNotesPlugin): void {
+	const settingsTab = (plugin.app as any).setting?.activeTab;
+	if (settingsTab?.containerEl) {
+		const tabButton = settingsTab.containerEl.querySelector(
+			"#tab-button-task-properties"
+		) as HTMLElement;
+		if (tabButton) {
+			tabButton.click();
+			setTimeout(() => {
+				const card = settingsTab.containerEl.querySelector(
+					"[data-card-id='property-reminders']"
+				) as HTMLElement;
+				if (card) {
+					// Expand card if collapsed
+					if (card.classList.contains("tasknotes-settings__card--collapsed")) {
+						const header = card.querySelector(".tasknotes-settings__card-header") as HTMLElement;
+						header?.click();
+					}
+					setTimeout(() => {
+						card.scrollIntoView({ behavior: "smooth", block: "start" });
+					}, 100);
+				}
+			}, 200);
 		}
 	}
 }

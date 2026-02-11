@@ -10,6 +10,7 @@ import {
 	VaultWideNotificationSettings,
 	ReminderTypeSettings,
 	TimeCategoryBehavior,
+	GlobalReminderRule,
 } from "../types/settings";
 
 /**
@@ -225,6 +226,39 @@ export const DEFAULT_PROJECT_AUTOSUGGEST: ProjectAutosuggestSettings = {
 	propertyKey: "",
 	propertyValue: "",
 };
+
+// Default global reminder rules (virtual reminders applied to all tasks at runtime)
+// All disabled by default — users opt in via Settings > Task Properties > Reminders
+export const DEFAULT_GLOBAL_REMINDER_RULES: GlobalReminderRule[] = [
+	{
+		id: "global-lead-1d",
+		enabled: false,
+		semanticType: "lead-time",
+		description: "1 day before due",
+		anchorProperty: "due",
+		offset: "-P1D",
+		skipIfExplicitExists: true,
+	},
+	{
+		id: "global-due-date",
+		enabled: false,
+		semanticType: "due-date",
+		description: "On due date",
+		anchorProperty: "due",
+		offset: "PT0S",
+		skipIfExplicitExists: true,
+	},
+	{
+		id: "global-overdue",
+		enabled: false,
+		semanticType: "overdue",
+		description: "Daily when overdue",
+		anchorProperty: "due",
+		offset: "P1D",
+		repeatIntervalHours: 24,
+		skipIfExplicitExists: true,
+	},
+];
 
 // Default per-category reminder behavior
 // Sensible defaults: overdue is persistent, today shows toast, future items are quieter
@@ -500,6 +534,8 @@ export const DEFAULT_SETTINGS: TaskNotesSettings = {
 	// Note UUID settings (for persistent identity across renames)
 	noteUuidPropertyName: "tnId",
 	noteUuidAutoGenerate: true,
+	// Global reminder rules (virtual reminders for all tasks at runtime)
+	globalReminderRules: DEFAULT_GLOBAL_REMINDER_RULES,
 	// Upcoming View date format settings
 	upcomingViewDateFormat: "us",
 	upcomingViewCustomDateFormat: "MMM d, yyyy",

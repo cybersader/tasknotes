@@ -119,6 +119,7 @@
     flex: 1;
     overflow-y: auto;
     padding-right: var(--size-4-1);
+    padding-bottom: 36px; /* Space for scroll-affordance gradient so it doesn't overlap content */
     position: relative;
 }
 
@@ -141,7 +142,7 @@
    ===================================================================== */
 
 .tn-bulk-modal__section {
-    margin-bottom: var(--size-4-3);
+    margin-bottom: var(--size-4-4);
 }
 
 .tn-bulk-modal__section-header {

@@ -13,6 +13,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
+    margin-bottom: var(--size-4-2);
 }
 
 .tn-pp-search-container {

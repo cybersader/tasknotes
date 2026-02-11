@@ -242,6 +242,81 @@
     font-weight: 500;
 }
 
+/* Semantic preset row */
+.tasknotes-plugin .reminder-modal__semantic-presets {
+    margin-top: var(--size-4-1);
+    padding-top: var(--size-4-1);
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+.tasknotes-plugin .reminder-modal__semantic-btn {
+    border-color: var(--interactive-accent);
+    color: var(--interactive-accent);
+}
+
+.tasknotes-plugin .reminder-modal__semantic-btn:hover {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+/* Semantic type badge on reminder cards */
+.tasknotes-plugin .reminder-modal__semantic-badge {
+    display: inline-block;
+    font-size: var(--font-ui-smaller);
+    padding: 1px 6px;
+    border-radius: var(--radius-s);
+    background: var(--background-modifier-hover);
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+.tasknotes-plugin .reminder-modal__semantic-badge--persistent {
+    background: color-mix(in srgb, var(--interactive-accent) 15%, transparent);
+    color: var(--interactive-accent);
+}
+
+/* Semantic preset button subtitles */
+.tasknotes-plugin .reminder-modal__quick-btn-label-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+}
+
+.tasknotes-plugin .reminder-modal__quick-btn-subtitle {
+    font-size: 0.7em;
+    color: var(--text-muted);
+    font-weight: normal;
+    line-height: 1;
+}
+
+/* Expandable help text for anchor date groupings */
+.tasknotes-plugin .reminder-modal__help-text {
+    background: var(--background-secondary);
+    padding: 8px 12px;
+    border-radius: var(--radius-s);
+    border-left: 3px solid var(--interactive-accent);
+    margin-bottom: 8px;
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
+.tasknotes-plugin .reminder-modal__help-text summary {
+    cursor: pointer;
+    color: var(--text-normal);
+    font-weight: 500;
+    user-select: none;
+}
+
+.tasknotes-plugin .reminder-modal__help-text summary:hover {
+    color: var(--interactive-accent);
+}
+
+.tasknotes-plugin .reminder-modal__help-text[open] > div {
+    margin-top: 6px;
+}
+
 /* =====================================================================
    FORM STYLING - Match Task Modal Input Styles
    ===================================================================== */

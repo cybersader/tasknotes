@@ -498,6 +498,12 @@ export interface Reminder {
 
 	// Common properties
 	description?: string; // The notification message (optional, can be auto-generated)
+
+	// Semantic reminder metadata (Phase 8d)
+	semanticType?: import("./types/settings").ReminderSemanticType; // Behavioral intent
+	isVirtual?: boolean; // Generated at runtime from global rules, never persisted to frontmatter
+	repeatIntervalHours?: number; // For overdue/persistent: repeat interval in hours
+	sourceRuleId?: string; // ID of the GlobalReminderRule that generated this virtual reminder
 }
 
 // Timeblocking types

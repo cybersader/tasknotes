@@ -9194,6 +9194,81 @@ body:not(.is-mobile) .modal.mod-tasknotes .modal-button-container .mod-cta {
     font-weight: 500;
 }
 
+/* Semantic preset row */
+.tasknotes-plugin .reminder-modal__semantic-presets {
+    margin-top: var(--size-4-1);
+    padding-top: var(--size-4-1);
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+.tasknotes-plugin .reminder-modal__semantic-btn {
+    border-color: var(--interactive-accent);
+    color: var(--interactive-accent);
+}
+
+.tasknotes-plugin .reminder-modal__semantic-btn:hover {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+/* Semantic type badge on reminder cards */
+.tasknotes-plugin .reminder-modal__semantic-badge {
+    display: inline-block;
+    font-size: var(--font-ui-smaller);
+    padding: 1px 6px;
+    border-radius: var(--radius-s);
+    background: var(--background-modifier-hover);
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+.tasknotes-plugin .reminder-modal__semantic-badge--persistent {
+    background: color-mix(in srgb, var(--interactive-accent) 15%, transparent);
+    color: var(--interactive-accent);
+}
+
+/* Semantic preset button subtitles */
+.tasknotes-plugin .reminder-modal__quick-btn-label-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+}
+
+.tasknotes-plugin .reminder-modal__quick-btn-subtitle {
+    font-size: 0.7em;
+    color: var(--text-muted);
+    font-weight: normal;
+    line-height: 1;
+}
+
+/* Expandable help text for anchor date groupings */
+.tasknotes-plugin .reminder-modal__help-text {
+    background: var(--background-secondary);
+    padding: 8px 12px;
+    border-radius: var(--radius-s);
+    border-left: 3px solid var(--interactive-accent);
+    margin-bottom: 8px;
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
+.tasknotes-plugin .reminder-modal__help-text summary {
+    cursor: pointer;
+    color: var(--text-normal);
+    font-weight: 500;
+    user-select: none;
+}
+
+.tasknotes-plugin .reminder-modal__help-text summary:hover {
+    color: var(--interactive-accent);
+}
+
+.tasknotes-plugin .reminder-modal__help-text[open] > div {
+    margin-top: 6px;
+}
+
 /* =====================================================================
    FORM STYLING - Match Task Modal Input Styles
    ===================================================================== */
@@ -19317,6 +19392,327 @@ select.tasknotes-settings__card-input {
     color: var(--text-muted) !important;
 }
 
+/* =====================================================================
+   REMINDER PROPERTY CARD - Section Visual Separation
+   ===================================================================== */
+
+.tasknotes-settings__nested-cards .tn-reminders-section {
+    padding: 12px 16px;
+    background: var(--background-secondary);
+    border-radius: 0 6px 6px 0;
+    margin-top: 12px;
+}
+
+.tasknotes-settings__nested-cards .tn-reminders-section--default {
+    border-left: 3px solid var(--interactive-accent);
+}
+
+.tasknotes-settings__nested-cards .tn-reminders-section--global {
+    border-left: 3px solid var(--text-warning);
+}
+
+/* =====================================================================
+   REMINDER TIMELINE PREVIEW
+   ===================================================================== */
+
+.tasknotes-plugin .tn-reminder-timeline {
+    margin-bottom: 12px;
+    padding: 12px 16px;
+    background: var(--background-secondary);
+    border-radius: 8px;
+    border: 1px solid var(--background-modifier-border);
+}
+
+.tasknotes-plugin .tn-reminder-timeline__header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.tasknotes-plugin .tn-reminder-timeline__header-icon {
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+}
+
+.tasknotes-plugin .tn-reminder-timeline__area {
+    position: relative;
+    height: 80px;
+    margin: 0 8px;
+}
+
+.tasknotes-plugin .tn-reminder-timeline__line {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 2px;
+    background: var(--background-modifier-border);
+    transform: translateY(-50%);
+}
+
+.tasknotes-plugin .tn-reminder-timeline__anchor {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    transform: translateX(-50%);
+    z-index: 2;
+}
+
+.tasknotes-plugin .tn-reminder-timeline__anchor-pin {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--text-normal);
+    border: 2px solid var(--background-secondary);
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 2;
+}
+
+.tasknotes-plugin .tn-reminder-timeline__anchor-line {
+    position: absolute;
+    top: 15%;
+    bottom: 15%;
+    width: 1px;
+    background: var(--text-muted);
+    opacity: 0.5;
+}
+
+.tasknotes-plugin .tn-reminder-timeline__anchor-label {
+    position: absolute;
+    bottom: 0;
+    font-size: 0.8em;
+    font-weight: 600;
+    color: var(--text-normal);
+    white-space: nowrap;
+}
+
+/* Marker container — positioned absolutely on the timeline */
+.tasknotes-plugin .tn-reminder-timeline__marker {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    transform: translateX(-50%);
+    z-index: 1;
+}
+
+/* Dot — always centered on the line */
+.tasknotes-plugin .tn-reminder-timeline__marker-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%) rotate(45deg);
+    z-index: 1;
+}
+
+.tasknotes-plugin .tn-reminder-timeline__marker-dot--default {
+    background: var(--interactive-accent);
+}
+
+.tasknotes-plugin .tn-reminder-timeline__marker-dot--global {
+    background: var(--text-warning);
+}
+
+.tasknotes-plugin .tn-reminder-timeline__marker-dot--persistent {
+    border-radius: 50%;
+    transform: translateY(-50%);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--interactive-accent) 30%, transparent);
+}
+
+.tasknotes-plugin .tn-reminder-timeline__marker-dot--repeating::after {
+    content: "";
+    position: absolute;
+    left: 100%;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 16px;
+    height: 2px;
+    background: repeating-linear-gradient(
+        to right,
+        var(--text-warning) 0px,
+        var(--text-warning) 3px,
+        transparent 3px,
+        transparent 6px
+    );
+}
+
+/* Stem — vertical connector between dot and label */
+.tasknotes-plugin .tn-reminder-timeline__marker-stem {
+    position: absolute;
+    width: 1px;
+    opacity: 0.4;
+}
+
+.tasknotes-plugin .tn-reminder-timeline__marker-stem--default {
+    background: var(--interactive-accent);
+}
+
+.tasknotes-plugin .tn-reminder-timeline__marker-stem--global {
+    background: var(--text-warning);
+}
+
+/* Label */
+.tasknotes-plugin .tn-reminder-timeline__marker-label {
+    position: absolute;
+    font-size: 0.7em;
+    white-space: nowrap;
+    max-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tasknotes-plugin .tn-reminder-timeline__marker-label--default {
+    color: var(--interactive-accent);
+}
+
+.tasknotes-plugin .tn-reminder-timeline__marker-label--global {
+    color: var(--text-warning);
+}
+
+/* ABOVE the line — default markers: label top, stem from label to dot */
+.tasknotes-plugin .tn-reminder-timeline__marker--above .tn-reminder-timeline__marker-label {
+    top: 2px;
+}
+
+.tasknotes-plugin .tn-reminder-timeline__marker--above .tn-reminder-timeline__marker-stem {
+    top: 15px;
+    height: calc(50% - 19px);
+}
+
+/* BELOW the line — global markers: label bottom, stem from dot to label */
+.tasknotes-plugin .tn-reminder-timeline__marker--below .tn-reminder-timeline__marker-label {
+    bottom: 2px;
+    top: auto;
+}
+
+.tasknotes-plugin .tn-reminder-timeline__marker--below .tn-reminder-timeline__marker-stem {
+    top: calc(50% + 4px);
+    height: calc(50% - 19px);
+}
+
+.tasknotes-plugin .tn-reminder-timeline__direction-labels {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 4px;
+    font-size: 0.7em;
+    color: var(--text-faint);
+}
+
+.tasknotes-plugin .tn-reminder-timeline__legend {
+    display: flex;
+    gap: 16px;
+    margin-top: 8px;
+    font-size: 0.75em;
+    color: var(--text-muted);
+}
+
+.tasknotes-plugin .tn-reminder-timeline__legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.tasknotes-plugin .tn-reminder-timeline__legend-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+}
+
+.tasknotes-plugin .tn-reminder-timeline__legend-dot--default {
+    background: var(--interactive-accent);
+}
+
+.tasknotes-plugin .tn-reminder-timeline__legend-dot--global {
+    background: var(--text-warning);
+}
+
+.tasknotes-plugin .tn-reminder-timeline__empty {
+    font-size: 0.8em;
+    color: var(--text-faint);
+    font-style: italic;
+    text-align: center;
+    padding: 12px 0;
+}
+
+.tasknotes-plugin .tn-reminder-timeline__note {
+    font-size: 0.7em;
+    color: var(--text-faint);
+    font-style: italic;
+    margin-top: 4px;
+}
+
+/* Time jump break indicator ("⋯" gap in timeline) */
+.tasknotes-plugin .tn-reminder-timeline__break {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    background: var(--background-secondary);
+    padding: 0 4px;
+    font-size: 1.1em;
+    color: var(--text-faint);
+    letter-spacing: 2px;
+    z-index: 2;
+    pointer-events: none;
+    line-height: 1;
+}
+
+/* Click-to-scroll flash highlight for reminder cards */
+.tasknotes-plugin .tn-reminder-timeline__flash {
+    animation: tn-flash-highlight 1.2s ease-out;
+}
+
+@keyframes tn-flash-highlight {
+    0%   { box-shadow: 0 0 0 3px var(--interactive-accent); }
+    100% { box-shadow: none; }
+}
+
+/* Clickable marker cursor hint */
+.tasknotes-plugin .tn-reminder-timeline__marker[style*="cursor: pointer"]:hover .tn-reminder-timeline__marker-dot {
+    transform: scale(1.4);
+    transition: transform 0.15s ease;
+}
+.tasknotes-plugin .tn-reminder-timeline__marker[style*="cursor: pointer"]:hover .tn-reminder-timeline__marker-label {
+    text-decoration: underline;
+}
+
+/* Time scale ticks */
+.tasknotes-plugin .tn-reminder-timeline__tick {
+    position: absolute;
+    top: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    transform: translateX(-50%);
+    z-index: 0;
+}
+
+.tasknotes-plugin .tn-reminder-timeline__tick::before {
+    content: "";
+    width: 1px;
+    height: 8px;
+    background: var(--background-modifier-border);
+    border-left: 1px dotted var(--text-faint);
+    margin-top: 2px;
+}
+
+.tasknotes-plugin .tn-reminder-timeline__tick-label {
+    font-size: 0.6em;
+    color: var(--text-faint);
+    white-space: nowrap;
+    margin-top: 1px;
+}
+
 /* ===== WEBHOOK-SETTINGS.CSS ===== */
 /* 
  * Webhook Settings UI Styles
@@ -22029,6 +22425,7 @@ select.tasknotes-settings__card-input {
     display: flex;
     align-items: center;
     gap: 8px;
+    margin-bottom: var(--size-4-2);
 }
 
 .tn-pp-search-container {
@@ -22766,6 +23163,7 @@ select.tasknotes-settings__card-input {
     flex: 1;
     overflow-y: auto;
     padding-right: var(--size-4-1);
+    padding-bottom: 36px; /* Space for scroll-affordance gradient so it doesn't overlap content */
     position: relative;
 }
 
@@ -22788,7 +23186,7 @@ select.tasknotes-settings__card-input {
    ===================================================================== */
 
 .tn-bulk-modal__section {
-    margin-bottom: var(--size-4-3);
+    margin-bottom: var(--size-4-4);
 }
 
 .tn-bulk-modal__section-header {

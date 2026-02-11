@@ -223,6 +223,21 @@ export class ReminderModal extends Modal {
 			const primaryInfo = content.createDiv({ cls: "reminder-modal__reminder-primary" });
 			primaryInfo.textContent = this.formatReminderDisplayText(reminder);
 
+			// Semantic type badge
+			if (reminder.semanticType && reminder.semanticType !== "custom") {
+				const badgeLabels: Record<string, string> = {
+					"lead-time": "Lead time",
+					"due-date": "Persistent",
+					"overdue": "Repeating",
+					"start-date": "Start date",
+				};
+				const badge = content.createSpan({ cls: "reminder-modal__semantic-badge" });
+				badge.textContent = badgeLabels[reminder.semanticType] || reminder.semanticType;
+				if (reminder.semanticType === "due-date" || reminder.semanticType === "overdue") {
+					badge.addClass("reminder-modal__semantic-badge--persistent");
+				}
+			}
+
 			// Custom description (if any)
 			if (reminder.description) {
 				const description = content.createDiv({
@@ -307,6 +322,43 @@ export class ReminderModal extends Modal {
 				await this.addQuickReminder(anchor, offset, fullLabel);
 			};
 		});
+
+		// Semantic type preset buttons
+		const semanticPresets = quickActions.createDiv({ cls: "reminder-modal__semantic-presets" });
+		const semanticButtons = semanticPresets.createDiv({ cls: "reminder-modal__quick-buttons" });
+
+		const presets = [
+			{ label: "1d before", subtitle: "One-shot", semanticType: "lead-time" as const, offset: "-P1D", icon: "alarm-clock", description: "1 day before due" },
+			{ label: "On due", subtitle: "Persistent", semanticType: "due-date" as const, offset: "PT0S", icon: "calendar-check", description: "On due date (persistent)" },
+			{ label: "Overdue", subtitle: "Repeating", semanticType: "overdue" as const, offset: "P1D", icon: "alert-triangle", description: "Daily when overdue", repeatIntervalHours: 24 },
+		];
+
+		for (const preset of presets) {
+			const btn = semanticButtons.createEl("button", {
+				cls: "reminder-modal__quick-btn reminder-modal__semantic-btn",
+			});
+
+			const iconEl = btn.createSpan({ cls: "reminder-modal__quick-btn-icon" });
+			setIcon(iconEl, preset.icon);
+			const labelWrap = btn.createDiv({ cls: "reminder-modal__quick-btn-label-wrap" });
+			labelWrap.createSpan({ cls: "reminder-modal__quick-btn-label", text: preset.label });
+			labelWrap.createSpan({ cls: "reminder-modal__quick-btn-subtitle", text: preset.subtitle });
+			setTooltip(btn, preset.description);
+
+			btn.onclick = async () => {
+				const reminder: Reminder = {
+					id: `rem_${Date.now()}`,
+					type: "relative",
+					relatedTo: anchor,
+					offset: preset.offset,
+					description: preset.description,
+					semanticType: preset.semanticType,
+					...(preset.repeatIntervalHours ? { repeatIntervalHours: preset.repeatIntervalHours } : {}),
+				};
+				await this.addReminder(reminder);
+				new Notice(`Added ${preset.description} reminder`);
+			};
+		}
 	}
 
 	private async addQuickReminder(
@@ -410,6 +462,16 @@ export class ReminderModal extends Modal {
 				});
 		});
 
+		// Expandable help text for anchor date groupings
+		const anchorHelp = relativeContainer.createEl("details", { cls: "reminder-modal__help-text" });
+		anchorHelp.createEl("summary", { text: "What are these date groups?" });
+		const anchorHelpBody = anchorHelp.createDiv();
+		anchorHelpBody.innerHTML = [
+			"\u2022 <strong>Core</strong> \u2014 Built-in date fields (Due, Scheduled, Start)",
+			"\u2022 <strong>Custom properties</strong> \u2014 Date fields configured in Settings \u2192 Task Properties",
+			"\u2022 <strong>Discovered</strong> \u2014 Date fields found in this task but not configured",
+		].join("<br>");
+
 		new Setting(relativeContainer).setName("Relative to").addDropdown((dropdown) => {
 			const anchors = getAvailableDateAnchors(this.plugin, this.task);
 
@@ -434,7 +496,7 @@ export class ReminderModal extends Modal {
 			// Add settings-defined anchors with prefix
 			if (settingsAnchors.length > 0) {
 				// Use a disabled separator option to visually group
-				dropdown.addOption("__sep_settings__", "\u2500\u2500 User fields \u2500\u2500");
+				dropdown.addOption("__sep_settings__", "\u2500\u2500 Custom properties (from settings) \u2500\u2500");
 				for (const anchor of settingsAnchors) {
 					dropdown.addOption(anchor.key, formatLabel(anchor));
 				}
@@ -442,7 +504,7 @@ export class ReminderModal extends Modal {
 
 			// Add discovered anchors with prefix
 			if (discoveredAnchors.length > 0) {
-				dropdown.addOption("__sep_discovered__", "\u2500\u2500 Discovered \u2500\u2500");
+				dropdown.addOption("__sep_discovered__", "\u2500\u2500 Discovered (not configured) \u2500\u2500");
 				for (const anchor of discoveredAnchors) {
 					dropdown.addOption(anchor.key, formatLabel(anchor));
 				}
