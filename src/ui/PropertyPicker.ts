@@ -280,13 +280,26 @@ export function createPropertyPicker(options: PropertyPickerOptions): {
 				text: `${entry.fileCount} file${entry.fileCount !== 1 ? "s" : ""}`,
 			});
 
-			// Compatibility warning
+			// Type consistency warning — some files have a different type for this property
 			if (!entry.isConsistent) {
+				// Build a human-readable breakdown: e.g., "18 date, 1 text"
+				const breakdownParts: string[] = [];
+				for (const [type, count] of Object.entries(entry.typeBreakdown)) {
+					breakdownParts.push(`${count} ${type}`);
+				}
+				const breakdownText = breakdownParts.join(", ");
+				const tooltipText =
+					`${entry.mismatchedFiles.length} file${entry.mismatchedFiles.length !== 1 ? "s" : ""} ` +
+					`use a different type than ${entry.dominantType}.\n` +
+					`Types found: ${breakdownText}.\n` +
+					`Click to fix.`;
+
 				const warningContainer = item.createSpan({ cls: "tn-pp-item-warning" });
+				warningContainer.title = tooltipText;
 				const warningIcon = warningContainer.createSpan({ cls: "tn-pp-warning-icon" });
 				setIcon(warningIcon, "alert-triangle");
 				warningContainer.createSpan({
-					text: `${entry.mismatchedFiles.length} mismatch`,
+					text: `${entry.mismatchedFiles.length} mixed type`,
 					cls: "tn-pp-warning-text",
 				});
 

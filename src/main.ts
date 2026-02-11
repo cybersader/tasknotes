@@ -714,6 +714,18 @@ export default class TaskNotesPlugin extends Plugin {
 					console.debug("[TaskNotes][Bases] Registration failed:", e);
 				}
 			}
+
+			// Start universal Bases toolbar injector (adds buttons to non-TaskNotes views)
+			if (this.settings?.enableUniversalBasesButtons) {
+				try {
+					const { BasesToolbarInjector } = await import("./bases/BasesToolbarInjector");
+					const injector = new BasesToolbarInjector(this);
+					injector.start();
+					this.register(() => injector.stop());
+				} catch (e) {
+					console.debug("[TaskNotes][Bases] Universal toolbar injector failed:", e);
+				}
+			}
 		} catch (error) {
 			console.error("Error during post-layout initialization:", error);
 		}

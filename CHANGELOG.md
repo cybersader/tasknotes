@@ -4,6 +4,115 @@ All notable changes to this TaskNotes fork will be documented in this file.
 
 This fork (`cybersader/tasknotes`) adds bulk tasking, notifications, and other enhancements to the upstream [TaskNotes](https://github.com/callumalpass/tasknotes) plugin.
 
+## [4.3.33] - 2026-02-11
+
+### Added
+- **Universal Bases view support**: "Bulk tasking" button now appears on ALL Obsidian Bases views (Table, Board, etc.), not just TaskNotes-registered view types
+  - New `BasesToolbarInjector` service detects any `.bases-toolbar` and injects the button
+  - Native "New" button preserved on non-TaskNotes views (creates normal files as expected)
+  - Automatic cleanup when switching between TaskNotes and non-TaskNotes view types
+  - New setting: "Universal view buttons" in Features > Bases views section
+- **CHANGELOG backfill**: Added real release notes for versions 4.3.24-4.3.32 (previously only had stubs)
+- **CHANGELOG enforcement**: PostToolUse hook warns if CHANGELOG.md is missing an entry for the current version during commits/pushes
+- **View Settings UX**: Added to roadmap as future enhancement
+
+### Changed
+- **PropertyPicker "mismatch" badge**: Renamed to "mixed type" with hover tooltip explaining which files have inconsistent property types and how to fix them
+- **Edit Task modal PropertyPicker**: Search now appears above the property fields list (matching the bulk modal layout)
+
+### Fixed
+- **Toolbar buttons disappearing after view switch**: Buttons no longer vanish when switching Table → Task List → back to Table within the same .base file. Root cause: stale WeakSet caching prevented re-injection after Bases reused toolbar DOM elements.
+
+## [4.3.32] - 2026-02-11
+
+### Added
+- **Per-task field overrides**: Custom frontmatter properties (e.g., `deadline`, `review_date`) can now replace core date fields (due, scheduled, completedDate, dateCreated) on a per-task basis
+  - Tracking properties (`tnDueDateProp`, `tnScheduledDateProp`, etc.) written to task frontmatter
+  - FieldMapper resolves overrides before falling back to global settings mapping
+  - New utility: `fieldOverrideUtils.ts` for constants, read/write helpers
+- **Expandable mapping rows**: Date-type custom properties in Edit Task and Bulk modals show expandable "Maps to" dropdown
+  - Inline badge (e.g., "Due") visible at a glance when mapping is set
+  - Conflict detection when both custom and default property exist
+
+### Fixed
+- **Bulk modal custom properties persistence**: Property rows no longer disappear when adding new properties. Root cause: active list was inside PropertyPicker's container (which calls `container.empty()` on refresh). Fixed by making active list a sibling in the parent section.
+
+## [4.3.31] - 2026-02-11
+
+### Changed
+- **Safe hide button**: "x" remove button on custom properties changed to eye-off "Hide" button that only hides the property from the modal view, does NOT delete from frontmatter
+- **Consistent naming**: Renamed "Additional properties" to "Custom properties" across Edit Task modal to match bulk modal terminology
+
+## [4.3.30] - 2026-02-10
+
+### Fixed
+- **Custom properties in Reminder "Relative to" dropdown**: Pass task path and userFields as customProperties to ReminderContextMenu so `getAvailableDateAnchors()` can discover custom date properties
+- Added `getTaskPath()` override pattern for TaskEditModal
+
+## [4.3.29] - 2026-02-10
+
+### Fixed
+- **Search input padding override**: Added inline style + `!important` to ensure PropertyPicker search input padding-left isn't overridden by Obsidian's built-in input styles (CSS specificity issue)
+
+## [4.3.28] - 2026-02-10
+
+### Added
+- **Reminder origin indicators**: "Relative to" dropdown groups anchors by origin (Core / User fields / Discovered)
+  - `DateAnchor` interface gains `origin` field for tracking property source
+- **Scroll affordance gradient**: Bottom fade gradient on bulk modal body
+
+### Changed
+- CUSTOM PROPERTIES separated into its own section with proper spacing from BULK VALUES
+- Search input padding refined (34px + box-sizing)
+- Custom Properties help text expanded with examples
+
+## [4.3.27] - 2026-02-10
+
+### Fixed
+- **isTask in Additional Properties**: Excluded `isTask`/`identityType` properties from Additional Properties (buildSkipKeys now includes taskPropertyName + identityTypePropertyName)
+- **Search input overlap**: Increased padding and vertically centered magnifying glass icon in PropertyPicker
+
+### Changed
+- Replaced confusing braces icon with CUSTOM PROPERTIES section heading + help tooltip in bulk modal
+- Renamed "All tasks" to "Vault-wide" with tooltip explaining scope
+
+## [4.3.26] - 2026-02-10
+
+### Fixed
+- **Duplicate date anchors**: Skip FieldMapper-mapped frontmatter names in date anchor discovery (prevents duplicate "Due date" when internal "due" maps to "due_date")
+- **Bulk modal braces icon**: Added missing icon to `renderActionBarInto()` (appeared after mode switch)
+- **Additional Properties styling**: Added separator + uppercase label for cleaner section appearance
+
+### Added
+- `buildSkipKeys()` shared helper for consistent property exclusion across modules
+
+## [4.3.25] - 2026-02-10
+
+### Added
+- **PropertyPicker auto-discovery**: Custom frontmatter properties in Edit Task, Task Creation, and Bulk modals without manual settings registration
+  - Searchable PropertyPicker UI with type-ahead filtering
+  - Type detection (text, number, date, boolean, list) from existing frontmatter values
+  - Vault-wide scanning for property discovery across task files
+  - Type conversion when adding properties to tasks
+  - New utility: `propertyDiscoveryUtils.ts` for centralized property scanning
+  - New component: `PropertyPicker.ts` with CSS in `styles/property-picker.css`
+
+## [4.3.24] - 2026-02-09
+
+### Fixed
+- Reminder anchor dropdown now uses auto-discovered date properties correctly
+- Context menu event registration in TaskListView
+- Normalize YAML Date objects in dateAnchorUtils (Obsidian's YAML parser converts bare dates to JS Date objects)
+
+### Changed
+- Removed dead `taskTypeValue` from settings type (was unused code)
+- Default `identityTypePropertyName` changed to `tnType` (avoids conflicts with other plugins)
+
+### Added
+- WSL2 auto-detection for Playwright E2E launcher
+- Development/Testing/E2E sections added to README
+- Settings cross-link navigation in task properties and shared vault tabs
+
 ## [4.3.23] - 2026-02-09
 
 ### Added

@@ -987,6 +987,18 @@ export function renderFeaturesTab(
 			);
 
 			group.addSetting((setting) =>
+				configureToggleSetting(setting, {
+					name: "Universal view buttons",
+					desc: "Show New Task and Bulk tasking buttons on all Bases views, not just TaskNotes view types (Table, Board, etc.)",
+					getValue: () => plugin.settings.enableUniversalBasesButtons,
+					setValue: async (value: boolean) => {
+						plugin.settings.enableUniversalBasesButtons = value;
+						save();
+					},
+				})
+			);
+
+			group.addSetting((setting) =>
 				setting
 					.setName("Default bulk mode")
 					.setDesc("Choose whether the bulk tasking modal defaults to generating new tasks or converting existing notes")

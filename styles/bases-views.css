@@ -21,6 +21,17 @@
 	display: none;
 }
 
+/* ================================================
+   UNIVERSAL INJECTED BUTTONS
+   Visible on all Bases views (Table, Board, etc.)
+   ================================================ */
+
+/* Universal injected buttons are always visible (not gated by .tasknotes-view-active) */
+.tn-bases-new-task-btn.tn-universal-injected,
+.tn-bases-bulk-create-btn.tn-universal-injected {
+	display: flex;
+}
+
 /* Bases TaskNotes List View Container */
 .tn-bases-tasknotes-list {
     display: flex;

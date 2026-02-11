@@ -509,15 +509,15 @@ export class TaskEditModal extends TaskModal {
 			cls: "detail-label-section",
 		});
 
-		// Editable fields for discovered properties
+		// PropertyPicker for adding more (above the fields list, matching bulk modal layout)
+		const pickerContainer = sectionContainer.createDiv("discovered-properties-picker");
+
+		// Editable fields for discovered properties (below the picker)
 		const fieldsContainer = sectionContainer.createDiv("discovered-properties-fields");
 
 		if (hasDiscovered) {
 			this.renderDiscoveredPropertyFields(fieldsContainer, configuredKeys);
 		}
-
-		// PropertyPicker for adding more
-		const pickerContainer = sectionContainer.createDiv("discovered-properties-picker");
 		this.propertyPickerExcludeKeys = new Set([...configuredKeys, ...this.discoveredProperties.map(p => p.key)]);
 		this.propertyPickerInstance = createPropertyPicker({
 			container: pickerContainer,
