@@ -1,5 +1,6 @@
 import type TaskNotesPlugin from "../main";
 import { TFile } from "obsidian";
+import { TRACKING_PROP_NAMES } from "./fieldOverrideUtils";
 
 /**
  * Supported property types for discovered frontmatter fields.
@@ -71,6 +72,8 @@ export const CORE_PROPERTY_KEYS = new Set([
 	"publish", "permalink", "description",
 	// Obsidian internal / metadataCache
 	"position",
+	// Per-task field override tracking properties
+	"tnDueDateProp", "tnScheduledDateProp", "tnCompletedDateProp", "tnCreatedDateProp",
 ]);
 
 /**

@@ -1,5 +1,5 @@
 /* eslint-disable no-console, @typescript-eslint/no-non-null-assertion */
-import { App, Notice, TFile, TAbstractFile, Setting } from "obsidian";
+import { App, Notice, TFile, TAbstractFile, Setting, setIcon, setTooltip } from "obsidian";
 import TaskNotesPlugin from "../main";
 import { TaskModal } from "./TaskModal";
 import { TaskDependency, TaskInfo } from "../types";
@@ -35,6 +35,12 @@ import {
 	normalizeDateValue,
 } from "../utils/propertyDiscoveryUtils";
 import { createPropertyPicker } from "../ui/PropertyPicker";
+import {
+	FIELD_OVERRIDE_PROPS,
+	OVERRIDABLE_FIELD_LABELS,
+	readFieldOverrides,
+	type OverridableField,
+} from "../utils/fieldOverrideUtils";
 
 export interface TaskEditOptions {
 	task: TaskInfo;
@@ -48,6 +54,9 @@ export class TaskEditModal extends TaskModal {
 	private editModalKeyboardHandler: ((e: KeyboardEvent) => void) | null = null;
 	private discoveredProperties: DiscoveredProperty[] = [];
 	private propertyPickerInstance: { refresh: () => void; destroy: () => void } | null = null;
+	private propertyPickerExcludeKeys: Set<string> | null = null;
+	/** Per-task field overrides: maps internal field key (e.g., "due") to custom property name (e.g., "deadline") */
+	private fieldOverrides: Record<string, string> = {};
 	// Changed from Set to array for consistency with other state management
 	private completedInstancesChanges: string[] = [];
 	private calendarWrapper: HTMLElement | null = null;
@@ -194,6 +203,9 @@ export class TaskEditModal extends TaskModal {
 			for (const prop of this.discoveredProperties) {
 				this.userFields[prop.key] = prop.value;
 			}
+
+			// Initialize per-task field overrides from existing tracking properties
+			this.fieldOverrides = readFieldOverrides(frontmatter);
 		} catch (error) {
 			console.error("Error initializing user fields:", error);
 		}
@@ -506,11 +518,12 @@ export class TaskEditModal extends TaskModal {
 
 		// PropertyPicker for adding more
 		const pickerContainer = sectionContainer.createDiv("discovered-properties-picker");
+		this.propertyPickerExcludeKeys = new Set([...configuredKeys, ...this.discoveredProperties.map(p => p.key)]);
 		this.propertyPickerInstance = createPropertyPicker({
 			container: pickerContainer,
 			plugin: this.plugin,
 			currentFilePath: this.task.path,
-			excludeKeys: new Set([...configuredKeys, ...this.discoveredProperties.map(p => p.key)]),
+			excludeKeys: this.propertyPickerExcludeKeys,
 			onSelect: (key: string, type: PropertyType, value?: any) => {
 				// Set default value based on type
 				let defaultValue: any = value ?? null;
@@ -538,7 +551,9 @@ export class TaskEditModal extends TaskModal {
 					value: defaultValue,
 				});
 
-				// Re-render the fields
+				// Update picker exclusions and re-render
+				this.propertyPickerExcludeKeys?.add(key);
+				this.propertyPickerInstance?.refresh();
 				fieldsContainer.empty();
 				this.renderDiscoveredPropertyFields(fieldsContainer, configuredKeys);
 			},
@@ -552,74 +567,272 @@ export class TaskEditModal extends TaskModal {
 		for (const prop of this.discoveredProperties) {
 			if (configuredKeys.has(prop.key)) continue;
 
-			const setting = new Setting(container).setName(prop.displayName);
+			const isDate = prop.type === "date";
 
-			// Add hide button (hides from this modal view, does NOT delete from file)
-			setting.addExtraButton((btn) => {
-				btn.setIcon("eye-off")
-					.setTooltip("Hide from this view (does not delete from file)")
-					.onClick(() => {
-						// Remove from discovered list so it's hidden, but do NOT set to null
-						// (setting to null would delete the property from frontmatter on save)
-						delete this.userFields[prop.key];
-						const idx = this.discoveredProperties.findIndex(p => p.key === prop.key);
-						if (idx >= 0) this.discoveredProperties.splice(idx, 1);
-						// Re-render
-						container.empty();
-						this.renderDiscoveredPropertyFields(container, configuredKeys);
-					});
+			// Build the expandable row wrapper
+			const row = container.createDiv({ cls: "tn-prop-row" });
+
+			// Check if this property currently maps to a core field
+			const currentMapping = this.findMappingForProperty(prop.key);
+			if (currentMapping) {
+				row.classList.add("tn-prop-row--expanded");
+			}
+
+			// ── Header row ──────────────────────────────────
+			const header = row.createDiv({ cls: "tn-prop-row__header" });
+
+			// Expand toggle (only for date properties)
+			if (isDate) {
+				const toggle = header.createDiv({ cls: "tn-prop-row__expand-toggle" });
+				const svgNS = "http://www.w3.org/2000/svg";
+				const chevronSvg = document.createElementNS(svgNS, "svg");
+				chevronSvg.setAttribute("width", "12");
+				chevronSvg.setAttribute("height", "12");
+				chevronSvg.setAttribute("viewBox", "0 0 24 24");
+				chevronSvg.setAttribute("fill", "none");
+				chevronSvg.setAttribute("stroke", "currentColor");
+				chevronSvg.setAttribute("stroke-width", "2");
+				chevronSvg.setAttribute("stroke-linecap", "round");
+				chevronSvg.setAttribute("stroke-linejoin", "round");
+				const path = document.createElementNS(svgNS, "path");
+				path.setAttribute("d", "M9 18l6-6-6-6");
+				chevronSvg.appendChild(path);
+				toggle.appendChild(chevronSvg);
+				toggle.addEventListener("click", () => {
+					row.classList.toggle("tn-prop-row--expanded");
+				});
+			}
+
+			// Property key label
+			header.createDiv({ cls: "tn-prop-row__key", text: prop.displayName });
+
+			// Type badge
+			header.createDiv({ cls: "tn-prop-row__type-badge", text: prop.type });
+
+			// Value input
+			const valueContainer = header.createDiv({ cls: "tn-prop-row__value" });
+			this.createPropertyValueInput(valueContainer, prop);
+
+			// Mapping badge (only if date + has mapping)
+			if (isDate && currentMapping) {
+				const badge = header.createDiv({ cls: "tn-prop-row__mapping-badge" });
+				const pinSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+				pinSvg.setAttribute("width", "10");
+				pinSvg.setAttribute("height", "10");
+				pinSvg.setAttribute("viewBox", "0 0 24 24");
+				pinSvg.setAttribute("fill", "none");
+				pinSvg.setAttribute("stroke", "currentColor");
+				pinSvg.setAttribute("stroke-width", "2");
+				const pinPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+				pinPath.setAttribute("d", "M12 17v5M9 2h6l-1 7h4l-8 8 2-7H8l1-8z");
+				pinSvg.appendChild(pinPath);
+				badge.appendChild(pinSvg);
+				badge.createSpan({ text: OVERRIDABLE_FIELD_LABELS[currentMapping] });
+			}
+
+			// Remove button
+			const removeBtn = header.createDiv({ cls: "tn-prop-row__remove" });
+			const removeSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+			removeSvg.setAttribute("width", "14");
+			removeSvg.setAttribute("height", "14");
+			removeSvg.setAttribute("viewBox", "0 0 24 24");
+			removeSvg.setAttribute("fill", "none");
+			removeSvg.setAttribute("stroke", "currentColor");
+			removeSvg.setAttribute("stroke-width", "2");
+			const removePath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+			removePath.setAttribute("d", "M18 6L6 18M6 6l12 12");
+			removeSvg.appendChild(removePath);
+			removeBtn.appendChild(removeSvg);
+			removeBtn.title = "Hide from this view (does not delete from file)";
+			removeBtn.addEventListener("click", () => {
+				// Clear any mapping this property had
+				this.clearMappingForProperty(prop.key);
+				// Remove from discovered list — does NOT delete from file
+				delete this.userFields[prop.key];
+				const idx = this.discoveredProperties.findIndex(p => p.key === prop.key);
+				if (idx >= 0) this.discoveredProperties.splice(idx, 1);
+				// Update picker exclusions so property reappears in search
+				this.propertyPickerExcludeKeys?.delete(prop.key);
+				this.propertyPickerInstance?.refresh();
+				container.empty();
+				this.renderDiscoveredPropertyFields(container, configuredKeys);
 			});
 
-			switch (prop.type) {
-				case "text":
-					setting.addText((text) => {
-						text.setValue(this.userFields[prop.key]?.toString() || "")
-							.onChange((value) => {
-								this.userFields[prop.key] = value;
+			// ── Mapping panel (only for date properties) ────
+			if (isDate) {
+				const panel = row.createDiv({ cls: "tn-prop-row__mapping-panel" });
+				const mappingRow = panel.createDiv({ cls: "tn-prop-row__mapping-row" });
+				mappingRow.createDiv({ cls: "tn-prop-row__mapping-label", text: "Maps to:" });
+
+				const select = mappingRow.createEl("select", { cls: "tn-prop-row__mapping-dropdown" });
+
+				const mappingHelp = mappingRow.createSpan({ cls: "tn-prop-row__mapping-help" });
+				setIcon(mappingHelp, "help-circle");
+				setTooltip(mappingHelp, "Use this custom date property as the task's due, scheduled, completed, or created date. The mapping is saved per-task. Global default mappings can be configured in Settings \u2192 Task properties.");
+
+				// "None" option
+				const noneOpt = select.createEl("option", { value: "", text: "None (custom only)" });
+				if (!currentMapping) noneOpt.selected = true;
+
+				// One option per overridable field
+				for (const [fieldKey, label] of Object.entries(OVERRIDABLE_FIELD_LABELS)) {
+					const opt = select.createEl("option", { value: fieldKey, text: label });
+					if (currentMapping === fieldKey) opt.selected = true;
+
+					// Disable if another property already maps to this field
+					const existingProp = this.findPropertyForMapping(fieldKey);
+					if (existingProp && existingProp !== prop.key) {
+						opt.disabled = true;
+						opt.text = `${label} (used by ${existingProp})`;
+					}
+				}
+
+				select.addEventListener("change", () => {
+					const newField = select.value;
+
+					// Clear old mapping for this property
+					this.clearMappingForProperty(prop.key);
+
+					// Set new mapping
+					if (newField) {
+						this.fieldOverrides[newField] = prop.key;
+					}
+
+					// Re-render to update badges and dropdown states
+					container.empty();
+					this.renderDiscoveredPropertyFields(container, configuredKeys);
+				});
+
+				// ── Conflict warning ────────────────────────
+				if (currentMapping) {
+					const globalPropName = this.plugin.fieldMapper.toUserField(
+						currentMapping as any
+					);
+					// Check if the default property also exists in frontmatter
+					const file = this.app.vault.getAbstractFileByPath(this.task.path);
+					if (file instanceof TFile) {
+						const cache = this.app.metadataCache.getFileCache(file);
+						const fm = cache?.frontmatter;
+						if (
+							fm &&
+							globalPropName !== prop.key &&
+							fm[globalPropName] !== undefined
+						) {
+							const conflict = panel.createDiv({
+								cls: "tn-prop-row__conflict",
 							});
-					});
-					break;
-				case "date":
-					setting.addText((text) => {
-						text.setValue(this.userFields[prop.key] || "")
-							.onChange((value) => {
-								this.userFields[prop.key] = value;
+							conflict.createSpan({
+								cls: "tn-prop-row__conflict-icon",
+								text: "\u26A0",
 							});
-						text.inputEl.type = "date";
-					});
-					break;
-				case "number":
-					setting.addText((text) => {
-						text.setValue(this.userFields[prop.key]?.toString() || "")
-							.onChange((value) => {
-								const numValue = parseFloat(value);
-								this.userFields[prop.key] = isNaN(numValue) ? null : numValue;
+							conflict.createSpan({
+								cls: "tn-prop-row__conflict-text",
+								text: `Both '${prop.key}' and '${globalPropName}' exist. Using '${prop.key}' (custom).`,
 							});
-						text.inputEl.type = "number";
-					});
-					break;
-				case "boolean":
-					setting.addToggle((toggle) => {
-						toggle.setValue(this.userFields[prop.key] === true)
-							.onChange((value) => {
-								this.userFields[prop.key] = value;
+							const removeAction = conflict.createEl("a", {
+								cls: "tn-prop-row__conflict-action",
+								text: `Remove '${globalPropName}'`,
 							});
-					});
-					break;
-				case "list":
-					setting.addText((text) => {
-						const currentValue = this.userFields[prop.key];
-						const displayValue = Array.isArray(currentValue)
-							? currentValue.join(", ")
-							: currentValue || "";
-						text.setValue(displayValue).onChange((value) => {
-							this.userFields[prop.key] = value
-								.split(",")
-								.map((v) => v.trim())
-								.filter((v) => v.length > 0);
-						});
-					});
-					break;
+							removeAction.addEventListener("click", (e) => {
+								e.preventDefault();
+								// Mark the default property for deletion on save
+								this.userFields[globalPropName] = null;
+								// Re-render to remove the conflict warning
+								container.empty();
+								this.renderDiscoveredPropertyFields(
+									container,
+									configuredKeys
+								);
+							});
+						}
+					}
+				}
+			}
+		}
+	}
+
+	/**
+	 * Create a type-appropriate value input inside a container element.
+	 */
+	private createPropertyValueInput(container: HTMLElement, prop: DiscoveredProperty): void {
+		switch (prop.type) {
+			case "date": {
+				const input = container.createEl("input", { type: "date" });
+				input.value = this.userFields[prop.key] || "";
+				input.addEventListener("change", () => {
+					this.userFields[prop.key] = input.value;
+				});
+				break;
+			}
+			case "number": {
+				const input = container.createEl("input", { type: "number" });
+				input.value = this.userFields[prop.key]?.toString() || "";
+				input.addEventListener("change", () => {
+					const numValue = parseFloat(input.value);
+					this.userFields[prop.key] = isNaN(numValue) ? null : numValue;
+				});
+				break;
+			}
+			case "boolean": {
+				const input = container.createEl("input", { type: "checkbox" });
+				input.checked = this.userFields[prop.key] === true;
+				input.addEventListener("change", () => {
+					this.userFields[prop.key] = input.checked;
+				});
+				break;
+			}
+			case "list": {
+				const input = container.createEl("input", { type: "text" });
+				const currentValue = this.userFields[prop.key];
+				input.value = Array.isArray(currentValue) ? currentValue.join(", ") : currentValue || "";
+				input.placeholder = "Comma-separated values";
+				input.addEventListener("change", () => {
+					this.userFields[prop.key] = input.value
+						.split(",")
+						.map((v) => v.trim())
+						.filter((v) => v.length > 0);
+				});
+				break;
+			}
+			default: {
+				const input = container.createEl("input", { type: "text" });
+				input.value = this.userFields[prop.key]?.toString() || "";
+				input.addEventListener("change", () => {
+					this.userFields[prop.key] = input.value;
+				});
+				break;
+			}
+		}
+	}
+
+	/**
+	 * Find which core field (if any) a custom property is mapped to.
+	 * Returns the OverridableField key or null.
+	 */
+	private findMappingForProperty(propertyKey: string): OverridableField | null {
+		for (const [fieldKey, propName] of Object.entries(this.fieldOverrides)) {
+			if (propName === propertyKey) {
+				return fieldKey as OverridableField;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Find which custom property (if any) is mapped to a given core field.
+	 * Returns the property key or null.
+	 */
+	private findPropertyForMapping(fieldKey: string): string | null {
+		return this.fieldOverrides[fieldKey] || null;
+	}
+
+	/**
+	 * Clear any mapping that points to a given property key.
+	 */
+	private clearMappingForProperty(propertyKey: string): void {
+		for (const [fieldKey, propName] of Object.entries(this.fieldOverrides)) {
+			if (propName === propertyKey) {
+				delete this.fieldOverrides[fieldKey];
 			}
 		}
 	}
@@ -1105,6 +1318,11 @@ export class TaskEditModal extends TaskModal {
 			(changes as any).customFrontmatter = userFieldsChanges;
 		}
 
+		// Include field overrides so FieldMapper writes date fields to correct properties
+		if (Object.keys(this.fieldOverrides).length > 0) {
+			changes.fieldOverrides = { ...this.fieldOverrides };
+		}
+
 		// Always update modified timestamp if there are changes
 		if (Object.keys(changes).length > 0) {
 			changes.dateModified = getCurrentTimestamp();
@@ -1172,6 +1390,18 @@ export class TaskEditModal extends TaskModal {
 				// This is a new property added during this edit session
 				if (value !== null && value !== undefined && value !== "") {
 					userFieldsChanges[key] = value;
+				}
+			}
+
+			// Write per-task field override tracking properties (tnDueDateProp, etc.)
+			// Compare current overrides with what's in frontmatter to detect changes
+			const originalOverrides = readFieldOverrides(frontmatter);
+			for (const [internalKey, trackingProp] of Object.entries(FIELD_OVERRIDE_PROPS)) {
+				const newPropName = this.fieldOverrides[internalKey] || null;
+				const oldPropName = originalOverrides[internalKey] || null;
+				if (newPropName !== oldPropName) {
+					// Write the tracking property (or null to remove it)
+					userFieldsChanges[trackingProp] = newPropName;
 				}
 			}
 		} catch (error) {

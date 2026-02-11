@@ -465,6 +465,9 @@ export interface TaskInfo {
 	isBlocked?: boolean; // True if any blocking dependency is incomplete
 	isBlocking?: boolean; // True if this task blocks at least one other task
 	details?: string; // Optional task body content
+	/** Per-task overrides: maps internal field key to custom frontmatter property name.
+	 *  e.g., { due: "deadline", scheduled: "review_date" } */
+	fieldOverrides?: Record<string, string>;
 }
 
 export interface TaskCreationData extends Partial<TaskInfo> {

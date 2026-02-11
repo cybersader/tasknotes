@@ -20,6 +20,11 @@ import { ReminderModal } from "../modals/ReminderModal";
 import { Reminder, TaskInfo } from "../types";
 import { type PropertyType } from "../utils/propertyDiscoveryUtils";
 import { createPropertyPicker } from "../ui/PropertyPicker";
+import {
+	FIELD_OVERRIDE_PROPS,
+	OVERRIDABLE_FIELD_LABELS,
+	type OverridableField,
+} from "../utils/fieldOverrideUtils";
 
 type BulkMode = "generate" | "convert";
 
@@ -66,9 +71,12 @@ export class BulkTaskCreationModal extends Modal {
 	private bulkStatus = "";
 	private bulkPriority = "";
 	private bulkReminders: Reminder[] = []; // Stackable reminders via ReminderModal
-	private bulkCustomProperties: Record<string, any> = {}; // Custom properties from PropertyPicker
+	private bulkCustomProperties: Record<string, { type: PropertyType; value: any }> = {}; // Custom properties from PropertyPicker
+	private bulkFieldOverrides: Record<string, string> = {}; // Per-task field overrides (e.g., { due: "deadline" })
 	private propertyPickerInstance: { refresh: () => void; destroy: () => void } | null = null;
-	private customPropsPanel: HTMLElement | null = null;
+	private customPropsPanel: HTMLElement | null = null; // Picker lives here (createPropertyPicker takes it over)
+	private activeListEl: HTMLElement | null = null; // Property rows — sibling of panel, safe from picker's container.empty()
+	private excludeKeysSet = new Set<string>(); // Shared mutable set — picker's refresh() reuses it
 
 	// UI element references
 	private bodyContainer: HTMLElement | null = null;
@@ -383,31 +391,29 @@ export class BulkTaskCreationModal extends Modal {
 		setIcon(helpIcon, "help-circle");
 		setTooltip(helpIcon, "Add extra frontmatter fields (e.g., review_date, client, effort_hours) to every item in this batch. Search existing properties used across your task files, or create new ones. These are written as YAML frontmatter on each file.");
 
+		// PropertyPicker container — createPropertyPicker takes this over entirely
+		// (it calls container.empty() + container.addClass("tn-property-picker"))
 		this.customPropsPanel = parentSection.createDiv({ cls: "tn-bulk-modal__custom-props-panel" });
+
+		// Active property rows — SIBLING of the picker panel in parentSection,
+		// completely safe from createPropertyPicker's container.empty() call
+		this.activeListEl = parentSection.createDiv({ cls: "tn-bulk-modal__custom-props-active" });
 
 		// Create PropertyPicker with item paths from current view
 		const itemPaths = this.items
 			.map(item => item.path)
 			.filter((p): p is string => !!p);
 
-		const pickerContainer = this.customPropsPanel.createDiv();
+		// Sync the shared excludeKeys set with current state
+		this.syncExcludeKeys();
+
 		this.propertyPickerInstance = createPropertyPicker({
-			container: pickerContainer,
+			container: this.customPropsPanel,
 			plugin: this.plugin,
 			itemPaths,
+			excludeKeys: this.excludeKeysSet,
 			onSelect: (key: string, type: PropertyType, value?: any) => {
-				let defaultValue: any = value ?? null;
-				if (defaultValue === null) {
-					switch (type) {
-						case "date": defaultValue = ""; break;
-						case "number": defaultValue = 0; break;
-						case "boolean": defaultValue = false; break;
-						case "list": defaultValue = []; break;
-						default: defaultValue = ""; break;
-					}
-				}
-				this.bulkCustomProperties[key] = defaultValue;
-				this.renderCustomPropsActiveList();
+				this.handleCustomPropertySelected(key, type, value);
 			},
 		});
 
@@ -416,35 +422,280 @@ export class BulkTaskCreationModal extends Modal {
 	}
 
 	/**
-	 * Render the list of currently-set custom properties in the panel.
+	 * Render the list of currently-set custom properties with expandable mapping rows.
 	 */
 	private renderCustomPropsActiveList() {
-		if (!this.customPropsPanel) return;
-
-		// Remove existing active list
-		const existing = this.customPropsPanel.querySelector(".tn-bulk-modal__custom-props-active");
-		if (existing) existing.remove();
+		if (!this.activeListEl) return;
+		this.activeListEl.empty();
 
 		const keys = Object.keys(this.bulkCustomProperties);
 		if (keys.length === 0) return;
 
-		const list = this.customPropsPanel.createDiv({ cls: "tn-bulk-modal__custom-props-active" });
-
 		for (const key of keys) {
-			const row = list.createDiv({ cls: "tn-bulk-modal__custom-prop-row" });
-			row.createSpan({
-				cls: "tn-bulk-modal__custom-prop-key",
-				text: key.replace(/_/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, c => c.toUpperCase()),
-			});
+			const entry = this.bulkCustomProperties[key];
+			const isDate = entry.type === "date";
+			const displayName = key.replace(/_/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, c => c.toUpperCase());
 
-			const removeBtn = row.createSpan({ cls: "tn-bulk-modal__custom-prop-remove" });
-			setIcon(removeBtn, "x");
+			const row = this.activeListEl!.createDiv({ cls: "tn-prop-row" });
+			const currentMapping = this.findBulkMappingForProperty(key);
+			if (currentMapping) {
+				row.classList.add("tn-prop-row--expanded");
+			}
+
+			// ── Header row ──────────────────────────────────
+			const header = row.createDiv({ cls: "tn-prop-row__header" });
+
+			// Expand toggle (only for date properties)
+			if (isDate) {
+				const toggle = header.createDiv({ cls: "tn-prop-row__expand-toggle" });
+				const svgNS = "http://www.w3.org/2000/svg";
+				const chevronSvg = document.createElementNS(svgNS, "svg");
+				chevronSvg.setAttribute("width", "12");
+				chevronSvg.setAttribute("height", "12");
+				chevronSvg.setAttribute("viewBox", "0 0 24 24");
+				chevronSvg.setAttribute("fill", "none");
+				chevronSvg.setAttribute("stroke", "currentColor");
+				chevronSvg.setAttribute("stroke-width", "2");
+				chevronSvg.setAttribute("stroke-linecap", "round");
+				chevronSvg.setAttribute("stroke-linejoin", "round");
+				const path = document.createElementNS(svgNS, "path");
+				path.setAttribute("d", "M9 18l6-6-6-6");
+				chevronSvg.appendChild(path);
+				toggle.appendChild(chevronSvg);
+				toggle.addEventListener("click", () => {
+					row.classList.toggle("tn-prop-row--expanded");
+				});
+			}
+
+			// Property key label
+			header.createDiv({ cls: "tn-prop-row__key", text: displayName });
+
+			// Type badge
+			header.createDiv({ cls: "tn-prop-row__type-badge", text: entry.type });
+
+			// Value input
+			const valueContainer = header.createDiv({ cls: "tn-prop-row__value" });
+			this.renderCustomPropValueInput(valueContainer, key, entry);
+
+			// Mapping badge (only if date + has mapping)
+			if (isDate && currentMapping) {
+				const badge = header.createDiv({ cls: "tn-prop-row__mapping-badge" });
+				const pinSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+				pinSvg.setAttribute("width", "10");
+				pinSvg.setAttribute("height", "10");
+				pinSvg.setAttribute("viewBox", "0 0 24 24");
+				pinSvg.setAttribute("fill", "none");
+				pinSvg.setAttribute("stroke", "currentColor");
+				pinSvg.setAttribute("stroke-width", "2");
+				const pinPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+				pinPath.setAttribute("d", "M12 17v5M9 2h6l-1 7h4l-8 8 2-7H8l1-8z");
+				pinSvg.appendChild(pinPath);
+				badge.appendChild(pinSvg);
+				badge.createSpan({ text: OVERRIDABLE_FIELD_LABELS[currentMapping] });
+			}
+
+			// Remove button
+			const removeBtn = header.createDiv({ cls: "tn-prop-row__remove" });
+			const removeSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+			removeSvg.setAttribute("width", "14");
+			removeSvg.setAttribute("height", "14");
+			removeSvg.setAttribute("viewBox", "0 0 24 24");
+			removeSvg.setAttribute("fill", "none");
+			removeSvg.setAttribute("stroke", "currentColor");
+			removeSvg.setAttribute("stroke-width", "2");
+			const removePath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+			removePath.setAttribute("d", "M18 6L6 18M6 6l12 12");
+			removeSvg.appendChild(removePath);
+			removeBtn.appendChild(removeSvg);
+			removeBtn.title = "Remove from batch";
 			removeBtn.addEventListener("click", () => {
+				this.clearBulkMappingForProperty(key);
 				delete this.bulkCustomProperties[key];
 				this.updateActionIconStates();
 				this.renderCustomPropsActiveList();
+				this.refreshPropertyPicker();
 			});
+
+			// ── Mapping panel (only for date properties) ────
+			if (isDate) {
+				const panel = row.createDiv({ cls: "tn-prop-row__mapping-panel" });
+				const mappingRow = panel.createDiv({ cls: "tn-prop-row__mapping-row" });
+				mappingRow.createDiv({ cls: "tn-prop-row__mapping-label", text: "Maps to:" });
+
+				const select = mappingRow.createEl("select", { cls: "tn-prop-row__mapping-dropdown" });
+
+				const mappingHelp = mappingRow.createSpan({ cls: "tn-prop-row__mapping-help" });
+				setIcon(mappingHelp, "help-circle");
+				setTooltip(mappingHelp, "Use this custom date property as the task's due, scheduled, completed, or created date. The mapping is saved per-task. Global default mappings can be configured in Settings \u2192 Task properties.");
+
+				const noneOpt = select.createEl("option", { value: "", text: "None (custom only)" });
+				if (!currentMapping) noneOpt.selected = true;
+
+				for (const [fieldKey, label] of Object.entries(OVERRIDABLE_FIELD_LABELS)) {
+					const opt = select.createEl("option", { value: fieldKey, text: label });
+					if (currentMapping === fieldKey) opt.selected = true;
+
+					const existingProp = this.bulkFieldOverrides[fieldKey];
+					if (existingProp && existingProp !== key) {
+						opt.disabled = true;
+						opt.text = `${label} (used by ${existingProp})`;
+					}
+				}
+
+				select.addEventListener("change", () => {
+					const newField = select.value;
+					this.clearBulkMappingForProperty(key);
+					if (newField) {
+						this.bulkFieldOverrides[newField] = key;
+					}
+					this.renderCustomPropsActiveList();
+				});
+			}
 		}
+	}
+
+	/** Find which core field (if any) a bulk custom property is mapped to. */
+	private findBulkMappingForProperty(propertyKey: string): OverridableField | null {
+		for (const [fieldKey, propName] of Object.entries(this.bulkFieldOverrides)) {
+			if (propName === propertyKey) {
+				return fieldKey as OverridableField;
+			}
+		}
+		return null;
+	}
+
+	/** Clear any bulk mapping that points to a given property key. */
+	private clearBulkMappingForProperty(propertyKey: string): void {
+		for (const [fieldKey, propName] of Object.entries(this.bulkFieldOverrides)) {
+			if (propName === propertyKey) {
+				delete this.bulkFieldOverrides[fieldKey];
+			}
+		}
+	}
+
+	/**
+	 * Render a type-appropriate value input for a custom property.
+	 */
+	private renderCustomPropValueInput(
+		container: HTMLElement,
+		key: string,
+		entry: { type: PropertyType; value: any }
+	) {
+		switch (entry.type) {
+			case "date": {
+				const input = container.createEl("input", {
+					cls: "tn-bulk-modal__custom-prop-input",
+					attr: { type: "date" },
+				});
+				input.value = entry.value || "";
+				input.addEventListener("change", () => {
+					this.bulkCustomProperties[key].value = input.value;
+				});
+				break;
+			}
+			case "number": {
+				const input = container.createEl("input", {
+					cls: "tn-bulk-modal__custom-prop-input",
+					attr: { type: "number" },
+				});
+				input.value = String(entry.value ?? 0);
+				input.addEventListener("change", () => {
+					this.bulkCustomProperties[key].value = parseFloat(input.value) || 0;
+				});
+				break;
+			}
+			case "boolean": {
+				const toggle = container.createEl("input", {
+					attr: { type: "checkbox" },
+					cls: "tn-bulk-modal__custom-prop-checkbox",
+				});
+				toggle.checked = !!entry.value;
+				toggle.addEventListener("change", () => {
+					this.bulkCustomProperties[key].value = toggle.checked;
+				});
+				break;
+			}
+			default: {
+				// text, list
+				const input = container.createEl("input", {
+					cls: "tn-bulk-modal__custom-prop-input",
+					attr: {
+						type: "text",
+						placeholder: entry.type === "list" ? "comma-separated" : "value",
+					},
+				});
+				input.value = Array.isArray(entry.value) ? entry.value.join(", ") : (entry.value || "");
+				input.addEventListener("change", () => {
+					if (entry.type === "list") {
+						this.bulkCustomProperties[key].value = input.value.split(",").map(s => s.trim()).filter(Boolean);
+					} else {
+						this.bulkCustomProperties[key].value = input.value;
+					}
+				});
+				break;
+			}
+		}
+	}
+
+	/**
+	 * Flatten bulkCustomProperties to { key: value } for the engine's customFrontmatter.
+	 * Also includes field override tracking properties (tnDueDateProp, etc.).
+	 */
+	private getFlatCustomProperties(): Record<string, any> {
+		const flat: Record<string, any> = {};
+		for (const [key, entry] of Object.entries(this.bulkCustomProperties)) {
+			flat[key] = entry.value;
+		}
+		// Include tracking properties for field overrides
+		for (const [internalKey, trackingProp] of Object.entries(FIELD_OVERRIDE_PROPS)) {
+			if (this.bulkFieldOverrides[internalKey]) {
+				flat[trackingProp] = this.bulkFieldOverrides[internalKey];
+			}
+		}
+		return flat;
+	}
+
+	/**
+	 * Rebuild the PropertyPicker to update excludeKeys after adding/removing properties.
+	 */
+	/**
+	 * Handle a property selection from the PropertyPicker.
+	 * Shared callback used by both initial render and rebuild paths.
+	 */
+	private handleCustomPropertySelected(key: string, type: PropertyType, value?: any) {
+		let defaultValue: any = value ?? null;
+		if (defaultValue === null) {
+			switch (type) {
+				case "date": defaultValue = ""; break;
+				case "number": defaultValue = 0; break;
+				case "boolean": defaultValue = false; break;
+				case "list": defaultValue = []; break;
+				default: defaultValue = ""; break;
+			}
+		}
+		this.bulkCustomProperties[key] = { type, value: defaultValue };
+		this.renderCustomPropsActiveList();
+		// Update exclude set and refresh picker in-place (no destroy/recreate)
+		this.refreshPropertyPicker();
+	}
+
+	/**
+	 * Sync the shared excludeKeysSet with current bulkCustomProperties keys.
+	 */
+	private syncExcludeKeys() {
+		this.excludeKeysSet.clear();
+		for (const key of Object.keys(this.bulkCustomProperties)) {
+			this.excludeKeysSet.add(key);
+		}
+	}
+
+	/**
+	 * Refresh the PropertyPicker in-place by updating the exclude set and
+	 * calling refresh(). No DOM destruction — the picker stays mounted.
+	 */
+	private refreshPropertyPicker() {
+		this.syncExcludeKeys();
+		this.propertyPickerInstance?.refresh();
 	}
 
 	/**
@@ -828,6 +1079,10 @@ export class BulkTaskCreationModal extends Modal {
 		if (this.customPropsPanel) {
 			this.customPropsPanel.remove();
 			this.customPropsPanel = null;
+		}
+		if (this.activeListEl) {
+			this.activeListEl.remove();
+			this.activeListEl = null;
 		}
 
 		// Remove the first 3 sections (action bar, custom props, assignees)
@@ -1321,7 +1576,7 @@ export class BulkTaskCreationModal extends Modal {
 			status: this.bulkStatus || undefined,
 			priority: this.bulkPriority || undefined,
 			reminders: this.bulkReminders.length > 0 ? this.bulkReminders : undefined,
-			customFrontmatter: Object.keys(this.bulkCustomProperties).length > 0 ? this.bulkCustomProperties : undefined,
+			customFrontmatter: Object.keys(this.bulkCustomProperties).length > 0 ? this.getFlatCustomProperties() : undefined,
 			onProgress: (current, total, status) => {
 				const percent = Math.round((current / total) * 100);
 				if (this.progressBarInner) {
@@ -1391,7 +1646,7 @@ export class BulkTaskCreationModal extends Modal {
 			status: this.bulkStatus || undefined,
 			priority: this.bulkPriority || undefined,
 			reminders: this.bulkReminders.length > 0 ? this.bulkReminders : undefined,
-			customFrontmatter: Object.keys(this.bulkCustomProperties).length > 0 ? this.bulkCustomProperties : undefined,
+			customFrontmatter: Object.keys(this.bulkCustomProperties).length > 0 ? this.getFlatCustomProperties() : undefined,
 			onProgress: (current, total, status) => {
 				const percent = Math.round((current / total) * 100);
 				if (this.progressBarInner) {

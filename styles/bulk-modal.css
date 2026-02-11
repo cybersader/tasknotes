@@ -282,46 +282,76 @@
 /* Custom properties panel */
 .tn-bulk-modal__custom-props-panel {
     padding: var(--size-4-2) 0;
+    margin-bottom: var(--size-4-3);
 }
 
 .tn-bulk-modal__custom-props-active {
     display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
+    flex-direction: column;
+    gap: 6px;
     margin-bottom: var(--size-4-2);
 }
 
+.tn-bulk-modal__custom-props-active:empty {
+    margin-bottom: 0;
+}
+
 .tn-bulk-modal__custom-prop-row {
-    display: inline-flex;
+    display: flex;
     align-items: center;
-    gap: 4px;
-    padding: 2px 6px;
-    background: var(--background-modifier-hover);
-    border-radius: var(--radius-m);
+    gap: 8px;
+    padding: 4px 8px;
+    background: var(--background-secondary);
+    border-radius: var(--radius-s);
     font-size: var(--font-ui-small);
 }
 
 .tn-bulk-modal__custom-prop-key {
-    max-width: 150px;
+    flex-shrink: 0;
+    min-width: 80px;
+    max-width: 140px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-weight: 500;
+    color: var(--text-muted);
+}
+
+.tn-bulk-modal__custom-prop-input {
+    flex: 1;
+    min-width: 0;
+    padding: 3px 6px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    background: var(--background-primary);
+    font-size: var(--font-ui-small);
+}
+
+.tn-bulk-modal__custom-prop-input:focus {
+    outline: none;
+    border-color: var(--interactive-accent);
+}
+
+.tn-bulk-modal__custom-prop-checkbox {
+    flex-shrink: 0;
 }
 
 .tn-bulk-modal__custom-prop-remove {
     display: flex;
     align-items: center;
     cursor: pointer;
-    opacity: 0.6;
+    opacity: 0.5;
+    flex-shrink: 0;
 }
 
 .tn-bulk-modal__custom-prop-remove:hover {
     opacity: 1;
+    color: var(--text-error);
 }
 
 .tn-bulk-modal__custom-prop-remove svg {
-    width: 12px;
-    height: 12px;
+    width: 14px;
+    height: 14px;
 }
 
 /* =====================================================================

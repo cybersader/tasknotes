@@ -383,3 +383,246 @@
     font-size: var(--font-ui-small);
     font-style: italic;
 }
+
+/* ================================================
+   EXPANDABLE PROPERTY ROWS
+   Shared by Edit Task + Bulk modals for field mapping
+   ================================================ */
+
+/* Row wrapper — contains header + expandable panel */
+.tn-prop-row {
+    background: var(--background-secondary);
+    border-radius: var(--radius-s);
+    font-size: var(--font-ui-small);
+    overflow: hidden;
+}
+
+/* Header (always visible): toggle + label + badge + value + remove */
+.tn-prop-row__header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+    min-height: 32px;
+}
+
+/* Expand/collapse toggle (only on date properties) */
+.tn-prop-row__expand-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    cursor: pointer;
+    border-radius: var(--radius-s);
+    color: var(--text-muted);
+    transition: color 0.15s, background 0.15s;
+}
+
+.tn-prop-row__expand-toggle:hover {
+    color: var(--text-normal);
+    background: var(--background-modifier-hover);
+}
+
+.tn-prop-row__expand-toggle svg {
+    width: 14px;
+    height: 14px;
+    transition: transform 0.15s ease;
+}
+
+.tn-prop-row--expanded .tn-prop-row__expand-toggle svg {
+    transform: rotate(90deg);
+}
+
+/* Property key label */
+.tn-prop-row__key {
+    flex-shrink: 0;
+    min-width: 80px;
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 500;
+    color: var(--text-muted);
+}
+
+/* Type badge (reuses property-picker badge styles) */
+.tn-prop-row__type-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1px 5px;
+    border-radius: var(--radius-s);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    line-height: 1.4;
+    flex-shrink: 0;
+    background: color-mix(in srgb, var(--badge-color, var(--text-muted)) 15%, transparent);
+    color: var(--badge-color, var(--text-muted));
+}
+
+/* Value input area */
+.tn-prop-row__value {
+    flex: 1;
+    min-width: 0;
+}
+
+.tn-prop-row__value input {
+    width: 100%;
+    padding: 3px 6px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    background: var(--background-primary);
+    font-size: var(--font-ui-small);
+    box-sizing: border-box;
+}
+
+.tn-prop-row__value input:focus {
+    outline: none;
+    border-color: var(--interactive-accent);
+}
+
+/* Mapping badge — small pill showing which core field this maps to */
+.tn-prop-row__mapping-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 1px 6px;
+    border-radius: var(--radius-s);
+    font-size: 10px;
+    font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
+    background: color-mix(in srgb, var(--interactive-accent) 15%, transparent);
+    color: var(--interactive-accent);
+    cursor: pointer;
+    transition: background 0.1s;
+}
+
+.tn-prop-row__mapping-badge:hover {
+    background: color-mix(in srgb, var(--interactive-accent) 25%, transparent);
+}
+
+.tn-prop-row__mapping-badge svg {
+    width: 10px;
+    height: 10px;
+}
+
+/* Remove button */
+.tn-prop-row__remove {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    opacity: 0.5;
+    flex-shrink: 0;
+    transition: opacity 0.1s, color 0.1s;
+}
+
+.tn-prop-row__remove:hover {
+    opacity: 1;
+    color: var(--text-error);
+}
+
+.tn-prop-row__remove svg {
+    width: 14px;
+    height: 14px;
+}
+
+/* Expandable mapping panel */
+.tn-prop-row__mapping-panel {
+    overflow: hidden;
+    max-height: 0;
+    transition: max-height 0.2s ease, padding 0.2s ease;
+    padding: 0 8px;
+    border-top: none;
+}
+
+.tn-prop-row--expanded .tn-prop-row__mapping-panel {
+    max-height: 120px;
+    padding: 6px 8px 8px;
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+/* Maps to label + dropdown row */
+.tn-prop-row__mapping-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.tn-prop-row__mapping-label {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.tn-prop-row__mapping-dropdown {
+    flex: 1;
+    padding: 3px 6px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    background: var(--background-primary);
+    font-size: var(--font-ui-small);
+    color: var(--text-normal);
+    cursor: pointer;
+}
+
+.tn-prop-row__mapping-dropdown:focus {
+    outline: none;
+    border-color: var(--interactive-accent);
+}
+
+.tn-prop-row__mapping-help {
+    flex-shrink: 0;
+    color: var(--text-faint);
+    cursor: help;
+    display: flex;
+    align-items: center;
+}
+
+.tn-prop-row__mapping-help .svg-icon {
+    width: 14px;
+    height: 14px;
+}
+
+/* Conflict warning (shown when both custom + default property exist) */
+.tn-prop-row__conflict {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+    padding: 4px 8px;
+    background: color-mix(in srgb, var(--color-orange) 10%, transparent);
+    border-left: 3px solid var(--color-orange);
+    border-radius: var(--radius-s);
+    font-size: var(--font-ui-smaller);
+    color: var(--color-orange);
+}
+
+.tn-prop-row__conflict-icon {
+    display: flex;
+    flex-shrink: 0;
+}
+
+.tn-prop-row__conflict-icon svg {
+    width: 12px;
+    height: 12px;
+}
+
+.tn-prop-row__conflict-text {
+    flex: 1;
+}
+
+.tn-prop-row__conflict-action {
+    cursor: pointer;
+    text-decoration: underline;
+    white-space: nowrap;
+    transition: opacity 0.1s;
+}
+
+.tn-prop-row__conflict-action:hover {
+    opacity: 0.8;
+}
