@@ -11,7 +11,7 @@
  * Inspired by PersonGroupPicker, designed to embed inline within modals.
  */
 
-import { setIcon, Notice } from "obsidian";
+import { setIcon, Notice, Modal } from "obsidian";
 import type TaskNotesPlugin from "../main";
 import {
 	type PropertyType,
@@ -24,6 +24,16 @@ import {
 	keyToDisplayName,
 } from "../utils/propertyDiscoveryUtils";
 
+/** A mapping target for the "Use as" popup — represents a core field this property can map to. */
+export interface UseAsOption {
+	/** Internal field key (e.g., "due", "scheduled") */
+	key: string;
+	/** Human-readable label (e.g., "Due date") */
+	label: string;
+	/** Required property type for this mapping (e.g., "date") — auto-converts if mismatched */
+	requiresType: PropertyType;
+}
+
 export interface PropertyPickerOptions {
 	/** Container element to render into */
 	container: HTMLElement;
@@ -35,8 +45,8 @@ export interface PropertyPickerOptions {
 	itemPaths?: string[];
 	/** Keys already rendered elsewhere (to exclude from results) */
 	excludeKeys?: Set<string>;
-	/** Callback when a property is selected */
-	onSelect: (key: string, type: PropertyType, value?: any) => void;
+	/** Callback when a property is selected. Optional `useAs` field key when a mapping target is selected. */
+	onSelect: (key: string, type: PropertyType, value?: any, useAs?: string) => void;
 	/** Callback for type conversion (optional) */
 	onConvert?: (
 		key: string,
@@ -44,6 +54,16 @@ export interface PropertyPickerOptions {
 		files: string[],
 		strategy: "convert-in-place" | "create-duplicate"
 	) => Promise<void>;
+	/** Restrict which types can be conversion targets. If unset, all types available. */
+	allowedConversionTargets?: PropertyType[];
+	/** Mapping targets to show in "Use as" popup. If set, replaces "Convert →" with "Use as →". */
+	useAsOptions?: UseAsOption[];
+	/** Currently claimed mappings: { fieldKey: propertyKey } — disables claimed options. */
+	claimedMappings?: Record<string, string>;
+	/** Initial state of the vault-wide checkbox (for restoring across re-renders) */
+	initialVaultWide?: boolean;
+	/** Called when the vault-wide checkbox changes */
+	onVaultWideChange?: (checked: boolean) => void;
 }
 
 /** Type badge color mapping */
@@ -65,6 +85,36 @@ const TYPE_LABELS: Record<PropertyType, string> = {
 };
 
 /**
+ * Show a confirmation modal before destructive property type conversion.
+ * Shared between PropertyPicker, Settings, and any other conversion sites.
+ */
+export function showConversionConfirmation(
+	app: InstanceType<typeof import("obsidian").App>,
+	key: string,
+	targetType: string,
+	fileCount: number
+): Promise<boolean> {
+	return new Promise((resolve) => {
+		const modal = new Modal(app);
+		modal.titleEl.textContent = `Convert "${key}" to ${targetType}?`;
+		const content = modal.contentEl;
+		content.createEl("p", {
+			text: `This will modify frontmatter in ${fileCount} file${fileCount !== 1 ? "s" : ""}. Values that cannot be parsed will be set to defaults.`,
+		});
+		content.createEl("p", {
+			text: "This action cannot be undone.",
+		}).style.cssText = "color: var(--text-warning); font-weight: 500;";
+		const buttonRow = content.createDiv({ cls: "modal-button-container" });
+		buttonRow.createEl("button", { text: "Cancel" })
+			.addEventListener("click", () => { modal.close(); resolve(false); });
+		buttonRow.createEl("button", { text: "Convert", cls: "mod-cta" })
+			.addEventListener("click", () => { modal.close(); resolve(true); });
+		modal.onClose = () => resolve(false);
+		modal.open();
+	});
+}
+
+/**
  * Create a PropertyPicker component.
  */
 export function createPropertyPicker(options: PropertyPickerOptions): {
@@ -79,11 +129,14 @@ export function createPropertyPicker(options: PropertyPickerOptions): {
 		excludeKeys = new Set(),
 		onSelect,
 		onConvert,
+		allowedConversionTargets,
+		useAsOptions,
+		claimedMappings,
 	} = options;
 
 	// State
 	let searchQuery = "";
-	let isVaultWide = false;
+	let isVaultWide = options.initialVaultWide ?? false;
 	let isDropdownOpen = false;
 	let discoveredProps: DiscoveredProperty[] = [];
 	let catalogEntries: PropertyCatalogEntry[] = [];
@@ -118,6 +171,7 @@ export function createPropertyPicker(options: PropertyPickerOptions): {
 		attr: { type: "checkbox" },
 		cls: "tn-pp-toggle-checkbox",
 	});
+	if (isVaultWide) toggleCheckbox.checked = true;
 	toggleLabel.createSpan({ text: "Vault-wide", cls: "tn-pp-toggle-text" });
 
 	// Dropdown container - appended to body to escape modal overflow
@@ -128,9 +182,8 @@ export function createPropertyPicker(options: PropertyPickerOptions): {
 
 	function loadProperties() {
 		if (isVaultWide) {
-			const paths = itemPaths?.length
-				? itemPaths
-				: getAllTaskFilePaths(plugin);
+			// Always scan all task files when vault-wide is checked
+			const paths = getAllTaskFilePaths(plugin);
 			catalogEntries = buildPropertyCatalog(plugin, paths, excludeKeys);
 			discoveredProps = [];
 		} else if (currentFilePath) {
@@ -152,7 +205,9 @@ export function createPropertyPicker(options: PropertyPickerOptions): {
 
 		const query = searchQuery.toLowerCase();
 
-		if (isVaultWide || !currentFilePath) {
+		// Use catalog view when we have catalog data (vault-wide or itemPaths),
+		// single-file view when we have discovered props from currentFilePath
+		if (catalogEntries.length > 0 || (isVaultWide || (!currentFilePath && !itemPaths?.length))) {
 			renderCatalogView(query);
 		} else {
 			renderSingleFileView(query);
@@ -242,8 +297,8 @@ export function createPropertyPicker(options: PropertyPickerOptions): {
 		for (const prop of props) {
 			const item = section.createDiv({ cls: "tn-pp-item" });
 
-			// Property name
-			item.createSpan({ cls: "tn-pp-item-key", text: prop.displayName });
+			// Property name (raw key)
+			item.createSpan({ cls: "tn-pp-item-key", text: prop.key });
 
 			// Current value (if set)
 			const valueText = formatValue(prop.value, prop.type);
@@ -251,6 +306,17 @@ export function createPropertyPicker(options: PropertyPickerOptions): {
 				item.createSpan({ cls: "tn-pp-item-value", text: valueText });
 			} else {
 				item.createSpan({ cls: "tn-pp-item-value tn-pp-item-value--empty", text: "(not set)" });
+			}
+
+			// "Use as →" button (only if useAsOptions provided)
+			if (useAsOptions?.length) {
+				const useAsBtn = item.createSpan({ cls: "tn-pp-convert-btn" });
+				useAsBtn.textContent = "Use as \u2192";
+				useAsBtn.title = "Choose what to use this property for";
+				useAsBtn.addEventListener("click", (e) => {
+					e.stopPropagation();
+					showUseAsMenuForSingleFile(useAsBtn, prop);
+				});
 			}
 
 			item.addEventListener("click", () => {
@@ -270,9 +336,10 @@ export function createPropertyPicker(options: PropertyPickerOptions): {
 
 		for (const entry of entries) {
 			const item = section.createDiv({ cls: "tn-pp-item" });
+			item.dataset.propertyKey = entry.key;
 
-			// Property name
-			item.createSpan({ cls: "tn-pp-item-key", text: entry.displayName });
+			// Property name (raw key)
+			item.createSpan({ cls: "tn-pp-item-key", text: entry.key });
 
 			// File count
 			item.createSpan({
@@ -310,7 +377,71 @@ export function createPropertyPicker(options: PropertyPickerOptions): {
 				});
 			}
 
+			// "Use as →" button (when useAsOptions provided) or conversion button (fallback)
+			if (useAsOptions?.length) {
+				const useAsBtn = item.createSpan({ cls: "tn-pp-convert-btn" });
+				useAsBtn.textContent = "Use as \u2192";
+				useAsBtn.title = "Choose what to use this property for";
+				useAsBtn.addEventListener("click", (e) => {
+					e.stopPropagation();
+					showUseAsMenu(useAsBtn, entry);
+				});
+			} else {
+				const ALL_TYPES: PropertyType[] = ["date", "text", "number", "boolean", "list"];
+				const targets = (allowedConversionTargets || ALL_TYPES)
+					.filter(t => t !== entry.dominantType);
+
+				if (targets.length === 1) {
+					// Single target: simple button (e.g., "→ date" in ReminderModal)
+					const convertBtn = item.createSpan({ cls: "tn-pp-convert-btn" });
+					convertBtn.textContent = `\u2192 ${targets[0]}`;
+					convertBtn.title = `Convert ${entry.fileCount} file(s) to ${targets[0]}`;
+					convertBtn.addEventListener("click", async (e) => {
+						e.stopPropagation();
+						closeDropdown();
+						const confirmed = await showConversionConfirmation(
+							plugin.app, entry.key, targets[0], entry.allFiles.length
+						);
+						if (!confirmed) { openDropdown(); return; }
+						try {
+							if (onConvert) await onConvert(entry.key, targets[0], entry.allFiles, "convert-in-place");
+							else await runConversion(entry.key, targets[0], entry.allFiles, "convert-in-place");
+							onSelect(entry.key, targets[0]);
+							closeDropdown();
+						} catch { /* cancelled */ }
+					});
+				} else if (targets.length > 1) {
+					// Multiple targets: button opens popup menu
+					const convertBtn = item.createSpan({ cls: "tn-pp-convert-btn" });
+					convertBtn.textContent = "Convert \u2192";
+					convertBtn.title = `Convert ${entry.fileCount} file(s) to another type`;
+					convertBtn.addEventListener("click", (e) => {
+						e.stopPropagation();
+						showTypeConversionMenu(convertBtn, entry, targets);
+					});
+				}
+			}
+
 			item.addEventListener("click", () => {
+				// If this is a non-date property and we're in a date-only context (e.g., ReminderModal),
+				// don't close — instead highlight the convert button and show a hint.
+				if (allowedConversionTargets?.includes("date") && entry.dominantType !== "date") {
+					// Remove any previous hints
+					dropdown.querySelectorAll(".tn-pp-convert-hint").forEach(el => el.remove());
+					dropdown.querySelectorAll(".tn-pp-convert-btn--flash").forEach(el =>
+						el.classList.remove("tn-pp-convert-btn--flash"));
+					// Flash the convert button
+					const convertBtn = item.querySelector(".tn-pp-convert-btn");
+					if (convertBtn) {
+						convertBtn.classList.add("tn-pp-convert-btn--flash");
+						setTimeout(() => convertBtn.classList.remove("tn-pp-convert-btn--flash"), 2000);
+					}
+					// Show inline hint below the row
+					const hint = item.createDiv({ cls: "tn-pp-convert-hint" });
+					hint.textContent = `Convert "${entry.key}" to date to use as a reminder anchor \u2191`;
+					setTimeout(() => hint.remove(), 4000);
+					return;
+				}
 				onSelect(entry.key, entry.dominantType);
 				closeDropdown();
 			});
@@ -339,18 +470,50 @@ export function createPropertyPicker(options: PropertyPickerOptions): {
 	function renderAddForm(container: HTMLElement) {
 		const form = container.createDiv({ cls: "tn-pp-add-form" });
 
+		// Stop keydown propagation so Obsidian's modal Scope doesn't eat keystrokes.
+		// The dropdown lives on document.body (outside the modal DOM), so without this,
+		// the modal's keyboard scope intercepts all key events.
+		form.addEventListener("keydown", (e) => e.stopPropagation());
+
 		// Key input
 		const keyInput = form.createEl("input", {
 			cls: "tn-pp-add-key",
 			attr: { type: "text", placeholder: "Property name (e.g., review_date)" },
 		});
 
-		// Type selector
-		const typeSelect = form.createEl("select", { cls: "tn-pp-add-type" });
+		// Type selector — custom dropdown instead of native <select> to avoid
+		// Electron/Obsidian capturing native option-list clicks and closing the picker.
 		const types: PropertyType[] = ["text", "date", "number", "boolean", "list"];
+		let selectedType: PropertyType = "text";
+		const typeWrapper = form.createDiv({ cls: "tn-pp-add-type-wrapper" });
+		const typeBtn = typeWrapper.createEl("button", { cls: "tn-pp-add-type" });
+		typeBtn.innerHTML = TYPE_LABELS["text"] + ' <span class="tn-pp-add-type-caret">▾</span>';
+		const typeMenu = typeWrapper.createDiv({ cls: "tn-pp-add-type-menu" });
+		typeMenu.style.display = "none";
 		for (const t of types) {
-			typeSelect.createEl("option", { text: TYPE_LABELS[t], attr: { value: t } });
+			const opt = typeMenu.createDiv({ cls: "tn-pp-add-type-option" });
+			opt.textContent = TYPE_LABELS[t];
+			opt.dataset.type = t;
+			opt.addEventListener("click", (e) => {
+				e.stopPropagation();
+				selectedType = t;
+				typeBtn.innerHTML = TYPE_LABELS[t] + ' <span class="tn-pp-add-type-caret">▾</span>';
+				typeMenu.style.display = "none";
+				// Highlight active option
+				typeMenu.querySelectorAll(".tn-pp-add-type-option").forEach(el =>
+					el.classList.toggle("is-active", (el as HTMLElement).dataset.type === t));
+			});
 		}
+		// Mark initial selection
+		(typeMenu.querySelector('[data-type="text"]') as HTMLElement)?.classList.add("is-active");
+		typeBtn.addEventListener("click", (e) => {
+			e.stopPropagation();
+			e.preventDefault();
+			const isVisible = typeMenu.style.display !== "none";
+			typeMenu.style.display = isVisible ? "none" : "block";
+		});
+		// Alias for submit handler compatibility
+		const typeSelect = { get value() { return selectedType; } };
 
 		// Submit button
 		const submitBtn = form.createDiv({ cls: "tn-pp-add-submit" });
@@ -429,6 +592,266 @@ export function createPropertyPicker(options: PropertyPickerOptions): {
 		});
 	}
 
+	function showTypeConversionMenu(
+		anchor: HTMLElement,
+		entry: PropertyCatalogEntry,
+		targets: PropertyType[]
+	) {
+		// Remove any existing menu
+		const existing = dropdown.querySelector(".tn-pp-type-conversion-menu");
+		if (existing) existing.remove();
+
+		const menu = document.createElement("div");
+		menu.className = "tn-pp-conversion-menu tn-pp-type-conversion-menu";
+		anchor.style.position = "relative";
+		anchor.appendChild(menu);
+
+		for (const targetType of targets) {
+			const option = menu.createDiv({ cls: "tn-pp-conversion-option" });
+			// Show "Current → Target" with colored badges for both types
+			const srcBadge = option.createSpan({ cls: `tn-pp-type-badge tn-pp-type-badge--${entry.dominantType}` });
+			srcBadge.textContent = TYPE_LABELS[entry.dominantType];
+			srcBadge.style.setProperty("--badge-color", TYPE_COLORS[entry.dominantType]);
+			option.createSpan({ text: " \u2192 ", cls: "tn-pp-conversion-arrow" });
+			const tgtBadge = option.createSpan({ cls: `tn-pp-type-badge tn-pp-type-badge--${targetType}` });
+			tgtBadge.textContent = TYPE_LABELS[targetType];
+			tgtBadge.style.setProperty("--badge-color", TYPE_COLORS[targetType]);
+
+			option.addEventListener("click", async (e) => {
+				e.stopPropagation();
+				menu.remove();
+				closeDropdown();
+				const confirmed = await showConversionConfirmation(
+					plugin.app, entry.key, targetType, entry.allFiles.length
+				);
+				if (!confirmed) { openDropdown(); return; }
+				try {
+					if (onConvert) await onConvert(entry.key, targetType, entry.allFiles, "convert-in-place");
+					else await runConversion(entry.key, targetType, entry.allFiles, "convert-in-place");
+					onSelect(entry.key, targetType);
+					closeDropdown();
+				} catch { /* cancelled */ }
+			});
+		}
+
+		// Close menu on outside click
+		const closeHandler = (e: MouseEvent) => {
+			if (!menu.contains(e.target as Node)) {
+				menu.remove();
+				document.removeEventListener("click", closeHandler, true);
+			}
+		};
+		setTimeout(() => document.addEventListener("click", closeHandler, true), 0);
+	}
+
+	function showUseAsMenu(anchor: HTMLElement, entry: PropertyCatalogEntry) {
+		// Remove any existing menu
+		document.querySelectorAll(".tn-pp-use-as-menu").forEach(el => el.remove());
+
+		const menu = document.createElement("div");
+		menu.className = "tn-pp-conversion-menu tn-pp-use-as-menu";
+
+		// Append to body with fixed positioning to avoid dropdown overflow clipping
+		const anchorRect = anchor.getBoundingClientRect();
+		menu.style.position = "fixed";
+		menu.style.left = `${anchorRect.left}px`;
+		menu.style.right = "auto";
+		menu.style.zIndex = "10002";
+		document.body.appendChild(menu);
+
+		// Flip above if menu would overflow viewport bottom
+		const menuHeight = 220; // approximate height for 4 options + separator + custom + footer
+		const spaceBelow = window.innerHeight - anchorRect.bottom;
+		if (spaceBelow < menuHeight && anchorRect.top > menuHeight) {
+			menu.style.bottom = `${window.innerHeight - anchorRect.top + 2}px`;
+			menu.style.top = "auto";
+		} else {
+			menu.style.top = `${anchorRect.bottom + 2}px`;
+			menu.style.bottom = "auto";
+		}
+
+		// Date mapping options
+		for (const option of useAsOptions!) {
+			const optionEl = menu.createDiv({ cls: "tn-pp-conversion-option" });
+
+			// Check if claimed by another property
+			const claimedBy = claimedMappings?.[option.key];
+			const isClaimed = !!claimedBy && claimedBy !== entry.key;
+
+			if (isClaimed) {
+				optionEl.addClass("tn-pp-conversion-option--disabled");
+			}
+
+			// Label
+			optionEl.createSpan({ text: option.label });
+
+			// Target type badge
+			optionEl.createSpan({ text: " " });
+			const badge = optionEl.createSpan({ cls: `tn-pp-type-badge tn-pp-type-badge--${option.requiresType}` });
+			badge.textContent = TYPE_LABELS[option.requiresType];
+			badge.style.setProperty("--badge-color", TYPE_COLORS[option.requiresType]);
+
+			// Conversion note if type mismatch
+			if (entry.dominantType !== option.requiresType) {
+				optionEl.createSpan({
+					text: ` (converts from ${entry.dominantType})`,
+					cls: "tn-pp-use-as-convert-note",
+				});
+			}
+
+			// Claimed note
+			if (isClaimed) {
+				optionEl.createSpan({
+					text: ` \u2014 used by ${claimedBy}`,
+					cls: "tn-pp-use-as-convert-note",
+				});
+			}
+
+			if (!isClaimed) {
+				optionEl.addEventListener("click", async (e) => {
+					e.stopPropagation();
+					menu.remove();
+					closeDropdown();
+					try {
+						// Auto-convert if type mismatch (with confirmation)
+						if (entry.dominantType !== option.requiresType) {
+							const confirmed = await showConversionConfirmation(
+								plugin.app, entry.key, option.requiresType, entry.allFiles.length
+							);
+							if (!confirmed) { openDropdown(); return; }
+							if (onConvert) await onConvert(entry.key, option.requiresType, entry.allFiles, "convert-in-place");
+							else await runConversion(entry.key, option.requiresType, entry.allFiles, "convert-in-place");
+						}
+						onSelect(entry.key, option.requiresType, undefined, option.key);
+						closeDropdown();
+					} catch { /* cancelled */ }
+				});
+			}
+		}
+
+		// Separator
+		menu.createDiv({ cls: "tn-pp-use-as-separator" });
+
+		// "Custom field" option — add as-is with no mapping
+		const customOption = menu.createDiv({ cls: "tn-pp-conversion-option" });
+		customOption.createSpan({ text: "Custom field" });
+		customOption.addEventListener("click", (e) => {
+			e.stopPropagation();
+			menu.remove();
+			onSelect(entry.key, entry.dominantType);
+			closeDropdown();
+		});
+
+		// Footer note
+		menu.createDiv({
+			cls: "tn-pp-use-as-footer",
+			text: "More mapping targets in future releases",
+		});
+
+		// Close menu on outside click
+		const closeHandler = (e: MouseEvent) => {
+			if (!menu.contains(e.target as Node)) {
+				menu.remove();
+				document.removeEventListener("click", closeHandler, true);
+			}
+		};
+		setTimeout(() => document.addEventListener("click", closeHandler, true), 0);
+	}
+
+	function showUseAsMenuForSingleFile(anchor: HTMLElement, prop: DiscoveredProperty) {
+		// Remove any existing menu
+		document.querySelectorAll(".tn-pp-use-as-menu").forEach(el => el.remove());
+
+		const menu = document.createElement("div");
+		menu.className = "tn-pp-conversion-menu tn-pp-use-as-menu";
+
+		// Append to body with fixed positioning to avoid dropdown overflow clipping
+		const anchorRect = anchor.getBoundingClientRect();
+		menu.style.position = "fixed";
+		menu.style.left = `${anchorRect.left}px`;
+		menu.style.right = "auto";
+		menu.style.zIndex = "10002";
+		document.body.appendChild(menu);
+
+		// Flip above if menu would overflow viewport bottom
+		const menuHeight = 220;
+		const spaceBelow = window.innerHeight - anchorRect.bottom;
+		if (spaceBelow < menuHeight && anchorRect.top > menuHeight) {
+			menu.style.bottom = `${window.innerHeight - anchorRect.top + 2}px`;
+			menu.style.top = "auto";
+		} else {
+			menu.style.top = `${anchorRect.bottom + 2}px`;
+			menu.style.bottom = "auto";
+		}
+
+		for (const option of useAsOptions!) {
+			const optionEl = menu.createDiv({ cls: "tn-pp-conversion-option" });
+
+			const claimedBy = claimedMappings?.[option.key];
+			const isClaimed = !!claimedBy && claimedBy !== prop.key;
+
+			if (isClaimed) {
+				optionEl.addClass("tn-pp-conversion-option--disabled");
+			}
+
+			optionEl.createSpan({ text: option.label });
+			optionEl.createSpan({ text: " " });
+			const badge = optionEl.createSpan({ cls: `tn-pp-type-badge tn-pp-type-badge--${option.requiresType}` });
+			badge.textContent = TYPE_LABELS[option.requiresType];
+			badge.style.setProperty("--badge-color", TYPE_COLORS[option.requiresType]);
+
+			if (prop.type !== option.requiresType) {
+				optionEl.createSpan({
+					text: ` (converts from ${prop.type})`,
+					cls: "tn-pp-use-as-convert-note",
+				});
+			}
+
+			if (isClaimed) {
+				optionEl.createSpan({
+					text: ` \u2014 used by ${claimedBy}`,
+					cls: "tn-pp-use-as-convert-note",
+				});
+			}
+
+			if (!isClaimed) {
+				optionEl.addEventListener("click", (e) => {
+					e.stopPropagation();
+					menu.remove();
+					// Single-file view: no bulk conversion needed, just select with the target type
+					onSelect(prop.key, option.requiresType, prop.value, option.key);
+					closeDropdown();
+				});
+			}
+		}
+
+		// Separator
+		menu.createDiv({ cls: "tn-pp-use-as-separator" });
+
+		// Custom field option
+		const customOption = menu.createDiv({ cls: "tn-pp-conversion-option" });
+		customOption.createSpan({ text: "Custom field" });
+		customOption.addEventListener("click", (e) => {
+			e.stopPropagation();
+			menu.remove();
+			onSelect(prop.key, prop.type, prop.value);
+			closeDropdown();
+		});
+
+		menu.createDiv({
+			cls: "tn-pp-use-as-footer",
+			text: "More mapping targets in future releases",
+		});
+
+		const closeHandler = (e: MouseEvent) => {
+			if (!menu.contains(e.target as Node)) {
+				menu.remove();
+				document.removeEventListener("click", closeHandler, true);
+			}
+		};
+		setTimeout(() => document.addEventListener("click", closeHandler, true), 0);
+	}
+
 	function showMismatchedFiles(anchor: HTMLElement, entry: PropertyCatalogEntry) {
 		const existing = dropdown.querySelector(".tn-pp-files-list");
 		if (existing) existing.remove();
@@ -498,8 +921,12 @@ export function createPropertyPicker(options: PropertyPickerOptions): {
 		}
 	}
 
+	let lastCloseTime = 0;
+
 	function openDropdown() {
 		if (isDropdownOpen) return;
+		// Prevent re-open within 300ms of close (guards against focus race conditions)
+		if (Date.now() - lastCloseTime < 300) return;
 		isDropdownOpen = true;
 		loadProperties();
 		dropdown.style.display = "block";
@@ -510,18 +937,30 @@ export function createPropertyPicker(options: PropertyPickerOptions): {
 	function closeDropdown() {
 		if (!isDropdownOpen) return;
 		isDropdownOpen = false;
+		lastCloseTime = Date.now();
 		dropdown.style.display = "none";
 		showAddForm = false;
+		// Clean up any floating "Use as" menus appended to body
+		document.querySelectorAll(".tn-pp-use-as-menu").forEach(el => el.remove());
 	}
 
 	// ── Event listeners ───────────────────────────────
 
 	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
-	searchInput.addEventListener("focus", () => openDropdown());
-	searchInput.addEventListener("click", () => openDropdown());
+	// Only open on explicit click (not focus) — focus events cause race conditions
+	// with Obsidian's modal focus management that re-open the dropdown after close.
+	// Click toggles: open if closed, close if open.
+	searchInput.addEventListener("click", () => {
+		if (isDropdownOpen) {
+			closeDropdown();
+		} else {
+			openDropdown();
+		}
+	});
 
 	searchInput.addEventListener("input", () => {
+		if (!isDropdownOpen) openDropdown();
 		if (debounceTimer) clearTimeout(debounceTimer);
 		debounceTimer = setTimeout(() => {
 			searchQuery = searchInput.value;
@@ -538,20 +977,48 @@ export function createPropertyPicker(options: PropertyPickerOptions): {
 
 	toggleCheckbox.addEventListener("change", () => {
 		isVaultWide = toggleCheckbox.checked;
+		if (options.onVaultWideChange) options.onVaultWideChange(isVaultWide);
 		if (isDropdownOpen) {
 			loadProperties();
 			renderDropdown();
 		}
 	});
 
-	// Close dropdown when clicking outside
-	const handleOutsideClick = (e: MouseEvent) => {
+	// Close dropdown when clicking outside.
+	// window/document listeners don't receive events inside Obsidian modals,
+	// so we listen on the closest ancestor (.modal, .vertical-tab-content, or body).
+	const closestAncestor = container.closest(".modal") || container.closest(".vertical-tab-content") || document.body;
+	const handleOutsideMousedown = (e: MouseEvent) => {
+		if (!isDropdownOpen) return;
 		const target = e.target as Node;
-		if (!container.contains(target) && !dropdown.contains(target)) {
-			closeDropdown();
-		}
+		if (container.contains(target) || dropdown.contains(target)) return;
+		// Native <select> option lists render outside the DOM tree —
+		// don't close if a <select> inside the dropdown is the active element
+		const activeEl = document.activeElement;
+		if (activeEl instanceof HTMLSelectElement && dropdown.contains(activeEl)) return;
+		closeDropdown();
 	};
-	document.addEventListener("click", handleOutsideClick);
+	closestAncestor.addEventListener("mousedown", handleOutsideMousedown, true);
+
+	// Also listen on the dropdown itself for blur (covers clicking outside the modal entirely)
+	let blurTimer: ReturnType<typeof setTimeout> | null = null;
+	searchInput.addEventListener("blur", () => {
+		blurTimer = setTimeout(() => {
+			if (!isDropdownOpen) return;
+			const active = document.activeElement;
+			if (active && (dropdown.contains(active) || container.contains(active))) return;
+			// Check if a dropdown element was just clicked (mousedown sets this flag)
+			if (dropdownClickedRecently) return;
+			closeDropdown();
+		}, 200);
+	});
+
+	// Prevent blur-close when interacting with dropdown items
+	let dropdownClickedRecently = false;
+	dropdown.addEventListener("mousedown", () => {
+		dropdownClickedRecently = true;
+		setTimeout(() => { dropdownClickedRecently = false; }, 300);
+	});
 
 	// Reposition on scroll
 	const handleScroll = () => {
@@ -571,9 +1038,10 @@ export function createPropertyPicker(options: PropertyPickerOptions): {
 	return {
 		refresh,
 		destroy: () => {
-			document.removeEventListener("click", handleOutsideClick);
+			closestAncestor.removeEventListener("mousedown", handleOutsideMousedown, true);
 			window.removeEventListener("scroll", handleScroll, true);
 			if (debounceTimer) clearTimeout(debounceTimer);
+			if (blurTimer) clearTimeout(blurTimer);
 			dropdown.remove();
 			container.empty();
 		},

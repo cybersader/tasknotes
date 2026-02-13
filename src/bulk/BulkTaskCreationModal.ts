@@ -16,15 +16,17 @@ import { createPersonGroupPicker } from "../ui/PersonGroupPicker";
 import { DateContextMenu } from "../components/DateContextMenu";
 import { StatusContextMenu } from "../components/StatusContextMenu";
 import { PriorityContextMenu } from "../components/PriorityContextMenu";
-import { ReminderModal } from "../modals/ReminderModal";
+import { ReminderContextMenu } from "../components/ReminderContextMenu";
 import { Reminder, TaskInfo } from "../types";
-import { type PropertyType } from "../utils/propertyDiscoveryUtils";
+import { type PropertyType, keyToDisplayName, getAllTaskFilePaths } from "../utils/propertyDiscoveryUtils";
 import { createPropertyPicker } from "../ui/PropertyPicker";
 import {
 	FIELD_OVERRIDE_PROPS,
 	OVERRIDABLE_FIELD_LABELS,
+	OVERRIDABLE_FIELD_TYPES,
 	type OverridableField,
 } from "../utils/fieldOverrideUtils";
+
 
 type BulkMode = "generate" | "convert";
 
@@ -79,6 +81,7 @@ export class BulkTaskCreationModal extends Modal {
 	private excludeKeysSet = new Set<string>(); // Shared mutable set — picker's refresh() reuses it
 
 	// UI element references
+	private topSectionsWrapper: HTMLElement | null = null;
 	private bodyContainer: HTMLElement | null = null;
 	private optionsContainer: HTMLElement | null = null;
 	private itemsContainer: HTMLElement | null = null;
@@ -123,6 +126,7 @@ export class BulkTaskCreationModal extends Modal {
 		// Add modal classes for new styling
 		modalEl.addClass("tn-bulk-modal");
 		contentEl.addClass("tn-bulk-modal__content");
+		contentEl.addClass("tasknotes-plugin");
 
 		// Discover persons synchronously (fast - reads from cache/files)
 		this.discoveredPersons = this.plugin.personNoteService?.discoverPersons() || [];
@@ -138,11 +142,10 @@ export class BulkTaskCreationModal extends Modal {
 		// Scrollable body container
 		this.bodyContainer = contentEl.createDiv({ cls: "tn-bulk-modal__body" });
 
-		// Action bar (icon-based bulk values)
-		this.renderActionBar(this.bodyContainer);
-
-		// Assignees section (PersonGroupPicker)
-		this.renderAssigneeSection(this.bodyContainer);
+		// Top sections wrapper (action bar + custom props + date props + assignees)
+		// Using a wrapper makes cleanup deterministic during mode switches
+		this.topSectionsWrapper = this.bodyContainer.createDiv({ cls: "tn-bulk-modal__top-sections" });
+		this.renderTopSections();
 
 		// Items section (expandable)
 		this.renderItemsSection(this.bodyContainer);
@@ -249,51 +252,23 @@ export class BulkTaskCreationModal extends Modal {
 	}
 
 	/**
-	 * Render the icon action bar for bulk values.
+	 * Render all top sections (action bar + custom props + date props + assignees)
+	 * into the topSectionsWrapper. Called from onOpen() and rebuildActionBarAndAssignees().
 	 */
-	private renderActionBar(container: HTMLElement) {
-		const section = container.createDiv({ cls: "tn-bulk-modal__section" });
+	private renderTopSections() {
+		if (!this.topSectionsWrapper) return;
 
-		// Section header with label and help icon
-		const header = section.createDiv({ cls: "tn-bulk-modal__section-header" });
-		header.createSpan({ cls: "tn-bulk-modal__section-label", text: "BULK VALUES" });
+		// 1. Action bar (Bulk Values)
+		const actionBarSection = this.topSectionsWrapper.createDiv({ cls: "tn-bulk-modal__section" });
+		this.renderActionBarInto(actionBarSection);
 
-		const helpIcon = header.createSpan({ cls: "tn-bulk-modal__help" });
-		setIcon(helpIcon, "help-circle");
-		setTooltip(helpIcon, "Set values to apply to all items. Click an icon to set a value.");
-
-		// Action bar with icons - same for both modes
-		const actionBar = section.createDiv({ cls: "tn-bulk-modal__action-bar" });
-
-		// Date icons
-		this.dueIcon = this.createActionIcon(actionBar, "calendar", "Due date", () => this.openDueDatePicker());
-		this.scheduledIcon = this.createActionIcon(actionBar, "calendar-clock", "Scheduled date", () => this.openScheduledDatePicker());
-
-		actionBar.createDiv({ cls: "tn-bulk-modal__action-separator" });
-
-		// Status and Priority
-		this.statusIcon = this.createActionIcon(actionBar, "circle-dot", "Status", () => this.openStatusPicker());
-		this.priorityIcon = this.createActionIcon(actionBar, "flag", "Priority", () => this.openPriorityPicker());
-
-		actionBar.createDiv({ cls: "tn-bulk-modal__action-separator" });
-
-		// Reminders
-		this.reminderIcon = this.createActionIcon(actionBar, "bell", "Reminders", () => this.openReminderPicker());
-
-		// Update icon states
-		this.updateActionIconStates();
-
-		// Custom properties as its own section (separate from Bulk Values)
-		const customSection = container.createDiv({ cls: "tn-bulk-modal__section" });
+		// 2. Custom Properties
+		const customSection = this.topSectionsWrapper.createDiv({ cls: "tn-bulk-modal__section" });
 		this.renderCustomPropertiesSection(customSection);
-	}
 
-	/**
-	 * Render the ASSIGNEES section with PersonGroupPicker.
-	 */
-	private renderAssigneeSection(container: HTMLElement) {
-		const section = container.createDiv({ cls: "tn-bulk-modal__section" });
-		this.renderAssigneeSectionInto(section);
+		// 3. Assignees
+		const assigneeSection = this.topSectionsWrapper.createDiv({ cls: "tn-bulk-modal__section" });
+		this.renderAssigneeSectionInto(assigneeSection);
 	}
 
 	/**
@@ -385,7 +360,7 @@ export class BulkTaskCreationModal extends Modal {
 
 		// Subsection header with label and help icon
 		const header = parentSection.createDiv({ cls: "tn-bulk-modal__section-header" });
-		header.createSpan({ cls: "tn-bulk-modal__section-label", text: "CUSTOM PROPERTIES" });
+		header.createSpan({ cls: "tn-bulk-modal__section-label", text: "PROPERTIES & ANCHORS" });
 
 		const helpIcon = header.createSpan({ cls: "tn-bulk-modal__help" });
 		setIcon(helpIcon, "help-circle");
@@ -399,26 +374,35 @@ export class BulkTaskCreationModal extends Modal {
 		// completely safe from createPropertyPicker's container.empty() call
 		this.activeListEl = parentSection.createDiv({ cls: "tn-bulk-modal__custom-props-active" });
 
-		// Create PropertyPicker with item paths from current view
-		const itemPaths = this.items
-			.map(item => item.path)
-			.filter((p): p is string => !!p);
-
 		// Sync the shared excludeKeys set with current state
 		this.syncExcludeKeys();
 
 		this.propertyPickerInstance = createPropertyPicker({
 			container: this.customPropsPanel,
 			plugin: this.plugin,
-			itemPaths,
+			itemPaths: this.items.map(i => i.path).filter((p): p is string => !!p),
 			excludeKeys: this.excludeKeysSet,
-			onSelect: (key: string, type: PropertyType, value?: any) => {
+			useAsOptions: Object.entries(OVERRIDABLE_FIELD_LABELS).map(([key, label]) => ({
+				key,
+				label,
+				requiresType: (OVERRIDABLE_FIELD_TYPES[key as OverridableField] || "text") as PropertyType,
+			})),
+			claimedMappings: this.bulkFieldOverrides,
+			onSelect: (key: string, type: PropertyType, value?: any, useAs?: string) => {
+				// Set field override mapping if a "Use as" target was chosen
+				if (useAs) {
+					this.clearBulkMappingForProperty(key);
+					this.bulkFieldOverrides[useAs] = key;
+				}
 				this.handleCustomPropertySelected(key, type, value);
 			},
 		});
 
+		// Vault-wide toggle visible — user controls whether to search all tasks or just selected items
+
 		// Render active custom properties (if any were set before a re-render)
 		this.renderCustomPropsActiveList();
+
 	}
 
 	/**
@@ -433,7 +417,6 @@ export class BulkTaskCreationModal extends Modal {
 
 		for (const key of keys) {
 			const entry = this.bulkCustomProperties[key];
-			const isDate = entry.type === "date";
 			const displayName = key.replace(/_/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, c => c.toUpperCase());
 
 			const row = this.activeListEl!.createDiv({ cls: "tn-prop-row" });
@@ -445,8 +428,8 @@ export class BulkTaskCreationModal extends Modal {
 			// ── Header row ──────────────────────────────────
 			const header = row.createDiv({ cls: "tn-prop-row__header" });
 
-			// Expand toggle (only for date properties)
-			if (isDate) {
+			// Expand toggle
+			{
 				const toggle = header.createDiv({ cls: "tn-prop-row__expand-toggle" });
 				const svgNS = "http://www.w3.org/2000/svg";
 				const chevronSvg = document.createElementNS(svgNS, "svg");
@@ -477,8 +460,8 @@ export class BulkTaskCreationModal extends Modal {
 			const valueContainer = header.createDiv({ cls: "tn-prop-row__value" });
 			this.renderCustomPropValueInput(valueContainer, key, entry);
 
-			// Mapping badge (only if date + has mapping)
-			if (isDate && currentMapping) {
+			// Mapping badge
+			if (currentMapping) {
 				const badge = header.createDiv({ cls: "tn-prop-row__mapping-badge" });
 				const pinSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
 				pinSvg.setAttribute("width", "10");
@@ -516,17 +499,17 @@ export class BulkTaskCreationModal extends Modal {
 				this.refreshPropertyPicker();
 			});
 
-			// ── Mapping panel (only for date properties) ────
-			if (isDate) {
+			// ── Mapping panel ────
+			{
 				const panel = row.createDiv({ cls: "tn-prop-row__mapping-panel" });
 				const mappingRow = panel.createDiv({ cls: "tn-prop-row__mapping-row" });
-				mappingRow.createDiv({ cls: "tn-prop-row__mapping-label", text: "Maps to:" });
+				mappingRow.createDiv({ cls: "tn-prop-row__mapping-label", text: "Map to:" });
 
 				const select = mappingRow.createEl("select", { cls: "tn-prop-row__mapping-dropdown" });
 
 				const mappingHelp = mappingRow.createSpan({ cls: "tn-prop-row__mapping-help" });
 				setIcon(mappingHelp, "help-circle");
-				setTooltip(mappingHelp, "Use this custom date property as the task's due, scheduled, completed, or created date. The mapping is saved per-task. Global default mappings can be configured in Settings \u2192 Task properties.");
+				setTooltip(mappingHelp, "Map this property to a core task field. The mapping is saved per-task. Global default mappings can be configured in Settings \u2192 Task properties.");
 
 				const noneOpt = select.createEl("option", { value: "", text: "None (custom only)" });
 				if (!currentMapping) noneOpt.selected = true;
@@ -550,6 +533,26 @@ export class BulkTaskCreationModal extends Modal {
 					}
 					this.renderCustomPropsActiveList();
 				});
+
+				// ── Type mismatch note ────────────────────────
+				const expectedType = currentMapping ? (OVERRIDABLE_FIELD_TYPES[currentMapping as OverridableField] || "text") : null;
+				if (currentMapping && expectedType && entry.type !== expectedType) {
+					const mismatch = panel.createDiv({ cls: "tn-prop-row__type-mismatch" });
+					mismatch.createSpan({ cls: "tn-prop-row__type-mismatch-icon", text: "\u26A0" });
+					mismatch.createSpan({
+						cls: "tn-prop-row__type-mismatch-text",
+						text: `Property type is '${entry.type}', but '${OVERRIDABLE_FIELD_LABELS[currentMapping as OverridableField]}' expects '${expectedType}'.`,
+					});
+					const convertAction = mismatch.createEl("a", {
+						cls: "tn-prop-row__type-mismatch-action",
+						text: `Convert to ${expectedType}`,
+					});
+					convertAction.addEventListener("click", (e) => {
+						e.preventDefault();
+						entry.type = expectedType as PropertyType;
+						this.renderCustomPropsActiveList();
+					});
+				}
 			}
 		}
 	}
@@ -910,8 +913,7 @@ export class BulkTaskCreationModal extends Modal {
 	private openReminderPicker() {
 		if (!this.reminderIcon) return;
 
-		// Create a temporary TaskInfo object for the ReminderModal
-		// The modal needs due/scheduled dates to calculate relative reminders
+		// Create a temporary TaskInfo for the context menu
 		const tempTask: TaskInfo = {
 			title: "Bulk Task",
 			status: this.bulkStatus || "",
@@ -923,21 +925,27 @@ export class BulkTaskCreationModal extends Modal {
 			reminders: [...this.bulkReminders],
 		};
 
-		// Check if we have dates for relative reminders
 		if (!this.dueDate && !this.scheduledDate) {
 			new Notice("Set a due or scheduled date to add relative reminders");
 		}
 
-		const modal = new ReminderModal(
-			this.app,
+		const menu = new ReminderContextMenu(
 			this.plugin,
 			tempTask,
-			(updatedReminders) => {
-				this.bulkReminders = updatedReminders;
+			this.reminderIcon,
+			(updatedTask: TaskInfo) => {
+				this.bulkReminders = updatedTask.reminders || [];
 				this.updateActionIconStates();
-			}
+			},
+			this.items.map(i => i.path).filter((p): p is string => !!p)
 		);
-		modal.open();
+
+		const rect = this.reminderIcon.getBoundingClientRect();
+		const event = new MouseEvent("click", {
+			clientX: rect.left,
+			clientY: rect.bottom,
+		});
+		menu.show(event);
 	}
 
 	/**
@@ -1067,48 +1075,21 @@ export class BulkTaskCreationModal extends Modal {
 	 * Used on mode change and when groups are discovered async.
 	 */
 	private rebuildActionBarAndAssignees() {
-		if (!this.bodyContainer) return;
+		if (!this.topSectionsWrapper) return;
 
-		// Clean up existing pickers
+		// Clean up existing pickers before emptying the wrapper
 		this.assigneePicker?.destroy();
 		this.assigneePicker = null;
 		if (this.propertyPickerInstance) {
 			this.propertyPickerInstance.destroy();
 			this.propertyPickerInstance = null;
 		}
-		if (this.customPropsPanel) {
-			this.customPropsPanel.remove();
-			this.customPropsPanel = null;
-		}
-		if (this.activeListEl) {
-			this.activeListEl.remove();
-			this.activeListEl = null;
-		}
+		this.customPropsPanel = null;
+		this.activeListEl = null;
 
-		// Remove the first 3 sections (action bar, custom props, assignees)
-		const sections = this.bodyContainer.querySelectorAll(".tn-bulk-modal__section");
-		const toRemove = Math.min(sections.length, 3);
-		for (let i = 0; i < toRemove; i++) {
-			sections[i].remove();
-		}
-
-		// Recreate sections at the beginning in correct order:
-		// 1. Action bar (Bulk Values)
-		// 2. Custom Properties
-		// 3. Assignees
-		const actionBarSection = this.bodyContainer.createDiv({ cls: "tn-bulk-modal__section" });
-		const customPropsSection = this.bodyContainer.createDiv({ cls: "tn-bulk-modal__section" });
-		const assigneeSection = this.bodyContainer.createDiv({ cls: "tn-bulk-modal__section" });
-
-		// Insert in correct order at the beginning
-		this.bodyContainer.insertBefore(assigneeSection, this.bodyContainer.firstChild);
-		this.bodyContainer.insertBefore(customPropsSection, assigneeSection);
-		this.bodyContainer.insertBefore(actionBarSection, customPropsSection);
-
-		// Render content
-		this.renderActionBarInto(actionBarSection);
-		this.renderCustomPropertiesSection(customPropsSection);
-		this.renderAssigneeSectionInto(assigneeSection);
+		// Empty the wrapper and re-render all top sections fresh
+		this.topSectionsWrapper.empty();
+		this.renderTopSections();
 	}
 
 	/**

@@ -1,9 +1,10 @@
 /**
  * Per-task field override utilities.
  *
- * Allows individual tasks to map custom frontmatter properties to core date
- * fields (e.g., "deadline" → due). Tracking properties like `tnDueDateProp`
- * are written to the task's frontmatter to record these overrides.
+ * Allows individual tasks to map custom frontmatter properties to core
+ * fields (e.g., "deadline" → due, "owner" → assignee). Tracking properties
+ * like `tnDueDateProp` are written to the task's frontmatter to record
+ * these overrides.
  */
 
 /**
@@ -19,6 +20,7 @@ export const FIELD_OVERRIDE_PROPS = {
 	scheduled: "tnScheduledDateProp",
 	completedDate: "tnCompletedDateProp",
 	dateCreated: "tnCreatedDateProp",
+	assignee: "tnAssigneeProp",
 } as const;
 
 /** Internal field keys that support per-task overrides. */
@@ -33,6 +35,16 @@ export const OVERRIDABLE_FIELD_LABELS: Record<OverridableField, string> = {
 	scheduled: "Scheduled date",
 	completedDate: "Completed date",
 	dateCreated: "Created date",
+	assignee: "Assignee",
+};
+
+/** Expected property type for each overridable field. */
+export const OVERRIDABLE_FIELD_TYPES: Record<OverridableField, string> = {
+	due: "date",
+	scheduled: "date",
+	completedDate: "date",
+	dateCreated: "date",
+	assignee: "text",
 };
 
 /**

@@ -31,13 +31,14 @@ import { ConfirmationModal } from "./ConfirmationModal";
 import {
 	type DiscoveredProperty,
 	type PropertyType,
-	discoverCustomProperties,
 	normalizeDateValue,
+	keyToDisplayName,
 } from "../utils/propertyDiscoveryUtils";
 import { createPropertyPicker } from "../ui/PropertyPicker";
 import {
 	FIELD_OVERRIDE_PROPS,
 	OVERRIDABLE_FIELD_LABELS,
+	OVERRIDABLE_FIELD_TYPES,
 	readFieldOverrides,
 	type OverridableField,
 } from "../utils/fieldOverrideUtils";
@@ -189,20 +190,9 @@ export class TaskEditModal extends TaskModal {
 				}
 			}
 
-			// Auto-discover additional properties not covered by configured userFields
-			const excludeKeys = new Set(
-				userFieldConfigs.filter((f: any) => f?.key).map((f: any) => f.key)
-			);
-			this.discoveredProperties = discoverCustomProperties(
-				this.plugin,
-				this.task.path,
-				excludeKeys
-			);
-
-			// Load discovered property values into userFields for the save pipeline
-			for (const prop of this.discoveredProperties) {
-				this.userFields[prop.key] = prop.value;
-			}
+			// Properties & Anchors section starts empty — user adds via search.
+			// Undiscovered frontmatter properties are preserved as-is on save
+			// (the save pipeline only writes diffs).
 
 			// Initialize per-task field overrides from existing tracking properties
 			this.fieldOverrides = readFieldOverrides(frontmatter);
@@ -357,11 +347,27 @@ export class TaskEditModal extends TaskModal {
 	}
 
 	/**
-	 * Add completions calendar, discovered properties, and metadata sections after details
+	 * Add completions calendar, discovered properties, and metadata sections after details.
+	 * Properties section is placed inside detailsContainer (where field groups live)
+	 * so it appears before the "Blocked By" / dependencies group.
 	 */
 	protected createAdditionalSections(container: HTMLElement): void {
+		// Create properties section in detailsContainer where field groups live,
+		// NOT in splitLeftColumn (container), so it's positioned correctly.
+		const fieldsTarget = this.detailsContainer || container;
+
+		// Find the dependencies group to insert before it
+		const groups = Array.from(fieldsTarget.querySelectorAll(":scope > .task-modal__field-group"));
+		let depsGroup: Element | null = null;
+		if (this.blockedByList) {
+			depsGroup = groups.find(g => g.contains(this.blockedByList!)) || null;
+		}
+		if (!depsGroup && groups.length >= 3) {
+			depsGroup = groups[2]; // Fallback: 3rd group is typically dependencies
+		}
+
+		this.createDiscoveredPropertiesSection(fieldsTarget, depsGroup as HTMLElement | null);
 		this.createCompletionsCalendarSection(container);
-		this.createDiscoveredPropertiesSection(container);
 		this.createMetadataSection(container);
 	}
 
@@ -484,14 +490,18 @@ export class TaskEditModal extends TaskModal {
 			const calendarContainer = container.createDiv("completions-calendar-container");
 
 			const calendarLabel = calendarContainer.createDiv("detail-label");
-			calendarLabel.textContent = this.t("modals.taskEdit.sections.completions");
+			calendarLabel.createSpan().textContent = this.t("modals.taskEdit.sections.completions");
+
+			const compHelp = calendarLabel.createSpan({ cls: "task-edit-modal__help" });
+			setIcon(compHelp, "help-circle");
+			setTooltip(compHelp, "Recurring task completion history. Green dots mark completed instances.");
 
 			const calendarContent = calendarContainer.createDiv("completions-calendar-content");
 			this.createRecurringCalendar(calendarContent);
 		}
 	}
 
-	private createDiscoveredPropertiesSection(container: HTMLElement): void {
+	private createDiscoveredPropertiesSection(container: HTMLElement, insertBefore?: HTMLElement | null): void {
 		// Build the set of configured userField keys to exclude from discovery
 		const userFieldConfigs = this.plugin.settings?.userFields || [];
 		const configuredKeys = new Set(
@@ -500,14 +510,22 @@ export class TaskEditModal extends TaskModal {
 
 		const hasDiscovered = this.discoveredProperties.length > 0;
 
-		// Use same separator pattern as user fields section
-		const sectionContainer = container.createDiv("discovered-properties-container user-fields-separator");
+		// Create element manually so we can control insertion point
+		const sectionContainer = document.createElement("div");
+		sectionContainer.className = "discovered-properties-container user-fields-separator";
+		if (insertBefore) {
+			container.insertBefore(sectionContainer, insertBefore);
+		} else {
+			container.appendChild(sectionContainer);
+		}
 
 		// Section label matching the bulk modal's "CUSTOM PROPERTIES" heading
-		sectionContainer.createDiv({
-			text: "Custom properties",
-			cls: "detail-label-section",
-		});
+		const propLabelRow = sectionContainer.createDiv({ cls: "detail-label-section" });
+		propLabelRow.createSpan({ text: "Properties & anchors" });
+
+		const propHelp = propLabelRow.createSpan({ cls: "task-edit-modal__help" });
+		setIcon(propHelp, "help-circle");
+		setTooltip(propHelp, "Search and add properties from your vault. Use the mapping dropdown to assign a property as a core task field. Configure default mappings in Settings \u2192 Task properties.");
 
 		// PropertyPicker for adding more (above the fields list, matching bulk modal layout)
 		const pickerContainer = sectionContainer.createDiv("discovered-properties-picker");
@@ -524,7 +542,22 @@ export class TaskEditModal extends TaskModal {
 			plugin: this.plugin,
 			currentFilePath: this.task.path,
 			excludeKeys: this.propertyPickerExcludeKeys,
-			onSelect: (key: string, type: PropertyType, value?: any) => {
+			useAsOptions: Object.entries(OVERRIDABLE_FIELD_LABELS).map(([key, label]) => ({
+				key,
+				label,
+				requiresType: (OVERRIDABLE_FIELD_TYPES[key as OverridableField] || "text") as PropertyType,
+			})),
+			claimedMappings: this.fieldOverrides || {},
+			onSelect: (key: string, type: PropertyType, value?: any, useAs?: string) => {
+				// Set field override mapping if a "Use as" target was chosen
+				if (useAs && this.fieldOverrides) {
+					// Clear any old mapping pointing to this property
+					for (const [fk, pk] of Object.entries(this.fieldOverrides)) {
+						if (pk === key) delete this.fieldOverrides[fk];
+					}
+					this.fieldOverrides[useAs] = key;
+				}
+
 				// Set default value based on type
 				let defaultValue: any = value ?? null;
 				if (defaultValue === null) {
@@ -558,6 +591,7 @@ export class TaskEditModal extends TaskModal {
 				this.renderDiscoveredPropertyFields(fieldsContainer, configuredKeys);
 			},
 		});
+
 	}
 
 	private renderDiscoveredPropertyFields(
@@ -566,8 +600,6 @@ export class TaskEditModal extends TaskModal {
 	): void {
 		for (const prop of this.discoveredProperties) {
 			if (configuredKeys.has(prop.key)) continue;
-
-			const isDate = prop.type === "date";
 
 			// Build the expandable row wrapper
 			const row = container.createDiv({ cls: "tn-prop-row" });
@@ -581,8 +613,8 @@ export class TaskEditModal extends TaskModal {
 			// ── Header row ──────────────────────────────────
 			const header = row.createDiv({ cls: "tn-prop-row__header" });
 
-			// Expand toggle (only for date properties)
-			if (isDate) {
+			// Expand toggle
+			{
 				const toggle = header.createDiv({ cls: "tn-prop-row__expand-toggle" });
 				const svgNS = "http://www.w3.org/2000/svg";
 				const chevronSvg = document.createElementNS(svgNS, "svg");
@@ -613,8 +645,8 @@ export class TaskEditModal extends TaskModal {
 			const valueContainer = header.createDiv({ cls: "tn-prop-row__value" });
 			this.createPropertyValueInput(valueContainer, prop);
 
-			// Mapping badge (only if date + has mapping)
-			if (isDate && currentMapping) {
+			// Mapping badge
+			if (currentMapping) {
 				const badge = header.createDiv({ cls: "tn-prop-row__mapping-badge" });
 				const pinSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
 				pinSvg.setAttribute("width", "10");
@@ -658,17 +690,17 @@ export class TaskEditModal extends TaskModal {
 				this.renderDiscoveredPropertyFields(container, configuredKeys);
 			});
 
-			// ── Mapping panel (only for date properties) ────
-			if (isDate) {
+			// ── Mapping panel ────
+			{
 				const panel = row.createDiv({ cls: "tn-prop-row__mapping-panel" });
 				const mappingRow = panel.createDiv({ cls: "tn-prop-row__mapping-row" });
-				mappingRow.createDiv({ cls: "tn-prop-row__mapping-label", text: "Maps to:" });
+				mappingRow.createDiv({ cls: "tn-prop-row__mapping-label", text: "Map to:" });
 
 				const select = mappingRow.createEl("select", { cls: "tn-prop-row__mapping-dropdown" });
 
 				const mappingHelp = mappingRow.createSpan({ cls: "tn-prop-row__mapping-help" });
 				setIcon(mappingHelp, "help-circle");
-				setTooltip(mappingHelp, "Use this custom date property as the task's due, scheduled, completed, or created date. The mapping is saved per-task. Global default mappings can be configured in Settings \u2192 Task properties.");
+				setTooltip(mappingHelp, "Map this property to a core task field. The mapping is saved per-task. Global default mappings can be configured in Settings \u2192 Task properties.");
 
 				// "None" option
 				const noneOpt = select.createEl("option", { value: "", text: "None (custom only)" });
@@ -702,6 +734,27 @@ export class TaskEditModal extends TaskModal {
 					container.empty();
 					this.renderDiscoveredPropertyFields(container, configuredKeys);
 				});
+
+				// ── Type mismatch note ────────────────────────
+				const expectedType = currentMapping ? (OVERRIDABLE_FIELD_TYPES[currentMapping as OverridableField] || "text") : null;
+				if (currentMapping && expectedType && prop.type !== expectedType) {
+					const mismatch = panel.createDiv({ cls: "tn-prop-row__type-mismatch" });
+					mismatch.createSpan({ cls: "tn-prop-row__type-mismatch-icon", text: "\u26A0" });
+					mismatch.createSpan({
+						cls: "tn-prop-row__type-mismatch-text",
+						text: `Property type is '${prop.type}', but '${OVERRIDABLE_FIELD_LABELS[currentMapping as OverridableField]}' expects '${expectedType}'.`,
+					});
+					const convertAction = mismatch.createEl("a", {
+						cls: "tn-prop-row__type-mismatch-action",
+						text: `Convert to ${expectedType}`,
+					});
+					convertAction.addEventListener("click", (e) => {
+						e.preventDefault();
+						prop.type = expectedType as PropertyType;
+						container.empty();
+						this.renderDiscoveredPropertyFields(container, configuredKeys);
+					});
+				}
 
 				// ── Conflict warning ────────────────────────
 				if (currentMapping) {
@@ -841,7 +894,11 @@ export class TaskEditModal extends TaskModal {
 		this.metadataContainer = container.createDiv("metadata-container");
 
 		const metadataLabel = this.metadataContainer.createDiv("detail-label");
-		metadataLabel.textContent = this.t("modals.taskEdit.sections.taskInfo");
+		metadataLabel.createSpan().textContent = this.t("modals.taskEdit.sections.taskInfo");
+
+		const infoHelp = metadataLabel.createSpan({ cls: "task-edit-modal__help" });
+		setIcon(infoHelp, "help-circle");
+		setTooltip(infoHelp, "Read-only metadata: tracked time, creation date, and file location.");
 
 		const metadataContent = this.metadataContainer.createDiv("metadata-content");
 

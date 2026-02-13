@@ -10,17 +10,20 @@ export class ReminderContextMenu {
 	private task: TaskInfo;
 	private triggerElement: HTMLElement;
 	private onUpdate: (task: TaskInfo) => void;
+	private itemPaths?: string[];
 
 	constructor(
 		plugin: TaskNotesPlugin,
 		task: TaskInfo,
 		triggerElement: HTMLElement,
-		onUpdate: (task: TaskInfo) => void
+		onUpdate: (task: TaskInfo) => void,
+		itemPaths?: string[]
 	) {
 		this.plugin = plugin;
 		this.task = task;
 		this.triggerElement = triggerElement;
 		this.onUpdate = onUpdate;
+		this.itemPaths = itemPaths;
 	}
 
 	show(event: UIEvent): void {
@@ -190,7 +193,8 @@ export class ReminderContextMenu {
 			this.task,
 			async (reminders: Reminder[]) => {
 				await this.saveReminders(reminders);
-			}
+			},
+			this.itemPaths
 		);
 		modal.open();
 	}

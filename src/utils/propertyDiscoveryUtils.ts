@@ -38,6 +38,8 @@ export interface PropertyCatalogEntry {
 	fileCount: number;
 	/** File paths with non-dominant type (for conversion targeting) */
 	mismatchedFiles: string[];
+	/** All file paths that have this property (for full conversion) */
+	allFiles: string[];
 	/** Whether all values are the same type */
 	isConsistent: boolean;
 }
@@ -277,6 +279,12 @@ export function buildPropertyCatalog(
 			}
 		}
 
+		// Collect all file paths across all types
+		const allFiles: string[] = [];
+		for (const files of Object.values(data.filesByType)) {
+			allFiles.push(...files);
+		}
+
 		entries.push({
 			key,
 			displayName: keyToDisplayName(key),
@@ -284,6 +292,7 @@ export function buildPropertyCatalog(
 			typeBreakdown: data.typeBreakdown,
 			fileCount: data.fileCount,
 			mismatchedFiles,
+			allFiles,
 			isConsistent: mismatchedFiles.length === 0,
 		});
 	}

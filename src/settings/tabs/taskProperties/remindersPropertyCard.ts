@@ -1,7 +1,17 @@
-import { setIcon } from "obsidian";
+import { setIcon, setTooltip, Notice } from "obsidian";
 import TaskNotesPlugin from "../../../main";
-import { DefaultReminder, GlobalReminderRule } from "../../../types/settings";
-import { getAvailableDateAnchors, getAnchorDisplayName } from "../../../utils/dateAnchorUtils";
+import { DefaultReminder, GlobalReminderRule, UserMappedField } from "../../../types/settings";
+import { getAvailableDateAnchors, getAnchorDisplayName, type DateAnchor } from "../../../utils/dateAnchorUtils";
+import {
+	type TimelineMarker,
+	normalizeToHours,
+	formatShortOffset,
+	renderTimelineArea,
+	scrollToReminderCard,
+} from "../../../utils/reminderTimelineUtils";
+import { formatDateForDisplay } from "../../../utils/dateUtils";
+import { createPropertyPicker } from "../../../ui/PropertyPicker";
+import { getAllTaskFilePaths, convertPropertyType, type PropertyType } from "../../../utils/propertyDiscoveryUtils";
 import type { TranslationKey } from "../../../i18n";
 import {
 	createCard,
@@ -13,6 +23,10 @@ import {
 	CardRow,
 } from "../../components/CardComponent";
 import { createPropertyDescription, TranslateFn } from "./helpers";
+import { initializeFieldConfig } from "../../../utils/fieldConfigDefaults";
+
+// Transient state: tracks recently demoted keys for "Undo" affordance (resets on settings reopen)
+const recentlyDemotedKeys = new Set<string>();
 
 /**
  * Renders the Reminders property card with nested default reminders
@@ -48,6 +62,34 @@ export function renderRemindersPropertyCard(
 	// Initial render (no debounce)
 	renderReminderTimeline(timelineContainer, plugin, nestedContainer);
 
+	// ── Snapshots for reset functionality ──
+	const defaultRemindersSnapshot = JSON.parse(
+		JSON.stringify(plugin.settings.taskCreationDefaults.defaultReminders || [])
+	);
+	const globalRulesSnapshot = JSON.parse(
+		JSON.stringify(plugin.settings.globalReminderRules || [])
+	);
+
+	// Save wrapper that tracks changes for reset buttons
+	let defaultResetBtn: HTMLButtonElement | null = null;
+	let globalResetBtn: HTMLButtonElement | null = null;
+	const trackChanges = () => {
+		if (defaultResetBtn) {
+			const changed = JSON.stringify(plugin.settings.taskCreationDefaults.defaultReminders || [])
+				!== JSON.stringify(defaultRemindersSnapshot);
+			defaultResetBtn.disabled = !changed;
+		}
+		if (globalResetBtn) {
+			const changed = JSON.stringify(plugin.settings.globalReminderRules || [])
+				!== JSON.stringify(globalRulesSnapshot);
+			globalResetBtn.disabled = !changed;
+		}
+	};
+	const saveAndTrack = () => { save(); trackChanges(); };
+
+	// ── Available date properties reference section (also shown at top-level in Date Properties) ──
+	renderDatePropertiesReference(nestedContainer, plugin);
+
 	// Create collapsible section for default reminders
 	const remindersSection = nestedContainer.createDiv("tasknotes-settings__collapsible-section tn-reminders-section tn-reminders-section--default");
 
@@ -66,13 +108,17 @@ export function renderRemindersPropertyCard(
 
 	// Render reminder cards
 	const remindersListContainer = remindersContent.createDiv("tasknotes-reminders-container");
-	renderRemindersList(remindersListContainer, plugin, save, translate, refreshTimeline);
+	renderRemindersList(remindersListContainer, plugin, saveAndTrack, translate, refreshTimeline);
+
+	// Button row for add + reset
+	const defaultButtonRow = remindersContent.createDiv();
+	defaultButtonRow.style.cssText = "margin-top: 0.5rem; display: flex; align-items: center; gap: 8px;";
 
 	// Add reminder button
-	const addReminderButton = remindersContent.createEl("button", {
+	const addReminderButton = defaultButtonRow.createEl("button", {
 		cls: "tn-btn tn-btn--ghost",
 	});
-	addReminderButton.style.cssText = "margin-top: 0.5rem; display: inline-flex; align-items: center; gap: 4px;";
+	addReminderButton.style.cssText = "display: inline-flex; align-items: center; gap: 4px;";
 	const addReminderIcon = addReminderButton.createSpan();
 	addReminderIcon.style.cssText = "display: inline-flex; width: 16px; height: 16px;";
 	setIcon(addReminderIcon, "plus");
@@ -91,10 +137,30 @@ export function renderRemindersPropertyCard(
 		plugin.settings.taskCreationDefaults.defaultReminders =
 			plugin.settings.taskCreationDefaults.defaultReminders || [];
 		plugin.settings.taskCreationDefaults.defaultReminders.push(newReminder);
-		save();
-		renderRemindersList(remindersListContainer, plugin, save, translate, refreshTimeline);
+		saveAndTrack();
+		renderRemindersList(remindersListContainer, plugin, saveAndTrack, translate, refreshTimeline);
 		refreshTimeline();
 	};
+
+	// Reset button for default reminders
+	defaultResetBtn = defaultButtonRow.createEl("button", {
+		cls: "tn-btn tn-btn--ghost",
+		text: "Undo changes",
+	});
+	defaultResetBtn.style.cssText = "display: inline-flex; align-items: center; gap: 4px; color: var(--text-warning);";
+	defaultResetBtn.disabled = true;
+	setTooltip(defaultResetBtn, "Revert to the state when settings were opened");
+	defaultResetBtn.onclick = () => {
+		plugin.settings.taskCreationDefaults.defaultReminders = JSON.parse(JSON.stringify(defaultRemindersSnapshot));
+		saveAndTrack();
+		renderRemindersList(remindersListContainer, plugin, saveAndTrack, translate, refreshTimeline);
+		refreshTimeline();
+	};
+
+	// Auto-save note
+	const defaultAutoSaveNote = defaultButtonRow.createEl("span");
+	defaultAutoSaveNote.style.cssText = "font-size: var(--font-ui-smaller); color: var(--text-faint); margin-left: auto;";
+	defaultAutoSaveNote.textContent = "Changes save automatically";
 
 	// Toggle collapse
 	remindersHeader.addEventListener("click", () => {
@@ -135,12 +201,16 @@ export function renderRemindersPropertyCard(
 	});
 
 	const globalListContainer = globalContent.createDiv("tasknotes-reminders-container");
-	renderGlobalRemindersList(globalListContainer, plugin, save, translate, refreshTimeline);
+	renderGlobalRemindersList(globalListContainer, plugin, saveAndTrack, translate, refreshTimeline);
 
-	const addGlobalButton = globalContent.createEl("button", {
+	// Button row for add + reset
+	const globalButtonRow = globalContent.createDiv();
+	globalButtonRow.style.cssText = "margin-top: 0.5rem; display: flex; align-items: center; gap: 8px;";
+
+	const addGlobalButton = globalButtonRow.createEl("button", {
 		cls: "tn-btn tn-btn--ghost",
 	});
-	addGlobalButton.style.cssText = "margin-top: 0.5rem; display: inline-flex; align-items: center; gap: 4px;";
+	addGlobalButton.style.cssText = "display: inline-flex; align-items: center; gap: 4px;";
 	const addGlobalIcon = addGlobalButton.createSpan();
 	addGlobalIcon.style.cssText = "display: inline-flex; width: 16px; height: 16px;";
 	setIcon(addGlobalIcon, "plus");
@@ -157,10 +227,30 @@ export function renderRemindersPropertyCard(
 		};
 		plugin.settings.globalReminderRules = plugin.settings.globalReminderRules || [];
 		plugin.settings.globalReminderRules.push(newRule);
-		save();
-		renderGlobalRemindersList(globalListContainer, plugin, save, translate, refreshTimeline);
+		saveAndTrack();
+		renderGlobalRemindersList(globalListContainer, plugin, saveAndTrack, translate, refreshTimeline);
 		refreshTimeline();
 	};
+
+	// Reset button for global reminders
+	globalResetBtn = globalButtonRow.createEl("button", {
+		cls: "tn-btn tn-btn--ghost",
+		text: "Undo changes",
+	});
+	globalResetBtn.style.cssText = "display: inline-flex; align-items: center; gap: 4px; color: var(--text-warning);";
+	globalResetBtn.disabled = true;
+	setTooltip(globalResetBtn, "Revert to the state when settings were opened");
+	globalResetBtn.onclick = () => {
+		plugin.settings.globalReminderRules = JSON.parse(JSON.stringify(globalRulesSnapshot));
+		saveAndTrack();
+		renderGlobalRemindersList(globalListContainer, plugin, saveAndTrack, translate, refreshTimeline);
+		refreshTimeline();
+	};
+
+	// Auto-save note
+	const globalAutoSaveNote = globalButtonRow.createEl("span");
+	globalAutoSaveNote.style.cssText = "font-size: var(--font-ui-smaller); color: var(--text-faint); margin-left: auto;";
+	globalAutoSaveNote.textContent = "Changes save automatically";
 
 	globalHeader.addEventListener("click", () => {
 		globalSection.toggleClass("tasknotes-settings__collapsible-section--collapsed",
@@ -354,13 +444,22 @@ function renderRelativeReminderConfig(
 		updateItem({ direction: directionSelect.value as "before" | "after" });
 	});
 
-	const anchors = getAvailableDateAnchors(plugin);
-	const anchorOptions = anchors.map((a) => ({
-		value: a.key,
-		label: a.displayName,
-	}));
+	const anchors = getAvailableDateAnchors(plugin, undefined, { includeVaultWideDiscovery: true });
+	const anchorOptions = buildAnchorOptionsWithSeparators(anchors);
 	const relatedToSelect = createCardSelect(anchorOptions, reminder.relatedTo);
+	disableSeparatorOptions(relatedToSelect);
 	relatedToSelect.addEventListener("change", () => {
+		if (relatedToSelect.value === "__action_discover__") {
+			relatedToSelect.value = reminder.relatedTo ?? "due";
+			const wrapper = relatedToSelect.closest(".tasknotes-settings__nested-cards")
+				?? relatedToSelect.closest(".tasknotes-settings__card-body");
+			const dateProps = wrapper?.querySelector("details.tn-date-props") as HTMLDetailsElement | null;
+			if (dateProps) {
+				dateProps.open = true;
+				dateProps.scrollIntoView({ behavior: "smooth", block: "start" });
+			}
+			return;
+		}
 		updateItem({ relatedTo: relatedToSelect.value });
 	});
 
@@ -444,8 +543,8 @@ function renderGlobalRemindersList(
 
 	rules.forEach((rule, index) => {
 		const statusText = rule.enabled ? "Enabled" : "Disabled";
-		const anchors = getAvailableDateAnchors(plugin);
-		const anchorOptions = anchors.map((a) => ({ value: a.key, label: a.displayName }));
+		const anchors = getAvailableDateAnchors(plugin, undefined, { includeVaultWideDiscovery: true });
+		const anchorOptions = buildAnchorOptionsWithSeparators(anchors);
 
 		const parsed = parseISO8601Offset(rule.offset);
 
@@ -498,7 +597,19 @@ function renderGlobalRemindersList(
 
 		// Anchor
 		const anchorSelect = createCardSelect(anchorOptions, rule.anchorProperty);
+		disableSeparatorOptions(anchorSelect);
 		anchorSelect.addEventListener("change", () => {
+			if (anchorSelect.value === "__action_discover__") {
+				anchorSelect.value = rule.anchorProperty;
+				const wrapper = anchorSelect.closest(".tasknotes-settings__nested-cards")
+					?? anchorSelect.closest(".tasknotes-settings__card-body");
+				const dateProps = wrapper?.querySelector("details.tn-date-props") as HTMLDetailsElement | null;
+				if (dateProps) {
+					dateProps.open = true;
+					dateProps.scrollIntoView({ behavior: "smooth", block: "start" });
+				}
+				return;
+			}
 			rule.anchorProperty = anchorSelect.value;
 			save();
 			onTimelineRefresh?.();
@@ -638,6 +749,449 @@ function renderGlobalRemindersList(
 	});
 }
 
+/**
+ * Renders a collapsible "Available date properties" reference section for the settings UI.
+ * Shows vault-wide date properties grouped by origin (Core / Custom / Discovered).
+ */
+export function renderDatePropertiesReference(container: HTMLElement, plugin: TaskNotesPlugin): void {
+	// Find or create wrapper (preserves DOM position on re-renders)
+	let wrapper = container.querySelector(":scope > .tn-date-props-section-wrapper") as HTMLElement;
+	const wasOpen = wrapper?.querySelector("details.tn-date-props")?.hasAttribute("open") ?? false;
+	if (wrapper) {
+		wrapper.empty();
+	} else {
+		wrapper = container.createDiv({ cls: "tn-date-props-section-wrapper" });
+	}
+
+	const anchors = getAvailableDateAnchors(plugin, undefined, { includeVaultWideDiscovery: true });
+	if (anchors.length === 0) return;
+
+	const details = wrapper.createEl("details", { cls: "tn-date-props" });
+	const summary = details.createEl("summary", { cls: "tn-date-props-summary" });
+	const headerRow = summary.createSpan({ cls: "tn-date-props-header-row" });
+	headerRow.createEl("h3", { text: "Properties & anchors" });
+	const settingsHelp = headerRow.createSpan({ cls: "tn-date-props-help" });
+	setIcon(settingsHelp, "help-circle");
+	setTooltip(settingsHelp, "Date properties used as reminder anchors. Promote discovered properties to make them available globally. Core properties come from built-in task fields.");
+	const setCount = anchors.filter(a => a.currentValue).length;
+	summary.createSpan({
+		text: `(${anchors.length} found)`,
+		cls: "tn-date-props-count",
+	});
+	(summary.lastElementChild as HTMLElement).style.cssText = "font-size: var(--font-ui-smaller); color: var(--text-muted); font-weight: 400;";
+
+	// Description text
+	const desc = details.createEl("p", { cls: "tn-date-props-description" });
+	desc.appendText("Properties available as reminder anchors. Core and Global properties appear in the \"Relative to\" dropdowns above and in the ");
+	const rmLink = desc.createEl("strong", { text: "Reminder modal" });
+	rmLink.style.cssText = "color: var(--text-normal);";
+	desc.appendText(" when editing a task\u2019s reminders.");
+
+	const propsContainer = details.createDiv({ cls: "tn-date-props-list" });
+
+	// Group by origin
+	const coreAnchors = anchors.filter(a => a.origin === "core");
+	const settingsAnchors = anchors.filter(a => a.origin === "settings");
+	const discoveredAnchors = anchors.filter(a => a.origin === "discovered");
+
+	const MAX_VISIBLE = 5;
+	const renderGroup = (label: string, group: DateAnchor[], originClass: string, helpTip?: string) => {
+		if (group.length === 0) return;
+
+		const groupContainer = propsContainer.createDiv({ cls: "tn-date-props-group" });
+		const groupHeader = groupContainer.createDiv({ cls: "tn-date-props-group-header" });
+		groupHeader.createSpan({ text: label });
+		if (helpTip) {
+			const helpEl = groupHeader.createSpan({ cls: "tn-date-props-group-help" });
+			setIcon(helpEl, "help-circle");
+			setTooltip(helpEl, helpTip);
+		}
+
+		// Search input for large groups
+		let searchInput: HTMLInputElement | null = null;
+		if (group.length > MAX_VISIBLE) {
+			searchInput = groupContainer.createEl("input", {
+				attr: { type: "text", placeholder: "Filter properties..." },
+				cls: "tn-date-props-search-input",
+			});
+		}
+
+		const rowEntries: { el: HTMLElement; anchor: DateAnchor }[] = [];
+		for (const anchor of group) {
+			const row = groupContainer.createDiv({ cls: `tn-date-prop-row ${originClass}` });
+			rowEntries.push({ el: row, anchor });
+
+			// Origin badge (with "Demoted" state for recently demoted properties)
+			const badge = row.createSpan({ cls: "tn-date-prop-badge" });
+			const isDemoted = anchor.origin === "discovered" && recentlyDemotedKeys.has(anchor.key);
+			if (isDemoted) {
+				badge.textContent = "Demoted";
+				badge.style.cssText = "background: color-mix(in srgb, var(--text-warning) 15%, transparent); color: var(--text-warning);";
+			} else {
+				badge.textContent = anchor.origin === "core" ? "Core" : anchor.origin === "settings" ? "Global" : "Found";
+			}
+
+			// Property name + key hint (shows frontmatter key when mapped differently)
+			const nameEl = row.createSpan({ cls: "tn-date-prop-name" });
+			nameEl.textContent = anchor.displayName;
+			const hintKey = anchor.frontmatterKey || anchor.key;
+			if (anchor.displayName !== hintKey) {
+				nameEl.createSpan({
+					cls: "tn-date-prop-key-hint",
+					text: `(${hintKey})`,
+				});
+			}
+
+			// File count for discovered (vault-wide)
+			if (anchor.origin === "discovered" && anchor.vaultFileCount) {
+				row.createSpan({
+					cls: "tn-date-prop-file-count",
+					text: `${anchor.vaultFileCount} tasks`,
+				});
+			}
+
+			// Promote or Undo button (discovered properties only)
+			if (anchor.origin === "discovered") {
+				if (isDemoted) {
+					// "Undo" button for recently demoted properties
+					const undoBtn = row.createEl("button", {
+						cls: "tn-date-prop-promote-btn",
+						text: "Undo",
+					});
+					setTooltip(undoBtn, "Re-promote to global custom properties");
+					undoBtn.onclick = (e) => {
+						e.preventDefault();
+						e.stopPropagation();
+						recentlyDemotedKeys.delete(anchor.key);
+						promoteDiscoveredToUserField(plugin, anchor.key, anchor.displayName);
+						renderDatePropertiesReference(container, plugin);
+					};
+				} else {
+					const promoteBtn = row.createEl("button", {
+						cls: "tn-date-prop-promote-btn",
+						text: "Promote",
+					});
+					setTooltip(promoteBtn, "Save as global property. Appears in all task modals and reminder anchors. Reversible.");
+					promoteBtn.onclick = (e) => {
+						e.preventDefault();
+						e.stopPropagation();
+						promoteDiscoveredToUserField(plugin, anchor.key, anchor.displayName);
+						renderDatePropertiesReference(container, plugin);
+					};
+				}
+			}
+
+			// Demote button (settings/global properties only)
+			if (anchor.origin === "settings") {
+				const demoteBtn = row.createEl("button", {
+					cls: "tn-date-prop-demote-btn",
+					text: "Demote",
+				});
+				setTooltip(demoteBtn, "Remove from global fields. Data stays on individual tasks.");
+				demoteBtn.onclick = (e) => {
+					e.preventDefault();
+					e.stopPropagation();
+					recentlyDemotedKeys.add(anchor.key);
+					demoteUserField(plugin, anchor.key);
+					renderDatePropertiesReference(container, plugin);
+				};
+			}
+		}
+
+		// Search filter + "Show all" for large groups
+		if (group.length > MAX_VISIBLE) {
+			let showAll = false;
+			let showMoreEl: HTMLElement | null = null;
+
+			const applyVisibility = () => {
+				const query = searchInput?.value.toLowerCase() || "";
+				let visibleCount = 0;
+				let totalMatching = 0;
+
+				for (const { el, anchor: a } of rowEntries) {
+					const matches = !query ||
+						a.displayName.toLowerCase().includes(query) ||
+						a.key.toLowerCase().includes(query);
+					if (matches) {
+						totalMatching++;
+						if (showAll || visibleCount < MAX_VISIBLE) {
+							el.style.display = "";
+							visibleCount++;
+						} else {
+							el.style.display = "none";
+						}
+					} else {
+						el.style.display = "none";
+					}
+				}
+
+				if (showMoreEl) { showMoreEl.remove(); showMoreEl = null; }
+				if (!showAll && totalMatching > MAX_VISIBLE) {
+					showMoreEl = groupContainer.createDiv({ cls: "tn-date-props-show-more" });
+					showMoreEl.textContent = `+ ${totalMatching - MAX_VISIBLE} more`;
+					showMoreEl.onclick = () => { showAll = true; applyVisibility(); };
+				}
+			};
+
+			searchInput?.addEventListener("input", () => applyVisibility());
+			applyVisibility(); // initial truncation
+		}
+	};
+
+	renderGroup("Core", coreAnchors, "tn-date-prop-row--core",
+		"Built-in task fields (due, scheduled, etc.). These are always available as reminder anchors.");
+	renderGroup("Global custom properties", settingsAnchors, "tn-date-prop-row--settings",
+		"Properties you've promoted from discovered properties or created manually. They appear in all task modals and can be used as reminder anchors. Demote to remove from global fields (data on individual tasks is preserved).");
+	// Discovered & Available section — PropertyPicker for all property types
+	{
+		const discoveredGroup = propsContainer.createDiv({ cls: "tn-date-props-group" });
+		const discoveredHeader = discoveredGroup.createDiv({ cls: "tn-date-props-group-header" });
+		discoveredHeader.createSpan({ text: "Discovered & available" });
+		const discoverHelp = discoveredHeader.createSpan({ cls: "tn-date-props-group-help" });
+		setIcon(discoverHelp, "help-circle");
+		setTooltip(discoverHelp, "Properties found across your vault. Click a date property to promote it to a global custom property. Use the \u2192 date button to convert non-date properties first.");
+
+		// Exclude keys already shown in Core and Global sections
+		const pickerExcludeKeys = new Set([
+			...coreAnchors.map(a => a.key),
+			...settingsAnchors.map(a => a.key),
+			// Also exclude frontmatter keys (mapped names) to avoid duplicates
+			...coreAnchors.filter(a => a.frontmatterKey).map(a => a.frontmatterKey!),
+			...settingsAnchors.filter(a => a.frontmatterKey).map(a => a.frontmatterKey!),
+		]);
+
+		const pickerContainer = discoveredGroup.createDiv({ cls: "tn-date-props-picker-wrapper" });
+		createPropertyPicker({
+			container: pickerContainer,
+			plugin,
+			itemPaths: getAllTaskFilePaths(plugin),
+			excludeKeys: pickerExcludeKeys,
+			allowedConversionTargets: ["date"],
+			onSelect: (key: string, type: PropertyType) => {
+				promoteDiscoveredToUserField(plugin, key);
+				renderDatePropertiesReference(container, plugin);
+			},
+			onConvert: async (key: string, targetType: PropertyType, files: string[], strategy: "convert-in-place" | "create-duplicate") => {
+				// Confirmation is now handled by PropertyPicker internally
+				await convertPropertyType(plugin, key, targetType, files, strategy);
+				new Notice(`Converted ${files.length} file${files.length !== 1 ? "s" : ""} to ${targetType}`);
+				// After conversion to date, auto-promote
+				promoteDiscoveredToUserField(plugin, key);
+				renderDatePropertiesReference(container, plugin);
+			},
+		});
+
+		// In settings, vault-wide is always on — hide the toggle and auto-check it
+		const vaultToggle = pickerContainer.querySelector(".tn-pp-toggle-container") as HTMLElement;
+		if (vaultToggle) vaultToggle.style.display = "none";
+		const vaultCheckbox = pickerContainer.querySelector(".tn-pp-toggle-checkbox") as HTMLInputElement;
+		if (vaultCheckbox && !vaultCheckbox.checked) {
+			vaultCheckbox.checked = true;
+			vaultCheckbox.dispatchEvent(new Event("change"));
+		}
+
+		// Help text
+		const helpEl = discoveredGroup.createEl("p", { cls: "tn-date-props-picker-help" });
+		helpEl.textContent = "Search all properties across your vault. Date properties can be promoted directly. Non-date properties can be converted using the \u2192 date button.";
+
+		// Recently demoted items — show below picker with "Undo" affordance
+		if (recentlyDemotedKeys.size > 0) {
+			const demotedContainer = discoveredGroup.createDiv({ cls: "tn-date-props-demoted" });
+			demotedContainer.createDiv({ cls: "tn-date-props-demoted-header", text: "Recently demoted" });
+			for (const key of recentlyDemotedKeys) {
+				const row = demotedContainer.createDiv({ cls: "tn-date-prop-row tn-date-prop-row--demoted" });
+				const badge = row.createSpan({ cls: "tn-date-prop-badge" });
+				badge.textContent = "Demoted";
+				badge.style.cssText = "background: color-mix(in srgb, var(--text-warning) 15%, transparent); color: var(--text-warning);";
+				row.createSpan({ cls: "tn-date-prop-name", text: key });
+				const undoBtn = row.createEl("button", {
+					cls: "tn-date-prop-promote-btn",
+					text: "Undo",
+				});
+				setTooltip(undoBtn, "Re-promote to global custom properties");
+				undoBtn.onclick = (e) => {
+					e.preventDefault();
+					e.stopPropagation();
+					recentlyDemotedKeys.delete(key);
+					promoteDiscoveredToUserField(plugin, key);
+					renderDatePropertiesReference(container, plugin);
+				};
+			}
+		}
+	}
+
+	// "Add date property" button — creates a new User Field of type date
+	const addContainer = propsContainer.createDiv({ cls: "tn-date-props-add" });
+	const addBtn = addContainer.createEl("button", {
+		cls: "tn-date-prop-add-btn",
+	});
+	const addBtnIcon = addBtn.createSpan({ cls: "tn-date-prop-add-icon" });
+	setIcon(addBtnIcon, "plus");
+	addBtn.createSpan({ text: "Add date property" });
+
+	addBtn.onclick = () => {
+		addBtn.style.display = "none";
+
+		const form = addContainer.createDiv({ cls: "tn-date-props-add-form" });
+		const nameInput = form.createEl("input", {
+			attr: { type: "text", placeholder: "Property name (e.g., review_date)" },
+			cls: "tn-date-props-add-name",
+		});
+
+		const submitBtn = form.createEl("button", { cls: "tn-date-props-add-submit" });
+		const submitIcon = submitBtn.createSpan();
+		setIcon(submitIcon, "check");
+		setTooltip(submitBtn, "Create date property");
+		submitBtn.onclick = () => {
+			const key = nameInput.value.trim().replace(/\s+/g, "_");
+			if (!key) {
+				new Notice("Please enter a property name");
+				return;
+			}
+
+			const userFields = plugin.settings.userFields || [];
+			if (userFields.some(f => f.key === key)) {
+				new Notice(`Property "${key}" already exists`);
+				return;
+			}
+
+			promoteDiscoveredToUserField(plugin, key);
+			renderDatePropertiesReference(container, plugin);
+		};
+
+		const cancelBtn = form.createEl("button", { cls: "tn-date-props-add-cancel" });
+		const cancelIcon = cancelBtn.createSpan();
+		setIcon(cancelIcon, "x");
+		setTooltip(cancelBtn, "Cancel");
+		cancelBtn.onclick = () => {
+			form.remove();
+			addBtn.style.display = "";
+		};
+
+		setTimeout(() => nameInput.focus(), 50);
+	};
+
+	// Restore <details> open state after re-render
+	if (wasOpen) details.setAttribute("open", "");
+}
+
+/**
+ * Promote a discovered property to a custom User Field (date type) in settings.
+ */
+function promoteDiscoveredToUserField(plugin: TaskNotesPlugin, key: string, displayName?: string): void {
+	const userFields = plugin.settings.userFields || [];
+	if (userFields.some(f => f.key === key)) {
+		new Notice(`"${displayName || key}" is already a global property`);
+		return;
+	}
+
+	const newField: UserMappedField = {
+		id: key,
+		displayName: displayName || key,
+		key: key,
+		type: "date",
+	};
+
+	userFields.push(newField);
+	plugin.settings.userFields = userFields;
+
+	// Also register in modalFieldsConfig so it appears in task creation/edit modals
+	if (!plugin.settings.modalFieldsConfig) {
+		plugin.settings.modalFieldsConfig = initializeFieldConfig(
+			undefined,
+			plugin.settings.userFields
+		);
+	} else {
+		const config = plugin.settings.modalFieldsConfig;
+		const alreadyExists = config.fields.some(f => f.id === key && f.fieldType === "user");
+		if (!alreadyExists) {
+			const customGroupFields = config.fields.filter(f => f.group === "custom");
+			const maxOrder = customGroupFields.length > 0
+				? Math.max(...customGroupFields.map(f => f.order))
+				: -1;
+			config.fields.push({
+				id: key,
+				fieldType: "user",
+				group: "custom",
+				displayName: displayName || key,
+				visibleInCreation: true,
+				visibleInEdit: true,
+				order: maxOrder + 1,
+				enabled: true,
+			});
+		}
+	}
+
+	plugin.saveSettings();
+	new Notice(`"${displayName || key}" added as a global property`);
+}
+
+/**
+ * Demote a global property back to discovered — removes from userFields and modalFieldsConfig.
+ * Frontmatter data on individual tasks is preserved.
+ */
+function demoteUserField(plugin: TaskNotesPlugin, key: string): void {
+	const userFields = plugin.settings.userFields || [];
+	const idx = userFields.findIndex(f => f.key === key);
+	if (idx >= 0) userFields.splice(idx, 1);
+	plugin.settings.userFields = userFields;
+
+	if (plugin.settings.modalFieldsConfig) {
+		const config = plugin.settings.modalFieldsConfig;
+		config.fields = config.fields.filter(
+			f => !(f.id === key && f.fieldType === "user")
+		);
+	}
+
+	plugin.saveSettings();
+	new Notice(`"${key}" removed from global properties. Data preserved on tasks.`);
+}
+
+/**
+ * Build dropdown options from DateAnchor[], showing only core + promoted (settings) properties.
+ * Discovered properties are excluded — users should promote them first via the date properties section.
+ * Adds a "Discover & promote more..." action at the bottom.
+ */
+function buildAnchorOptionsWithSeparators(anchors: DateAnchor[]): { value: string; label: string }[] {
+	const options: { value: string; label: string }[] = [];
+	const core = anchors.filter(a => a.origin === "core");
+	const settings = anchors.filter(a => a.origin === "settings");
+
+	for (const a of core) {
+		options.push({ value: a.key, label: a.displayName });
+	}
+
+	if (settings.length > 0) {
+		options.push({ value: "__sep_global__", label: "\u2500\u2500 Global custom properties \u2500\u2500" });
+		for (const a of settings) {
+			options.push({ value: a.key, label: a.displayName });
+		}
+	}
+
+	options.push({ value: "__action_discover__", label: "+ Discover & promote more..." });
+
+	return options;
+}
+
+/**
+ * Disable separator options and style action options in a select element.
+ * Separators (value starts with "__sep_") are disabled and greyed out.
+ * Actions (value starts with "__action_") are styled as accent-colored links.
+ */
+function disableSeparatorOptions(selectEl: HTMLSelectElement): void {
+	for (const opt of Array.from(selectEl.options)) {
+		if (opt.value.startsWith("__sep_")) {
+			opt.disabled = true;
+			opt.style.fontWeight = "600";
+			opt.style.color = "var(--text-muted)";
+			opt.style.fontSize = "0.85em";
+		} else if (opt.value.startsWith("__action_")) {
+			opt.style.color = "var(--text-accent)";
+			opt.style.fontStyle = "italic";
+		}
+	}
+}
+
 function formatGlobalRuleTiming(rule: GlobalReminderRule, anchorName: string): string {
 	const parsed = parseISO8601Offset(rule.offset);
 	if (parsed.value === 0) return `At ${anchorName}`;
@@ -675,17 +1229,8 @@ function formatToISO8601Offset(value: number, unit: string, direction: string): 
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// TIMELINE PREVIEW
+// TIMELINE PREVIEW (types and rendering in ../../../utils/reminderTimelineUtils)
 // ═══════════════════════════════════════════════════════════════════════════
-
-interface TimelineMarker {
-	label: string;
-	offsetHours: number; // negative = before anchor, positive = after
-	source: "default" | "global";
-	semanticType?: string;
-	repeatIntervalHours?: number;
-	reminderId: string; // ID for click-to-scroll targeting
-}
 
 function collectTimelineMarkers(plugin: TaskNotesPlugin): TimelineMarker[] {
 	const markers: TimelineMarker[] = [];
@@ -726,61 +1271,6 @@ function collectTimelineMarkers(plugin: TaskNotesPlugin): TimelineMarker[] {
 	}
 
 	return markers;
-}
-
-function normalizeToHours(value: number, unit: string): number {
-	switch (unit) {
-		case "minutes": return value / 60;
-		case "days": return value * 24;
-		default: return value;
-	}
-}
-
-function formatShortOffset(value: number, unit: string, direction: string): string {
-	if (value === 0) return "At anchor";
-	const dir = direction === "before" ? "before" : "after";
-	// Use full words for clarity on the timeline
-	if (unit === "minutes") {
-		return value === 1 ? `1 min ${dir}` : `${value} min ${dir}`;
-	} else if (unit === "hours") {
-		return value === 1 ? `1 hour ${dir}` : `${value} hours ${dir}`;
-	} else if (unit === "days") {
-		return value === 1 ? `1 day ${dir}` : `${value} days ${dir}`;
-	}
-	return `${value} ${unit} ${dir}`;
-}
-
-/**
- * Scroll to and highlight a reminder card when its timeline marker is clicked.
- * Expands collapsed parent section and card if needed.
- */
-function scrollToReminderCard(scrollContext: HTMLElement, reminderId: string, source: "default" | "global"): void {
-	// 1. Ensure the correct collapsible section is expanded
-	const sectionClass = source === "default" ? "tn-reminders-section--default" : "tn-reminders-section--global";
-	const section = scrollContext.querySelector(`.${sectionClass}`);
-	if (section?.hasClass("tasknotes-settings__collapsible-section--collapsed")) {
-		const header = section.querySelector(".tasknotes-settings__collapsible-section-header") as HTMLElement;
-		header?.click();
-	}
-
-	// 2. Find the card by data-card-id
-	const card = scrollContext.querySelector(`[data-card-id="${reminderId}"]`) as HTMLElement;
-	if (!card) return;
-
-	// 3. Expand card if collapsed
-	if (card.classList.contains("tasknotes-settings__card--collapsed")) {
-		const cardHeader = card.querySelector(".tasknotes-settings__card-header") as HTMLElement;
-		cardHeader?.click();
-	}
-
-	// 4. Scroll into view with a small delay for expand animations
-	setTimeout(() => {
-		card.scrollIntoView({ behavior: "smooth", block: "center" });
-
-		// 5. Flash highlight
-		card.addClass("tn-reminder-timeline__flash");
-		setTimeout(() => card.removeClass("tn-reminder-timeline__flash"), 1200);
-	}, 150);
 }
 
 function renderReminderTimeline(container: HTMLElement, plugin: TaskNotesPlugin, scrollContext?: HTMLElement): void {
@@ -840,356 +1330,6 @@ function renderReminderTimeline(container: HTMLElement, plugin: TaskNotesPlugin,
 }
 
 /**
- * Layout engine: detects when markers on the same side of the anchor have
- * vastly different scales (e.g. 1 hour vs 6 months) and returns segmented
- * positions with break indicators instead of a linear scale.
- */
-interface PositionedMarker { marker: TimelineMarker; pct: number }
-interface TimelineLayout { positioned: PositionedMarker[]; breaks: number[]; hasJumps: boolean }
-
-function computeTimelineLayout(markers: TimelineMarker[], anchorPct: number, minPct: number, maxPct: number): TimelineLayout {
-	const GAP_RATIO = 8; // ratio between adjacent offsets to trigger a break
-	const BREAK_WIDTH = 4; // percentage of timeline width per break zone
-
-	const positioned: PositionedMarker[] = [];
-	const breaks: number[] = [];
-
-	const beforeMarkers = markers.filter(m => m.offsetHours < 0)
-		.sort((a, b) => Math.abs(a.offsetHours) - Math.abs(b.offsetHours));
-	const afterMarkers = markers.filter(m => m.offsetHours > 0)
-		.sort((a, b) => a.offsetHours - b.offsetHours);
-	const atAnchor = markers.filter(m => m.offsetHours === 0);
-
-	for (const m of atAnchor) positioned.push({ marker: m, pct: anchorPct });
-
-	layoutSide(beforeMarkers, anchorPct, minPct, "before", GAP_RATIO, BREAK_WIDTH, positioned, breaks);
-	layoutSide(afterMarkers, anchorPct, maxPct, "after", GAP_RATIO, BREAK_WIDTH, positioned, breaks);
-
-	return { positioned, breaks, hasJumps: breaks.length > 0 };
-}
-
-function layoutSide(
-	sorted: TimelineMarker[],
-	anchorPct: number,
-	edgePct: number,
-	side: "before" | "after",
-	gapRatio: number,
-	breakWidth: number,
-	out: PositionedMarker[],
-	outBreaks: number[]
-): void {
-	if (sorted.length === 0) return;
-
-	const absOffsets = sorted.map(m => Math.abs(m.offsetHours));
-
-	// Group into clusters — a new cluster starts when the gap ratio exceeds threshold
-	const clusters: TimelineMarker[][] = [[sorted[0]]];
-	for (let i = 1; i < sorted.length; i++) {
-		if (absOffsets[i - 1] > 0 && absOffsets[i] / absOffsets[i - 1] > gapRatio) {
-			clusters.push([]);
-		}
-		clusters[clusters.length - 1].push(sorted[i]);
-	}
-
-	if (clusters.length <= 1) {
-		// No time jumps — linear positioning
-		const maxOff = absOffsets[absOffsets.length - 1] * 1.25 || 48;
-		for (const m of sorted) {
-			const ratio = Math.min(Math.abs(m.offsetHours) / maxOff, 1);
-			const pct = side === "before"
-				? anchorPct - ratio * Math.abs(anchorPct - edgePct)
-				: anchorPct + ratio * Math.abs(edgePct - anchorPct);
-			out.push({ marker: m, pct: Math.max(Math.min(anchorPct, edgePct), Math.min(Math.max(anchorPct, edgePct), pct)) });
-		}
-		return;
-	}
-
-	// Multiple clusters — segmented layout with breaks
-	const totalSpace = Math.abs(edgePct - anchorPct);
-	const totalBreakSpace = (clusters.length - 1) * breakWidth;
-	const spacePerCluster = (totalSpace - totalBreakSpace) / clusters.length;
-	const dir = side === "before" ? -1 : 1;
-
-	let cursor = anchorPct;
-
-	for (let ci = 0; ci < clusters.length; ci++) {
-		const cluster = clusters[ci];
-		const segStart = cursor;
-		const segEnd = cursor + dir * spacePerCluster;
-
-		// Position markers within segment with internal padding
-		if (cluster.length === 1) {
-			out.push({ marker: cluster[0], pct: (segStart + segEnd) / 2 });
-		} else {
-			const clusterOffsets = cluster.map(m => Math.abs(m.offsetHours));
-			const cMin = clusterOffsets[0];
-			const cMax = clusterOffsets[clusterOffsets.length - 1];
-			const cRange = cMax - cMin || 1;
-			for (let i = 0; i < cluster.length; i++) {
-				const ratio = (clusterOffsets[i] - cMin) / cRange;
-				const padded = 0.15 + ratio * 0.7; // 15% padding each side
-				const pct = segStart + dir * padded * Math.abs(segEnd - segStart);
-				out.push({ marker: cluster[i], pct });
-			}
-		}
-
-		cursor = segEnd;
-
-		// Insert break between clusters
-		if (ci < clusters.length - 1) {
-			const breakCenter = cursor + dir * (breakWidth / 2);
-			outBreaks.push(breakCenter);
-			cursor = cursor + dir * breakWidth;
-		}
-	}
-}
-
-/**
- * After the timeline is rendered, measure label bounding rects and nudge
- * any that overlap horizontally. Labels are grouped into two lanes:
- *   - "above" lane: default marker labels (top of timeline)
- *   - "below" lane: global marker labels + anchor label (bottom of timeline)
- * Within each lane, overlapping labels are pushed apart.
- */
-function resolveTimelineLabelOverlaps(area: HTMLElement, anchorLabel: HTMLElement): void {
-	const MIN_GAP = 4; // minimum px between labels
-
-	// Collect labels in each lane
-	const aboveLabels: HTMLElement[] = [];
-	const belowLabels: HTMLElement[] = [];
-
-	// Anchor label is in the "below" lane
-	belowLabels.push(anchorLabel);
-
-	// Marker labels — sorted into lanes by above/below
-	const markerEls = area.querySelectorAll<HTMLElement>(".tn-reminder-timeline__marker");
-	for (const markerEl of markerEls) {
-		const label = markerEl.querySelector<HTMLElement>(".tn-reminder-timeline__marker-label");
-		if (!label) continue;
-		if (markerEl.classList.contains("tn-reminder-timeline__marker--above")) {
-			aboveLabels.push(label);
-		} else {
-			belowLabels.push(label);
-		}
-	}
-
-	// Resolve overlaps in each lane
-	nudgeLane(aboveLabels, MIN_GAP);
-	nudgeLane(belowLabels, MIN_GAP);
-}
-
-function nudgeLane(labels: HTMLElement[], minGap: number): void {
-	if (labels.length < 2) return;
-
-	// Sort by horizontal center position (using screen coords from getBoundingClientRect)
-	const items = labels.map(el => {
-		const rect = el.getBoundingClientRect();
-		return { el, left: rect.left, right: rect.right, width: rect.width, center: rect.left + rect.width / 2, nudge: 0 };
-	}).sort((a, b) => a.center - b.center);
-
-	// Greedy left-to-right: push overlapping labels apart symmetrically
-	for (let i = 1; i < items.length; i++) {
-		const prev = items[i - 1];
-		const curr = items[i];
-		const prevRight = prev.right + prev.nudge;
-		const currLeft = curr.left + curr.nudge;
-		const overlap = prevRight + minGap - currLeft;
-		if (overlap > 0) {
-			const halfNudge = Math.ceil(overlap / 2);
-			prev.nudge -= halfNudge;
-			curr.nudge += halfNudge;
-		}
-	}
-
-	// Second pass: ensure no cascading overlaps were introduced
-	for (let i = 1; i < items.length; i++) {
-		const prev = items[i - 1];
-		const curr = items[i];
-		const prevRight = prev.right + prev.nudge;
-		const currLeft = curr.left + curr.nudge;
-		const overlap = prevRight + minGap - currLeft;
-		if (overlap > 0) {
-			curr.nudge += Math.ceil(overlap);
-		}
-	}
-
-	// Apply nudges via transform (works reliably on position:absolute elements)
-	for (const item of items) {
-		if (item.nudge !== 0) {
-			item.el.style.transform = `translateX(${item.nudge}px)`;
-		}
-	}
-}
-
-function renderTimelineArea(container: HTMLElement, markers: TimelineMarker[], plugin: TaskNotesPlugin, scrollContext?: HTMLElement): void {
-	const area = container.createDiv({ cls: "tn-reminder-timeline__area" });
-
-	// Horizontal line
-	area.createDiv({ cls: "tn-reminder-timeline__line" });
-
-	const ANCHOR_PCT = 65;
-	const MIN_PCT = 5;
-	const MAX_PCT = 95;
-
-	// Anchor marker
-	const anchor = area.createDiv({ cls: "tn-reminder-timeline__anchor" });
-	anchor.style.left = `${ANCHOR_PCT}%`;
-	anchor.createDiv({ cls: "tn-reminder-timeline__anchor-line" });
-	anchor.createDiv({ cls: "tn-reminder-timeline__anchor-pin" });
-	const anchorLabel = anchor.createDiv({ cls: "tn-reminder-timeline__anchor-label" });
-	anchorLabel.textContent = getAnchorDisplayName("due", plugin);
-
-	// Compute layout (linear or segmented with breaks)
-	const layout = computeTimelineLayout(markers, ANCHOR_PCT, MIN_PCT, MAX_PCT);
-
-	// Render break indicators ("···" gaps in the line)
-	for (const breakPct of layout.breaks) {
-		const breakEl = area.createDiv({ cls: "tn-reminder-timeline__break" });
-		breakEl.style.left = `${breakPct}%`;
-		breakEl.textContent = "\u22EF"; // ⋯ midline horizontal ellipsis
-	}
-
-	// Place each marker at its computed position
-	for (const { marker, pct } of layout.positioned) {
-		const isAbove = marker.source === "default";
-		const sideClass = isAbove ? "tn-reminder-timeline__marker--above" : "tn-reminder-timeline__marker--below";
-
-		const markerEl = area.createDiv({ cls: `tn-reminder-timeline__marker ${sideClass}` });
-		markerEl.style.left = `${pct}%`;
-
-		const labelEl = markerEl.createDiv({ cls: `tn-reminder-timeline__marker-label tn-reminder-timeline__marker-label--${marker.source}` });
-		let labelText = marker.label;
-		if (marker.semanticType === "overdue" && marker.repeatIntervalHours) {
-			labelText += ` (${marker.repeatIntervalHours}h)`;
-		} else if (marker.semanticType === "due-date") {
-			labelText += " \u2022";
-		}
-		labelEl.textContent = labelText;
-		labelEl.title = labelText;
-
-		markerEl.createDiv({ cls: `tn-reminder-timeline__marker-stem tn-reminder-timeline__marker-stem--${marker.source}` });
-
-		const dotClasses = [`tn-reminder-timeline__marker-dot`, `tn-reminder-timeline__marker-dot--${marker.source}`];
-		if (marker.semanticType === "due-date") dotClasses.push("tn-reminder-timeline__marker-dot--persistent");
-		if (marker.semanticType === "overdue") dotClasses.push("tn-reminder-timeline__marker-dot--repeating");
-		markerEl.createDiv({ cls: dotClasses.join(" ") });
-
-		if (scrollContext && marker.reminderId) {
-			markerEl.style.cursor = "pointer";
-			markerEl.title = `${labelText} — click to edit`;
-			markerEl.addEventListener("click", () => {
-				scrollToReminderCard(scrollContext, marker.reminderId, marker.source);
-			});
-		}
-	}
-
-	// Time scale ticks — only when layout is linear (ticks are misleading with breaks)
-	if (!layout.hasJumps) {
-		const offsets = markers.map(m => Math.abs(m.offsetHours));
-		const maxOffset = Math.max(48, ...offsets) * 1.25;
-		const beforeRange = maxOffset;
-		const afterRange = maxOffset * ((100 - ANCHOR_PCT) / ANCHOR_PCT);
-		renderTimeScaleTicks(area, beforeRange, afterRange, ANCHOR_PCT, MIN_PCT, MAX_PCT);
-	}
-
-	// Direction labels
-	const dirLabels = container.createDiv({ cls: "tn-reminder-timeline__direction-labels" });
-	dirLabels.createSpan({ text: "\u2190 before" });
-	dirLabels.createSpan({ text: "after \u2192" });
-
-	// Post-render: resolve overlapping labels (double rAF ensures full layout pass)
-	requestAnimationFrame(() => {
-		requestAnimationFrame(() => resolveTimelineLabelOverlaps(area, anchorLabel));
-	});
-}
-
-function formatTickHuman(hours: number): string {
-	// Convert hours to the most natural human-readable unit
-	if (hours < 1) return `${Math.round(hours * 60)} min`;
-	if (hours < 24) return hours === 1 ? "1 hour" : `${hours} hours`;
-	const days = hours / 24;
-	if (days < 7) return days === 1 ? "1 day" : `${Math.round(days)} days`;
-	const weeks = days / 7;
-	if (weeks <= 4 && Number.isInteger(weeks)) return weeks === 1 ? "1 week" : `${Math.round(weeks)} weeks`;
-	const months = days / 30;
-	if (months < 12) return months === 1 ? "1 month" : `${Math.round(months)} months`;
-	const years = days / 365;
-	return years === 1 ? "1 year" : `${+years.toFixed(1)} years`;
-}
-
-function chooseTickInterval(maxHours: number): { intervalHours: number; formatTick: (h: number) => string } {
-	// Target ~5-8 ticks per side. Pick interval so maxHours / interval <= 8
-	const targetTicks = 6;
-	const idealInterval = maxHours / targetTicks;
-
-	// Snap to a nice human-readable interval
-	const niceIntervals = [
-		0.25,   // 15 min
-		0.5,    // 30 min
-		1,      // 1 hour
-		3,      // 3 hours
-		6,      // 6 hours
-		12,     // 12 hours
-		24,     // 1 day
-		72,     // 3 days
-		168,    // 1 week
-		720,    // ~1 month
-		2160,   // ~3 months
-		4380,   // ~6 months
-		8760,   // 1 year
-	];
-
-	for (const interval of niceIntervals) {
-		if (interval >= idealInterval) {
-			return { intervalHours: interval, formatTick: formatTickHuman };
-		}
-	}
-	// Fallback for extremely large ranges
-	const fallbackInterval = Math.ceil(idealInterval / 8760) * 8760;
-	return { intervalHours: fallbackInterval, formatTick: formatTickHuman };
-}
-
-function renderTimeScaleTicks(
-	area: HTMLElement,
-	beforeRange: number,
-	afterRange: number,
-	anchorPct: number,
-	minPct: number,
-	maxPct: number
-): void {
-	const { intervalHours, formatTick } = chooseTickInterval(Math.max(beforeRange, afterRange));
-	const MAX_TICKS_PER_SIDE = 10;
-
-	// Before-anchor ticks
-	let beforeCount = 0;
-	for (let h = intervalHours; h <= beforeRange && beforeCount < MAX_TICKS_PER_SIDE; h += intervalHours) {
-		const ratio = h / beforeRange;
-		const pct = anchorPct - ratio * (anchorPct - minPct);
-		if (pct < minPct + 2) continue;
-
-		const tick = area.createDiv({ cls: "tn-reminder-timeline__tick" });
-		tick.style.left = `${pct}%`;
-		const tickLabel = tick.createDiv({ cls: "tn-reminder-timeline__tick-label" });
-		tickLabel.textContent = formatTick(h);
-		beforeCount++;
-	}
-
-	// After-anchor ticks
-	let afterCount = 0;
-	for (let h = intervalHours; h <= afterRange && afterCount < MAX_TICKS_PER_SIDE; h += intervalHours) {
-		const ratio = h / afterRange;
-		const pct = anchorPct + ratio * (maxPct - anchorPct);
-		if (pct > maxPct - 2) continue;
-
-		const tick = area.createDiv({ cls: "tn-reminder-timeline__tick" });
-		tick.style.left = `${pct}%`;
-		const tickLabel = tick.createDiv({ cls: "tn-reminder-timeline__tick-label" });
-		tickLabel.textContent = formatTick(h);
-		afterCount++;
-	}
-}
-
-/**
  * Navigate to Features tab and scroll to the Task notifications heading.
  */
 function navigateToFeatureNotifications(plugin: TaskNotesPlugin): void {
@@ -1211,6 +1351,29 @@ function navigateToFeatureNotifications(plugin: TaskNotesPlugin): void {
 					}
 				}
 			}, 200);
+		}
+	}
+}
+
+/**
+ * Scroll to the "Custom User Fields" section on the same Task Properties tab.
+ */
+function scrollToUserFieldsSection(plugin: TaskNotesPlugin): void {
+	const settingsTab = (plugin.app as any).setting?.activeTab;
+	if (!settingsTab?.containerEl) return;
+	const headings = settingsTab.containerEl.querySelectorAll(
+		".setting-item-heading .setting-item-name"
+	);
+	for (const heading of headings) {
+		if (heading.textContent?.includes("Custom User Fields")) {
+			(heading as HTMLElement).scrollIntoView({ behavior: "smooth", block: "start" });
+			const parent = (heading as HTMLElement).closest(".setting-item") as HTMLElement;
+			if (parent) {
+				parent.style.transition = "background 0.3s ease";
+				parent.style.background = "color-mix(in srgb, var(--interactive-accent) 15%, transparent)";
+				setTimeout(() => { parent.style.background = ""; }, 1500);
+			}
+			break;
 		}
 	}
 }

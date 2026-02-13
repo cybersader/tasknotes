@@ -123,20 +123,6 @@
     position: relative;
 }
 
-/* Scroll affordance: gradient fade at bottom to hint more content below */
-.tn-bulk-modal__body::after {
-    content: '';
-    position: sticky;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    display: block;
-    height: 32px;
-    background: linear-gradient(to bottom, transparent, var(--modal-background));
-    pointer-events: none;
-    margin-top: -32px;
-}
-
 /* =====================================================================
    SECTION COMPONENTS
    ===================================================================== */

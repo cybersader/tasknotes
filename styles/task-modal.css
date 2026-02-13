@@ -244,8 +244,10 @@
 /* User fields section styling */
 .user-fields-separator {
     margin-top: var(--size-4-4);
-    border-top: 0.5px solid var(--background-modifier-border);
     padding-top: var(--size-4-3);
+    padding-bottom: var(--size-4-3);
+    border-bottom: 0.5px solid var(--background-modifier-border);
+    margin-bottom: var(--size-4-3);
 }
 
 /* Field groups in modal */
@@ -261,12 +263,37 @@
 }
 
 .detail-label-section {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     font-weight: 600;
     color: var(--text-muted);
     font-size: 0.9em;
     margin-bottom: var(--size-4-2);
     text-transform: uppercase;
     letter-spacing: 0.5px;
+}
+
+/* Help icon in Edit Task modal section headers */
+.task-edit-modal__help {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    cursor: help;
+    color: var(--text-faint);
+    transition: color 0.15s ease;
+    text-transform: none;
+}
+
+.task-edit-modal__help:hover {
+    color: var(--text-muted);
+}
+
+.task-edit-modal__help svg {
+    width: 14px;
+    height: 14px;
 }
 
 /* Discovered properties section in Edit Task modal */
@@ -424,6 +451,9 @@
 }
 
 .tasknotes-plugin .detail-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     font-size: var(--font-ui-small);
     font-weight: 600;
     color: var(--text-muted);

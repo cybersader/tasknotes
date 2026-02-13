@@ -13,6 +13,7 @@ import { createAvatarStack } from "../ui/PersonAvatar";
 import { hasTimeComponent, formatTime, parseDate, parseDateAsLocal, getDatePart, combineDateAndTime, formatDateForUpcomingView, UpcomingViewDateSettings } from "../utils/dateUtils";
 import { DueDateModal } from "../modals/DueDateModal";
 import { BulkOperationEngine, BulkItem, formatResultNotice } from "../bulk";
+import { readFieldOverrides, resolveFieldName } from "../utils/fieldOverrideUtils";
 
 /**
  * Extended time category that includes "noDueDate" for items without dates.
@@ -305,8 +306,10 @@ export class UpcomingView extends BasesViewBase {
 			const projectFieldName = this.plugin.fieldMapper.toUserField("projects");
 			const projects = frontmatter?.[projectFieldName];
 
-			// Get assignees field
-			const assigneeFieldName = this.plugin.settings.assigneeFieldName || "assignee";
+			// Get assignees field (resolve per-task override)
+			const globalAssignee = this.plugin.settings.assigneeFieldName || "assignee";
+			const assigneeOverrides = readFieldOverrides(frontmatter);
+			const assigneeFieldName = resolveFieldName("assignee", assigneeOverrides, globalAssignee);
 			const rawAssignee = frontmatter?.[assigneeFieldName];
 			let assignees: string[] | undefined;
 			if (rawAssignee) {
@@ -1526,13 +1529,13 @@ export class UpcomingView extends BasesViewBase {
 	 * Add assign submenu items for an upcoming view item.
 	 */
 	private addAssignSubmenu(menu: Menu, item: AggregatedNotificationItem): void {
-		const assigneeFieldName = this.plugin.settings.assigneeFieldName || "assignee";
-
 		// Get current assignees from frontmatter (normalize to array)
 		const file = this.plugin.app.vault.getAbstractFileByPath(item.path);
 		const frontmatter = file instanceof TFile
 			? this.plugin.app.metadataCache.getFileCache(file)?.frontmatter
 			: null;
+		const globalAssignee2 = this.plugin.settings.assigneeFieldName || "assignee";
+		const assigneeFieldName = resolveFieldName("assignee", readFieldOverrides(frontmatter), globalAssignee2);
 		const currentAssignee = frontmatter?.[assigneeFieldName];
 		const currentAssignees: string[] = Array.isArray(currentAssignee)
 			? currentAssignee
@@ -1602,9 +1605,11 @@ export class UpcomingView extends BasesViewBase {
 		filePath: string | null,
 		currentAssignees: string[]
 	): Promise<void> {
-		const assigneeFieldName = this.plugin.settings.assigneeFieldName || "assignee";
 		const file = this.plugin.app.vault.getAbstractFileByPath(item.path);
 		if (!(file instanceof TFile)) return;
+		const fmCache = this.plugin.app.metadataCache.getFileCache(file)?.frontmatter;
+		const globalAssignee3 = this.plugin.settings.assigneeFieldName || "assignee";
+		const assigneeFieldName = resolveFieldName("assignee", readFieldOverrides(fmCache), globalAssignee3);
 
 		try {
 			let actionLabel = "";

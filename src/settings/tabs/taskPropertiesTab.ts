@@ -26,6 +26,7 @@ import {
 	renderProjectsPropertyCard,
 	renderTagsPropertyCard,
 	renderRemindersPropertyCard,
+	renderDatePropertiesReference,
 	renderUserFieldsSection,
 	renderSimplePropertyCard,
 	renderMetadataPropertyCard,
@@ -772,6 +773,19 @@ export function renderTaskPropertiesTab(
 
 	const translate = (key: TranslationKey, params?: Record<string, string | number>) =>
 		plugin.i18n.translate(key, params);
+
+	// ===== OVERVIEW CALLOUT =====
+	const overviewCallout = container.createDiv({ cls: "tn-task-props-overview" });
+	overviewCallout.createEl("p", {
+		text: "Tasks store data as frontmatter properties. These settings define the defaults \u2014 which property names TaskNotes uses and what values new tasks start with.",
+	});
+	const overviewList = overviewCallout.createEl("ul");
+	const perTaskItem = overviewList.createEl("li");
+	perTaskItem.createEl("strong", { text: "Per-task overrides" });
+	perTaskItem.appendText(" \u2014 the \"Properties & anchors\" section in the Edit Task and Bulk Task modals lets you search for any property in your vault and add it to a task. The \"Use as\" menu lets you tell TaskNotes to treat that property as a built-in field (e.g., use \"review_date\" as the due date for this task).");
+	const anchorsItem = overviewList.createEl("li");
+	anchorsItem.createEl("strong", { text: "Reminder anchors" });
+	anchorsItem.appendText(" \u2014 reminders can be timed relative to any date property. The property search bar in the Reminder modal and the Properties & anchors section (under Reminders below) let you find, convert, and manage which date properties are available as anchors.");
 
 	// ===== CORE PROPERTIES SECTION =====
 	createSectionHeader(container, translate("settings.taskProperties.sections.coreProperties"));

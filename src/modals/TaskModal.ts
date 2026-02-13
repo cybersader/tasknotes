@@ -36,6 +36,7 @@ import { EmbeddableMarkdownEditor } from "../editor/EmbeddableMarkdownEditor";
 import { createPersonGroupPicker } from "../ui/PersonGroupPicker";
 import { PersonNoteInfo } from "../identity/PersonNoteService";
 import { GroupNoteMapping } from "../identity/GroupRegistry";
+import { readFieldOverrides, resolveFieldName } from "../utils/fieldOverrideUtils";
 
 interface DependencyItem {
 	dependency: TaskDependency;
@@ -1046,7 +1047,13 @@ export abstract class TaskModal extends Modal {
 		}
 
 		// Special handling: assignee and creator fields get PersonGroupPicker
-		const assigneeFieldName = this.plugin.settings.assigneeFieldName || "assignee";
+		const taskPath = this.getCurrentTaskPath();
+		const taskFrontmatter = taskPath
+			? this.plugin.app.metadataCache.getCache(taskPath)?.frontmatter
+			: null;
+		const taskOverrides = readFieldOverrides(taskFrontmatter);
+		const globalAssignee = this.plugin.settings.assigneeFieldName || "assignee";
+		const assigneeFieldName = resolveFieldName("assignee", taskOverrides, globalAssignee);
 		const creatorFieldName = this.plugin.settings.creatorFieldName || "creator";
 		const fieldKey = userField.key?.toLowerCase().trim();
 		console.debug("[TaskModal] Checking user field:", userField.key, "vs assignee:", assigneeFieldName, "/ creator:", creatorFieldName);
@@ -1179,7 +1186,10 @@ export abstract class TaskModal extends Modal {
 						placeholder: "Search people or groups...",
 						initialSelection: currentSelection,
 						onChange: (selectedPaths) => {
-							const assigneeFieldName = this.plugin.settings.assigneeFieldName || "assignee";
+							const gAssignee = this.plugin.settings.assigneeFieldName || "assignee";
+							const tPath = this.getCurrentTaskPath();
+							const tFm = tPath ? this.plugin.app.metadataCache.getCache(tPath)?.frontmatter : null;
+							const assigneeFieldName = resolveFieldName("assignee", readFieldOverrides(tFm), gAssignee);
 							const wikilinks = this.pathsToShortestWikilinks(selectedPaths);
 							if (wikilinks.length === 0) {
 								this.userFields[assigneeFieldName] = null;
