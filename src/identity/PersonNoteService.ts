@@ -2,12 +2,13 @@
  * PersonNoteService - Reads preferences from person notes
  *
  * Person notes have `type: person` in frontmatter and can include
- * notification preferences like reminderTime and reminderLeadTimes.
+ * notification preferences like availability windows and reminderLeadTimes.
  *
  * Features:
  * - Reads person preferences from frontmatter
  * - Caches preferences for performance
  * - Provides defaults when preferences are not set
+ * - Backwards-compatible: reads legacy `reminderTime` as `availableFrom`
  */
 
 import { TFile } from "obsidian";
@@ -21,12 +22,14 @@ export type { PersonPreferences, LeadTime } from "../types/settings";
  * Default preferences for person notes without explicit configuration.
  */
 export const DEFAULT_PERSON_PREFERENCES: PersonPreferences = {
-	reminderTime: "09:00",
+	availableFrom: "09:00",
+	availableUntil: "17:00",
 	reminderLeadTimes: [
 		{ value: 1, unit: "days" },
 		{ value: 15, unit: "minutes" },
 	],
 	notificationEnabled: true,
+	overrideGlobalReminders: true,
 };
 
 export class PersonNoteService {
@@ -58,8 +61,14 @@ export class PersonNoteService {
 	 * Read preferences from a person note's frontmatter.
 	 */
 	private readPreferencesFromFile(personPath: string): PersonPreferences {
-		const file = this.plugin.app.vault.getAbstractFileByPath(personPath);
+		// Two-step file lookup (same as avatar handler in settings)
+		let file = this.plugin.app.vault.getAbstractFileByPath(personPath);
+		if (!file) {
+			const linkPath = personPath.replace(/\.md$/, "");
+			file = this.plugin.app.metadataCache.getFirstLinkpathDest(linkPath, "");
+		}
 		if (!(file instanceof TFile)) {
+			console.debug(`[PersonNoteService] File not found for path: "${personPath}" — using defaults`);
 			return { ...DEFAULT_PERSON_PREFERENCES };
 		}
 
@@ -67,16 +76,29 @@ export class PersonNoteService {
 		const fm = cache?.frontmatter;
 
 		if (!fm) {
+			console.debug(`[PersonNoteService] No frontmatter for: "${personPath}" — using defaults`);
 			return { ...DEFAULT_PERSON_PREFERENCES };
 		}
 
 		// Build preferences from frontmatter with defaults
+		// Backwards compat: read availableFrom, fall back to legacy reminderTime
+		const availableFrom = fm.availableFrom !== undefined
+			? this.parseTimeField(fm.availableFrom, DEFAULT_PERSON_PREFERENCES.availableFrom)
+			: fm.reminderTime !== undefined
+				? this.parseTimeField(fm.reminderTime, DEFAULT_PERSON_PREFERENCES.availableFrom)
+				: DEFAULT_PERSON_PREFERENCES.availableFrom;
+
 		const preferences: PersonPreferences = {
-			reminderTime: this.parseReminderTime(fm.reminderTime),
+			availableFrom,
+			availableUntil: this.parseTimeField(fm.availableUntil, DEFAULT_PERSON_PREFERENCES.availableUntil),
 			reminderLeadTimes: this.parseLeadTimes(fm.reminderLeadTimes),
 			notificationEnabled: this.parseBoolean(
 				fm.notificationEnabled,
 				DEFAULT_PERSON_PREFERENCES.notificationEnabled
+			),
+			overrideGlobalReminders: this.parseBoolean(
+				fm.overrideGlobalReminders,
+				DEFAULT_PERSON_PREFERENCES.overrideGlobalReminders
 			),
 		};
 
@@ -84,14 +106,22 @@ export class PersonNoteService {
 	}
 
 	/**
-	 * Parse reminderTime from frontmatter.
-	 * Expects "HH:MM" format.
+	 * Parse a time field from frontmatter.
+	 * Expects "HH:MM" format. Obsidian's YAML parser may convert bare HH:MM
+	 * values to sexagesimal numbers (e.g., 08:30 → 510), so we handle both
+	 * string and number inputs.
 	 */
-	private parseReminderTime(value: unknown): string {
+	private parseTimeField(value: unknown, defaultValue: string): string {
 		if (typeof value === "string" && /^\d{1,2}:\d{2}$/.test(value)) {
 			return value;
 		}
-		return DEFAULT_PERSON_PREFERENCES.reminderTime;
+		// Obsidian YAML parses bare HH:MM as sexagesimal number (H*60+M)
+		if (typeof value === "number" && value >= 0 && value <= 1439) {
+			const hours = Math.floor(value / 60);
+			const minutes = value % 60;
+			return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+		}
+		return defaultValue;
 	}
 
 	/**
@@ -154,14 +184,27 @@ export class PersonNoteService {
 	}
 
 	/**
-	 * Get the notification time for a person.
-	 * Parses the reminderTime into hours and minutes.
+	 * Get the availability start time for a person.
+	 * Day+ reminders are pinned to this time.
 	 */
-	getNotificationTime(personPath: string): { hours: number; minutes: number } {
+	getAvailableFrom(personPath: string): { hours: number; minutes: number } {
 		const prefs = this.getPreferences(personPath);
-		const [hours, minutes] = prefs.reminderTime.split(":").map(Number);
+		const [hours, minutes] = prefs.availableFrom.split(":").map(Number);
 		return {
 			hours: isNaN(hours) ? 9 : hours,
+			minutes: isNaN(minutes) ? 0 : minutes,
+		};
+	}
+
+	/**
+	 * Get the availability end time for a person.
+	 * Reminders outside the window may be deferred to the next availableFrom.
+	 */
+	getAvailableUntil(personPath: string): { hours: number; minutes: number } {
+		const prefs = this.getPreferences(personPath);
+		const [hours, minutes] = prefs.availableUntil.split(":").map(Number);
+		return {
+			hours: isNaN(hours) ? 17 : hours,
 			minutes: isNaN(minutes) ? 0 : minutes,
 		};
 	}
@@ -171,6 +214,14 @@ export class PersonNoteService {
 	 */
 	isNotificationEnabled(personPath: string): boolean {
 		return this.getPreferences(personPath).notificationEnabled;
+	}
+
+	/**
+	 * Check if a person's reminders should override global lead-time rules.
+	 * true = replace global rules, false = add to them.
+	 */
+	shouldOverrideGlobal(personPath: string): boolean {
+		return this.getPreferences(personPath).overrideGlobalReminders;
 	}
 
 	/**
@@ -193,6 +244,43 @@ export class PersonNoteService {
 			weeks: 7 * 24 * 60 * 60 * 1000,
 		};
 		return leadTime.value * multipliers[leadTime.unit];
+	}
+
+	/**
+	 * Convert a LeadTime to a negative ISO 8601 duration string.
+	 * Bridges person note format to Reminder.offset format.
+	 * Examples: { value: 1, unit: "days" } → "-P1D"
+	 *           { value: 15, unit: "minutes" } → "-PT15M"
+	 *           { value: 2, unit: "hours" } → "-PT2H"
+	 *           { value: 1, unit: "weeks" } → "-P1W"
+	 */
+	leadTimeToISO8601(leadTime: LeadTime): string {
+		const needsT = leadTime.unit === "minutes" || leadTime.unit === "hours";
+		const unitMap: Record<LeadTime["unit"], string> = {
+			minutes: "M",
+			hours: "H",
+			days: "D",
+			weeks: "W",
+		};
+		return `-P${needsT ? "T" : ""}${leadTime.value}${unitMap[leadTime.unit]}`;
+	}
+
+	/**
+	 * Check if a person note explicitly declares custom reminderLeadTimes.
+	 * Returns false if the field is missing, not an array, or empty.
+	 * This distinguishes "person set lead times" from "using defaults".
+	 */
+	hasCustomLeadTimes(personPath: string): boolean {
+		// Two-step file lookup (same as readPreferencesFromFile)
+		let file = this.plugin.app.vault.getAbstractFileByPath(personPath);
+		if (!file) {
+			const linkPath = personPath.replace(/\.md$/, "");
+			file = this.plugin.app.metadataCache.getFirstLinkpathDest(linkPath, "");
+		}
+		if (!(file instanceof TFile)) return false;
+		const cache = this.plugin.app.metadataCache.getFileCache(file);
+		const fm = cache?.frontmatter;
+		return fm ? Array.isArray(fm.reminderLeadTimes) && fm.reminderLeadTimes.length > 0 : false;
 	}
 
 	/**

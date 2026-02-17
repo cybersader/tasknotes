@@ -200,6 +200,22 @@ export function renderRemindersPropertyCard(
 		navigateToFeatureNotifications(plugin);
 	});
 
+	// Cross-link to Team & Attribution > Person preferences
+	const personLinkPara = globalContent.createEl("p", {
+		cls: "setting-item-description",
+	});
+	personLinkPara.style.cssText = "margin: 0 0 0.5rem 0; font-size: var(--font-ui-smaller);";
+	personLinkPara.appendText("Per-person overrides are available in ");
+	const personLink = personLinkPara.createEl("a", {
+		text: "Team & Attribution \u2192 Person preferences",
+		href: "#",
+	});
+	personLink.style.cssText = "cursor: pointer; color: var(--text-accent);";
+	personLink.addEventListener("click", (e) => {
+		e.preventDefault();
+		navigateToTeamAttribution(plugin);
+	});
+
 	const globalListContainer = globalContent.createDiv("tasknotes-reminders-container");
 	renderGlobalRemindersList(globalListContainer, plugin, saveAndTrack, translate, refreshTimeline);
 
@@ -1346,6 +1362,32 @@ function navigateToFeatureNotifications(plugin: TaskNotesPlugin): void {
 				);
 				for (const heading of headings) {
 					if (heading.textContent?.toLowerCase().includes("task notifications")) {
+						(heading as HTMLElement).scrollIntoView({ behavior: "smooth", block: "start" });
+						break;
+					}
+				}
+			}, 200);
+		}
+	}
+}
+
+/**
+ * Navigate to Team & Attribution tab and scroll to the Person preferences section.
+ */
+function navigateToTeamAttribution(plugin: TaskNotesPlugin): void {
+	const settingsTab = (plugin.app as any).setting?.activeTab;
+	if (settingsTab?.containerEl) {
+		const tabButton = settingsTab.containerEl.querySelector(
+			"#tab-button-team-attribution"
+		) as HTMLElement;
+		if (tabButton) {
+			tabButton.click();
+			setTimeout(() => {
+				const headings = settingsTab.containerEl.querySelectorAll(
+					".setting-item-heading .setting-item-name"
+				);
+				for (const heading of headings) {
+					if (heading.textContent?.toLowerCase().includes("person reminder")) {
 						(heading as HTMLElement).scrollIntoView({ behavior: "smooth", block: "start" });
 						break;
 					}

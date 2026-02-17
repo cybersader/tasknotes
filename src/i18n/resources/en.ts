@@ -2261,7 +2261,6 @@ export const en: TranslationTree = {
 		openKanbanView: "Open kanban board",
 		openPomodoroStats: "Open pomodoro statistics",
 		openStatisticsView: "Open task & project statistics",
-		showUpcomingReminders: "Show upcoming reminders",
 		createNewTask: "Create new task",
 		convertCurrentNoteToTask: {
 			name: "Convert current note to task",

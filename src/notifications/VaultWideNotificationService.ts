@@ -64,6 +64,18 @@ export class VaultWideNotificationService {
 			return [];
 		}
 
+		// Check if current device's person has disabled notifications entirely
+		const currentUser = this.plugin.userRegistry?.getCurrentUser() ?? null;
+		if (currentUser && this.plugin.personNoteService) {
+			if (!this.plugin.personNoteService.isNotificationEnabled(currentUser)) {
+				this.plugin.debugLog.log(
+					"VaultWideNotificationService",
+					`Person ${currentUser} has notificationEnabled: false - returning empty`
+				);
+				return [];
+			}
+		}
+
 		this.plugin.debugLog.log("VaultWideNotificationService", `Settings: enabledSources.bases=${settings.enabledSources.bases}`);
 
 		const allItems: AggregatedNotificationItem[] = [];

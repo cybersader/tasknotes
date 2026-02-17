@@ -128,9 +128,11 @@ export interface LeadTime {
  * Read from frontmatter of person notes with type: person.
  */
 export interface PersonPreferences {
-	reminderTime: string; // "09:00" format, default notification time
+	availableFrom: string; // "09:00" format, start of availability window
+	availableUntil: string; // "17:00" format, end of availability window
 	reminderLeadTimes: LeadTime[];
 	notificationEnabled: boolean;
+	overrideGlobalReminders: boolean; // true = replace global lead-time rules, false = add to them
 }
 
 export interface TaskNotesSettings {

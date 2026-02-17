@@ -13,7 +13,6 @@ export {
 	type NotificationItem,
 	type BasesNotificationModalOptions,
 } from "../modals/BasesNotificationModal";
-export { UnifiedNotificationModal } from "../modals/UnifiedNotificationModal";
 export { ToastNotification, type ToastConfig } from "./ToastNotification";
 export { BaseNotificationSyncService } from "./BaseNotificationSyncService";
 export {

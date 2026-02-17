@@ -7,8 +7,28 @@ import { TagSuggest } from "../components/TagSuggest";
 import { openFileSelector } from "../../modals/FileSelectorModal";
 import { createAvatar } from "../../ui/PersonAvatar";
 import type { TranslationKey } from "../../i18n";
-import type { UserMappedField, DeviceUserMapping } from "../../types/settings";
+import type { UserMappedField, DeviceUserMapping, LeadTime } from "../../types/settings";
 import { getColorFromName } from "../../ui/PersonAvatar";
+
+/**
+ * Helper to update a person note's frontmatter from settings UI.
+ * Uses two-step file lookup and invalidates PersonNoteService cache.
+ */
+async function updatePersonFrontmatter(
+	plugin: TaskNotesPlugin,
+	personPath: string,
+	updater: (fm: Record<string, unknown>) => void
+): Promise<void> {
+	let file: import("obsidian").TAbstractFile | null = plugin.app.vault.getAbstractFileByPath(personPath);
+	if (!file) {
+		const linkPath = personPath.replace(/\.md$/, "");
+		file = plugin.app.metadataCache.getFirstLinkpathDest(linkPath, "");
+	}
+	if (file instanceof TFile) {
+		await plugin.app.fileManager.processFrontMatter(file as TFile, updater);
+		plugin.personNoteService?.invalidateCache(personPath);
+	}
+}
 
 /**
  * Check if the creator User Field exists in settings
@@ -649,6 +669,28 @@ function navigateToTaskProperties(plugin: TaskNotesPlugin): void {
 }
 
 /**
+ * Navigate to Task Properties tab and scroll to the Reminders property card
+ */
+function navigateToReminders(plugin: TaskNotesPlugin): void {
+	const settingsTab = (plugin.app as any).setting?.activeTab;
+	if (settingsTab?.containerEl) {
+		const tabButton = settingsTab.containerEl.querySelector("#tab-button-task-properties") as HTMLElement;
+		if (tabButton) {
+			tabButton.click();
+			setTimeout(() => {
+				const reminderCard = settingsTab.containerEl.querySelector('[data-card-id="property-reminders"]') as HTMLElement;
+				if (reminderCard) {
+					reminderCard.scrollIntoView({ behavior: "smooth", block: "start" });
+					reminderCard.style.outline = "2px solid var(--text-accent)";
+					reminderCard.style.borderRadius = "var(--radius-m)";
+					setTimeout(() => { reminderCard.style.outline = ""; reminderCard.style.borderRadius = ""; }, 2000);
+				}
+			}, 200);
+		}
+	}
+}
+
+/**
  * Navigate to Features tab and scroll to Notifications section
  */
 function navigateToFeatures(plugin: TaskNotesPlugin): void {
@@ -915,6 +957,194 @@ function renderNotificationFilteringSection(
 							.setName("Your identity")
 							.setDesc(`Filtering notifications for: ${currentUserDisplay || currentUser}`);
 					});
+
+					// Show person-specific reminder preferences (editable)
+					if (plugin.personNoteService) {
+						const prefs = plugin.personNoteService.getPreferences(currentUser);
+						const hasCustom = plugin.personNoteService.hasCustomLeadTimes(currentUser);
+
+						// Header with explanation + Edit in note button
+						group.addSetting((setting) => {
+							setting.setName("Person reminder preferences");
+							const descEl = setting.descEl;
+							descEl.empty();
+							descEl.appendText(
+								"These preferences are stored in your person note and control how you get reminded about tasks. " +
+								"They relate to the Global reminders configured in "
+							);
+							const linkEl = descEl.createEl("a", { text: "Task Properties \u2192 Reminders" });
+							linkEl.style.cssText = "cursor: pointer; color: var(--text-accent)";
+							linkEl.addEventListener("click", (e) => {
+								e.preventDefault();
+								navigateToReminders(plugin);
+							});
+							descEl.appendText(". Your personal settings can override or add to those global rules.");
+
+							setting.addButton((btn) => {
+								btn.setButtonText("Edit in note").onClick(async () => {
+									let file = plugin.app.vault.getAbstractFileByPath(currentUser);
+									if (!file) {
+										const linkPath = currentUser.replace(/\.md$/, "");
+										file = plugin.app.metadataCache.getFirstLinkpathDest(linkPath, "");
+									}
+									if (file instanceof TFile) {
+										(plugin.app as any).setting?.close();
+										await plugin.app.workspace.getLeaf().openFile(file);
+									} else {
+										new Notice(`Person note not found: ${currentUser}`);
+									}
+								});
+							});
+						});
+
+						// Availability window inputs
+						group.addSetting((setting) => {
+							setting
+								.setName("Available from")
+								.setDesc("Start of your typical availability. Day-or-longer reminders arrive at this time. Reminders computed before this time are deferred here.")
+								.addText((text) => {
+									text.setPlaceholder("09:00")
+										.setValue(prefs.availableFrom)
+										.onChange(async (value) => {
+											if (/^\d{1,2}:\d{2}$/.test(value)) {
+												await updatePersonFrontmatter(plugin, currentUser, (fm) => {
+													fm.availableFrom = value;
+													// Clean up legacy field if present
+													if (fm.reminderTime !== undefined) {
+														delete fm.reminderTime;
+													}
+												});
+											}
+										});
+									text.inputEl.style.width = "80px";
+								});
+						});
+
+						group.addSetting((setting) => {
+							setting
+								.setName("Available until")
+								.setDesc("End of your typical availability. Reminders computed after this time are deferred to the next day's \"available from\" time.")
+								.addText((text) => {
+									text.setPlaceholder("17:00")
+										.setValue(prefs.availableUntil)
+										.onChange(async (value) => {
+											if (/^\d{1,2}:\d{2}$/.test(value)) {
+												await updatePersonFrontmatter(plugin, currentUser, (fm) => {
+													fm.availableUntil = value;
+												});
+											}
+										});
+									text.inputEl.style.width = "80px";
+								});
+						});
+
+						// Notifications enabled toggle
+						group.addSetting((setting) => {
+							setting
+								.setName("Notifications enabled")
+								.setDesc("Master switch for all reminders on this device's person")
+								.addToggle((toggle) => {
+									toggle.setValue(prefs.notificationEnabled).onChange(async (value) => {
+										await updatePersonFrontmatter(plugin, currentUser, (fm) => {
+											fm.notificationEnabled = value;
+										});
+									});
+								});
+						});
+
+						// Override/additive toggle
+						group.addSetting((setting) => {
+							setting
+								.setName("Override global reminders")
+								.setDesc("When enabled, your personal reminders replace the global lead-time rules. When disabled, they're added alongside them.")
+								.addToggle((toggle) => {
+									toggle.setValue(prefs.overrideGlobalReminders).onChange(async (value) => {
+										await updatePersonFrontmatter(plugin, currentUser, (fm) => {
+											fm.overrideGlobalReminders = value;
+										});
+										renderSharedVaultTab(container, plugin, save);
+									});
+								});
+						});
+
+						// Personal global reminders header
+						group.addSetting((setting) => {
+							setting.setName("Personal global reminders");
+							const overrideMode = prefs.overrideGlobalReminders ? "override" : "add to";
+							setting.setDesc(
+								hasCustom
+									? `You have ${prefs.reminderLeadTimes.length} personal reminder(s). These ${overrideMode} the Global reminders in Task Properties \u2192 Reminders.`
+									: "No personal reminders set \u2014 using the Global reminders from Task Properties \u2192 Reminders. Add your own below."
+							);
+						});
+
+						// Existing lead times with delete buttons
+						for (let i = 0; i < prefs.reminderLeadTimes.length; i++) {
+							const lt = prefs.reminderLeadTimes[i];
+							group.addSetting((setting) => {
+								setting.setName(`${lt.value} ${lt.unit} before anchor`);
+								setting.addButton((btn) => {
+									btn.setIcon("x")
+										.setTooltip("Remove this lead time")
+										.onClick(async () => {
+											await updatePersonFrontmatter(plugin, currentUser, (fm) => {
+												if (Array.isArray(fm.reminderLeadTimes)) {
+													fm.reminderLeadTimes = (fm.reminderLeadTimes as LeadTime[]).filter(
+														(_: LeadTime, idx: number) => idx !== i
+													);
+													if ((fm.reminderLeadTimes as LeadTime[]).length === 0) {
+														delete fm.reminderLeadTimes;
+													}
+												}
+											});
+											renderSharedVaultTab(container, plugin, save);
+										});
+								});
+							});
+						}
+
+						// Add new lead time
+						group.addSetting((setting) => {
+							let newValue = 1;
+							let newUnit: LeadTime["unit"] = "days";
+							setting.setName("Add personal reminder");
+							setting.addText((text) => {
+								text.setPlaceholder("1")
+									.setValue("1")
+									.onChange((v) => {
+										const parsed = parseInt(v, 10);
+										if (!isNaN(parsed) && parsed > 0) newValue = parsed;
+									});
+								text.inputEl.style.width = "50px";
+								text.inputEl.type = "number";
+								text.inputEl.min = "1";
+							});
+							setting.addDropdown((dd) => {
+								dd.addOption("minutes", "minutes")
+									.addOption("hours", "hours")
+									.addOption("days", "days")
+									.addOption("weeks", "weeks")
+									.setValue("days")
+									.onChange((v) => {
+										newUnit = v as LeadTime["unit"];
+									});
+							});
+							setting.addButton((btn) => {
+								btn.setButtonText("Add").setCta().onClick(async () => {
+									await updatePersonFrontmatter(plugin, currentUser, (fm) => {
+										if (!Array.isArray(fm.reminderLeadTimes)) {
+											fm.reminderLeadTimes = [];
+										}
+										(fm.reminderLeadTimes as LeadTime[]).push({
+											value: newValue,
+											unit: newUnit,
+										});
+									});
+									renderSharedVaultTab(container, plugin, save);
+								});
+							});
+						});
+					}
 				} else {
 					group.addSetting((setting) => {
 						setting

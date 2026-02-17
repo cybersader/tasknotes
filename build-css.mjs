@@ -24,7 +24,6 @@ const CSS_FILES = [
     'styles/task-action-palette-modal.css', // TaskActionPaletteModal component with proper BEM scoping
     'styles/time-entry-editor-modal.css', // TimeEntryEditorModal component with proper BEM scoping
     'styles/notification-modal.css', // BasesNotificationModal component with proper BEM scoping
-    'styles/unified-notification-modal.css', // UnifiedNotificationModal component (vault-wide reminders)
     'styles/relationships.css',  // RelationshipsWidget component with proper BEM scoping
     'styles/task-card-note-widget.css',  // TaskCardNoteWidget component with proper BEM scoping
     

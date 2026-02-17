@@ -85,7 +85,7 @@ import { StatusBarService } from "./services/StatusBarService";
 import { ProjectSubtasksService } from "./services/ProjectSubtasksService";
 import { ExpandedProjectsService } from "./services/ExpandedProjectsService";
 import { NotificationService } from "./services/NotificationService";
-import { BasesQueryWatcher, VaultWideNotificationService, UnifiedNotificationModal, ToastNotification, BaseNotificationSyncService, NotificationCache } from "./notifications";
+import { BasesQueryWatcher, VaultWideNotificationService, ToastNotification, BaseNotificationSyncService, NotificationCache } from "./notifications";
 import { AutoExportService } from "./services/AutoExportService";
 // Type-only import for HTTPAPIService (actual import is dynamic on desktop only)
 import type { HTTPAPIService } from "./services/HTTPAPIService";
@@ -1140,6 +1140,17 @@ export default class TaskNotesPlugin extends Plugin {
 			if (this.taskLinkDetectionService) {
 				this.taskLinkDetectionService.clearCacheForFile(filePath);
 			}
+
+			// Invalidate person/group note preference caches when relevant files change
+			if (this.personNoteService) {
+				this.personNoteService.invalidateCache(filePath);
+			}
+			if (this.groupRegistry) {
+				const groupFolder = this.settings.groupNotesFolder || this.settings.personNotesFolder;
+				if (groupFolder && filePath.startsWith(groupFolder)) {
+					this.groupRegistry.clearCache();
+				}
+			}
 		} else if (force) {
 			// Full cache clear if forcing
 			this.cacheManager.clearAllCaches();
@@ -1147,6 +1158,14 @@ export default class TaskNotesPlugin extends Plugin {
 			// Clear task link detection cache completely
 			if (this.taskLinkDetectionService) {
 				this.taskLinkDetectionService.clearCache();
+			}
+
+			// Clear person/group caches on full rebuild
+			if (this.personNoteService) {
+				this.personNoteService.clearCache();
+			}
+			if (this.groupRegistry) {
+				this.groupRegistry.clearCache();
 			}
 		}
 
@@ -1656,13 +1675,6 @@ export default class TaskNotesPlugin extends Plugin {
 				nameKey: "commands.openStatisticsView",
 				callback: async () => {
 					await this.activateStatsView();
-				},
-			},
-			{
-				id: "show-upcoming-reminders",
-				nameKey: "commands.showUpcomingReminders",
-				callback: () => {
-					new UnifiedNotificationModal(this.app, this).open();
 				},
 			},
 			{
