@@ -42,6 +42,9 @@ export abstract class BasesViewBase extends Component {
 	protected selectionModeCleanup: (() => void) | null = null;
 	protected selectionIndicatorEl: HTMLElement | null = null;
 
+	// Filtered items cache — updated by subclass render(), consumed by handleBulkCreation()
+	protected lastFilteredDataItems: import("./helpers").BasesDataItem[] = [];
+
 	// Notification state - prevent duplicate notifications per session
 	private notifyChecked = false;
 
@@ -390,8 +393,11 @@ export abstract class BasesViewBase extends Component {
 	 */
 	private handleBulkCreation(): void {
 		try {
-			// Extract all data items from the current Bases view
-			const dataItems = this.dataAdapter.extractDataItems();
+			// Use filtered items from last render (matches what user sees).
+			// Falls back to unfiltered if view hasn't rendered yet.
+			const dataItems = this.lastFilteredDataItems.length > 0
+				? this.lastFilteredDataItems
+				: this.dataAdapter.extractDataItems();
 
 			if (dataItems.length === 0) {
 				new Notice("No items in this view to create tasks from");

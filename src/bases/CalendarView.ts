@@ -639,6 +639,10 @@ export class CalendarView extends BasesViewBase {
 			const filteredTasks = this.applySearchFilter(taskNotes);
 			this.currentTasks = filteredTasks;
 
+			// Store filtered items for bulk creation (matches what user sees)
+			const filteredPaths = new Set(filteredTasks.map(t => t.path));
+			this.lastFilteredDataItems = dataItems.filter(item => item.path != null && filteredPaths.has(item.path));
+
 			// Build Bases entry mapping for task enrichment
 			this.basesEntryByPath.clear();
 			if (this.data?.data) {

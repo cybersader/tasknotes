@@ -282,6 +282,10 @@ export class KanbanView extends BasesViewBase {
 			// Apply search filter
 			const filteredTasks = this.applySearchFilter(taskNotes);
 
+			// Store filtered items for bulk creation (matches what user sees)
+			const filteredPaths = new Set(filteredTasks.map(t => t.path));
+			this.lastFilteredDataItems = dataItems.filter(item => item.path != null && filteredPaths.has(item.path));
+
 			// Clear board and cleanup scrollers
 			this.destroyColumnScrollers();
 			this.boardEl.empty();

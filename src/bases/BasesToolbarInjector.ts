@@ -304,10 +304,12 @@ export class BasesToolbarInjector {
 		const items: any[] = [];
 
 		try {
-			// Primary path: basesContainer.controller.results (proven pattern from BasesQueryWatcher)
-			const basesContainer = view.basesContainer || view.container;
-			if (basesContainer?.controller?.results) {
-				const results = basesContainer.controller.results;
+			// Primary path: view.controller.results (direct access — Obsidian 1.9+)
+			// Falls back to basesContainer.controller.results for older patterns
+			const controller = view.controller ||
+				(view.basesContainer || view.container)?.controller;
+			if (controller?.results) {
+				const results = controller.results;
 				for (const [, entry] of results) {
 					const file = (entry as any).file;
 					if (!file?.path) continue;
@@ -334,8 +336,8 @@ export class BasesToolbarInjector {
 			}
 
 			// Fallback: iterate controller.sources if results is empty/missing
-			if (basesContainer?.controller?.sources) {
-				const sources = basesContainer.controller.sources;
+			if (controller?.sources) {
+				const sources = controller.sources;
 				for (const source of sources) {
 					if (source?.results) {
 						for (const [, entry] of source.results) {
@@ -376,7 +378,7 @@ export class BasesToolbarInjector {
 
 			this.plugin.debugLog.log(
 				"BasesToolbarInjector",
-				`No data source found on view — basesContainer: ${!!basesContainer}, controller: ${!!basesContainer?.controller}, results: ${!!basesContainer?.controller?.results}`
+				`No data source found on view — controller: ${!!controller}, results: ${!!controller?.results}`
 			);
 		} catch (error) {
 			this.plugin.debugLog.error("BasesToolbarInjector", "Error extracting items", error);

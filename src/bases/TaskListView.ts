@@ -32,6 +32,7 @@ export class TaskListView extends BasesViewBase {
 	private collapsedSubGroups = new Set<string>(); // Track collapsed sub-group keys
 	private subGroupPropertyId: string | null = null; // Property ID for sub-grouping
 	private configLoaded = false; // Track if we've successfully loaded config
+	private _currentDataItems: BasesDataItem[] = []; // Set during render(), used by sub-renders
 
 	/**
 	 * Threshold for enabling virtual scrolling in task list view.
@@ -126,6 +127,8 @@ export class TaskListView extends BasesViewBase {
 
 			// Extract data using adapter (adapter now uses this as basesView)
 			const dataItems = this.dataAdapter.extractDataItems();
+			// Store for sub-render methods to update lastFilteredDataItems
+			this._currentDataItems = dataItems;
 
 			// Compute Bases formulas for TaskNotes items
 			await this.computeFormulas(dataItems);
@@ -226,6 +229,10 @@ export class TaskListView extends BasesViewBase {
 
 		// Apply search filter
 		const filteredTasks = this.applySearchFilter(taskNotes);
+
+		// Store filtered items for bulk creation (matches what user sees)
+		const filteredPaths = new Set(filteredTasks.map(t => t.path));
+		this.lastFilteredDataItems = this._currentDataItems.filter(item => item.path != null && filteredPaths.has(item.path));
 
 		// Show "no results" if search returned empty but we had tasks
 		if (this.isSearchWithNoResults(filteredTasks, taskNotes.length)) {
@@ -456,6 +463,10 @@ export class TaskListView extends BasesViewBase {
 		// Apply search filter
 		const filteredTasks = this.applySearchFilter(taskNotes);
 
+		// Store filtered items for bulk creation (matches what user sees)
+		const filteredPaths = new Set(filteredTasks.map(t => t.path));
+		this.lastFilteredDataItems = this._currentDataItems.filter(item => item.path != null && filteredPaths.has(item.path));
+
 		// Show "no results" if search returned empty but we had tasks
 		if (this.isSearchWithNoResults(filteredTasks, taskNotes.length)) {
 			this.clearAllTaskElements();
@@ -541,6 +552,10 @@ export class TaskListView extends BasesViewBase {
 
 		// Apply search filter
 		const filteredTasks = this.applySearchFilter(taskNotes);
+
+		// Store filtered items for bulk creation (matches what user sees)
+		const filteredPaths = new Set(filteredTasks.map(t => t.path));
+		this.lastFilteredDataItems = this._currentDataItems.filter(item => item.path != null && filteredPaths.has(item.path));
 
 		// Show "no results" if search returned empty but we had tasks
 		if (this.isSearchWithNoResults(filteredTasks, taskNotes.length)) {

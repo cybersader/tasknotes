@@ -4,6 +4,14 @@ All notable changes to this TaskNotes fork will be documented in this file.
 
 This fork (`cybersader/tasknotes`) adds bulk tasking, notifications, and other enhancements to the upstream [TaskNotes](https://github.com/callumalpass/tasknotes) plugin.
 
+## [4.3.37] - 2026-02-17
+
+### Fixed
+- **Bulk tasking button shows correct item count**: The "Bulk tasking" modal now shows only the items visible in the current view, matching the view's filter count. Previously it pulled all raw query results (e.g., 137 items when only 10 were visible).
+- **Native Table/Board views**: Fixed the toolbar injector to read filtered results from `view.controller.results` directly, instead of falling back to parsing the `.base` file which returned unfiltered results.
+- **TaskNotes custom views**: TaskListView, KanbanView, CalendarView, and UpcomingView now cache filtered items after `applySearchFilter()` so the bulk modal receives the same filtered set the user sees.
+- **UpcomingView crash on view switch**: Fixed "Cannot read properties of undefined (reading 'data')" error that flashed briefly when switching view types, caused by `extractDataItems()` being called before data was available.
+
 ## [4.3.36] - 2026-02-17
 
 ### Added

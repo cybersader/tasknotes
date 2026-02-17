@@ -212,6 +212,15 @@ export class UpcomingView extends BasesViewBase {
 			const items = await this.getOwnFilterItems();
 			this.plugin.debugLog.log("UpcomingView", `Filter items: ${items.length}`);
 
+			// Store filtered items for bulk creation (matches what user sees)
+			if (this.data?.data && items.length > 0) {
+				const filteredPaths = new Set(items.map(i => i.path));
+				const dataItems = this.dataAdapter.extractDataItems();
+				this.lastFilteredDataItems = dataItems.filter(item => item.path != null && filteredPaths.has(item.path));
+			} else {
+				this.lastFilteredDataItems = [];
+			}
+
 			// Group by time category
 			this.groupedItems = this.groupByTimeCategory(items);
 
