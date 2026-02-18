@@ -391,7 +391,7 @@ export abstract class BasesViewBase extends Component {
 	 * Handle click on the "Bulk tasking" button.
 	 * Opens the bulk task modal with current Bases items.
 	 */
-	private handleBulkCreation(): void {
+	private async handleBulkCreation(): Promise<void> {
 		try {
 			// Use filtered items from last render (matches what user sees).
 			// Falls back to unfiltered if view hasn't rendered yet.
@@ -408,6 +408,9 @@ export abstract class BasesViewBase extends Component {
 			const baseFile = this.findBaseFile();
 			const baseFilePath = baseFile?.path;
 
+			// Resolve per-view field mapping context (ADR-011)
+			const mappingCtx = await this.resolveViewMappingContext();
+
 			// Open the bulk tasking modal
 			const app = this.app || this.plugin.app;
 			const modal = new BulkTaskCreationModal(app, this.plugin, dataItems, {
@@ -415,6 +418,9 @@ export abstract class BasesViewBase extends Component {
 					// Refresh the view after tasks are created/converted
 					this.refresh();
 				},
+				viewFieldMapping: mappingCtx?.viewFieldMapping,
+				sourceBaseId: mappingCtx?.baseId,
+				sourceViewId: mappingCtx?.viewId,
 			}, baseFilePath);
 
 			modal.open();
@@ -604,6 +610,18 @@ export abstract class BasesViewBase extends Component {
 		const taskCreationData: any = { ...prePopulatedValues };
 		if (Object.keys(customFrontmatter).length > 0) {
 			taskCreationData.customFrontmatter = customFrontmatter;
+		}
+
+		// Inject per-view field mapping context (ADR-011)
+		const mappingCtx = await this.resolveViewMappingContext();
+		if (mappingCtx?.viewFieldMapping) {
+			taskCreationData.viewFieldMapping = mappingCtx.viewFieldMapping;
+		}
+		if (mappingCtx?.baseId) {
+			taskCreationData.sourceBaseId = mappingCtx.baseId;
+		}
+		if (mappingCtx?.viewId) {
+			taskCreationData.sourceViewId = mappingCtx.viewId;
 		}
 
 		// Open TaskNotes creation modal
@@ -1161,6 +1179,43 @@ export abstract class BasesViewBase extends Component {
 		}
 
 		return foundFile;
+	}
+
+	/**
+	 * Resolve the current view's tnFieldMapping and identity from the .base file.
+	 * Matches by view type; falls back to first view of matching type.
+	 * Returns null if no .base file found or no tnFieldMapping configured.
+	 */
+	protected async resolveViewMappingContext(): Promise<{
+		viewFieldMapping?: import("../identity/BaseIdentityService").ViewFieldMapping;
+		baseId?: string;
+		viewId?: string;
+	} | null> {
+		const baseFile = this.findBaseFile();
+		if (!baseFile) return null;
+
+		try {
+			const content = await this.plugin.app.vault.read(baseFile);
+			const parsed = parseYaml(content);
+			if (!parsed?.views || !Array.isArray(parsed.views)) return null;
+
+			// Find the view that matches this view's type
+			// Subclasses define `type` (e.g., "tasknotesTaskList")
+			const myType = (this as any).type as string;
+			const matchingView = parsed.views.find(
+				(v: any) => v?.type === myType
+			);
+
+			if (!matchingView) return null;
+
+			return {
+				viewFieldMapping: matchingView.tnFieldMapping || undefined,
+				baseId: parsed.tnBaseId || undefined,
+				viewId: matchingView.tnViewId || undefined,
+			};
+		} catch {
+			return null;
+		}
 	}
 
 	// Abstract methods that subclasses must implement

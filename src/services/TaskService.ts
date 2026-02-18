@@ -42,6 +42,8 @@ import {
 	createUTCDateFromLocalCalendarDate,
 } from "../utils/dateUtils";
 import { format } from "date-fns";
+import { FIELD_OVERRIDE_PROPS, type OverridableField } from "../utils/fieldOverrideUtils";
+import type { ViewFieldMapping } from "../identity/BaseIdentityService";
 import { processFolderTemplate, TaskTemplateData } from "../utils/folderTemplateProcessor";
 
 import TaskNotesPlugin from "../main";
@@ -483,6 +485,25 @@ export class TaskService {
 				finalFrontmatter = { ...finalFrontmatter, ...taskData.customFrontmatter };
 			}
 
+			// Apply per-view field mapping (ADR-011): remap core fields to custom
+			// property names and write tracking properties so the task is self-describing.
+			if (taskData.viewFieldMapping) {
+				finalFrontmatter = this.applyViewFieldMapping(
+					finalFrontmatter,
+					taskData.viewFieldMapping
+				);
+			}
+
+			// Write provenance tracking properties if enabled (ADR-011)
+			if (this.plugin.settings.baseIdentityTrackSourceView) {
+				if (taskData.sourceBaseId) {
+					finalFrontmatter["tnSourceBaseId"] = taskData.sourceBaseId;
+				}
+				if (taskData.sourceViewId) {
+					finalFrontmatter["tnSourceViewId"] = taskData.sourceViewId;
+				}
+			}
+
 			// Add note UUID if enabled and auto-generate is on
 			if (this.plugin.noteUuidService?.shouldAutoGenerate()) {
 				const uuidPropName = this.plugin.noteUuidService.getPropertyName();
@@ -698,6 +719,79 @@ export class TaskService {
 				body: taskData.details?.trim() || "",
 			};
 		}
+	}
+
+	/**
+	 * Apply per-view field mapping to frontmatter (ADR-011).
+	 *
+	 * For each field in the ViewFieldMapping, this:
+	 * 1. Renames the global property to the view-specific name
+	 *    (e.g., "due" → "deadline")
+	 * 2. Writes a tracking property (e.g., tnDueDateProp: "deadline")
+	 *    so the system knows where to find the canonical value.
+	 *
+	 * The task becomes self-describing: it works correctly without the view context.
+	 */
+	private applyViewFieldMapping(
+		frontmatter: Record<string, any>,
+		mapping: ViewFieldMapping
+	): Record<string, any> {
+		const result = { ...frontmatter };
+		const fm = this.plugin.fieldMapper;
+
+		// Fields that use FieldMapping (via FieldMapper.toUserField)
+		const fieldMappingEntries: Array<{
+			viewKey: keyof ViewFieldMapping;
+			internalKey: OverridableField;
+			fieldMappingKey: keyof import("../types").FieldMapping;
+		}> = [
+			{ viewKey: "due", internalKey: "due", fieldMappingKey: "due" },
+			{ viewKey: "scheduled", internalKey: "scheduled", fieldMappingKey: "scheduled" },
+			{ viewKey: "completedDate", internalKey: "completedDate", fieldMappingKey: "completedDate" },
+			{ viewKey: "dateCreated", internalKey: "dateCreated", fieldMappingKey: "dateCreated" },
+		];
+
+		for (const { viewKey, internalKey, fieldMappingKey } of fieldMappingEntries) {
+			const customPropName = mapping[viewKey];
+			if (!customPropName?.trim()) continue;
+
+			const globalPropName = fm.toUserField(fieldMappingKey);
+
+			// Skip if the custom name is the same as the global name
+			if (customPropName === globalPropName) continue;
+
+			// Rename: move value from global property to custom property
+			const hasGlobalValue = result[globalPropName] !== undefined;
+			if (hasGlobalValue) {
+				result[customPropName] = result[globalPropName];
+				delete result[globalPropName];
+			}
+
+			// Only write tracking property when task has a value for this field
+			// Avoids frontmatter clutter (e.g., tnDueDateProp without a deadline value)
+			if (hasGlobalValue || result[customPropName] !== undefined) {
+				const trackingProp = FIELD_OVERRIDE_PROPS[internalKey];
+				result[trackingProp] = customPropName;
+			}
+		}
+
+		// Handle assignee separately (uses settings.assigneeFieldName, not FieldMapping)
+		if (mapping.assignee?.trim()) {
+			const globalAssigneeProp = this.plugin.settings.assigneeFieldName || "assignee";
+			if (mapping.assignee !== globalAssigneeProp) {
+				const hasAssigneeValue = result[globalAssigneeProp] !== undefined;
+				if (hasAssigneeValue) {
+					result[mapping.assignee] = result[globalAssigneeProp];
+					delete result[globalAssigneeProp];
+				}
+				// Only write tracking prop if assignee has a value
+				if (hasAssigneeValue || result[mapping.assignee] !== undefined) {
+					result[FIELD_OVERRIDE_PROPS.assignee] = mapping.assignee;
+				}
+			}
+		}
+
+		return result;
 	}
 
 	/**

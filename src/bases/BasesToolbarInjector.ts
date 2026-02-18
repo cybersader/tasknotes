@@ -1,7 +1,8 @@
 /* eslint-disable no-console */
-import { Notice, setIcon, WorkspaceLeaf, TFile } from "obsidian";
+import { Notice, setIcon, WorkspaceLeaf, TFile, parseYaml } from "obsidian";
 import TaskNotesPlugin from "../main";
 import { BulkTaskCreationModal } from "../bulk/BulkTaskCreationModal";
+import type { ViewFieldMapping } from "../identity/BaseIdentityService";
 
 /**
  * Injects TaskNotes "New Task" and "Bulk tasking" buttons into ALL Obsidian Bases toolbars,
@@ -200,57 +201,81 @@ export class BasesToolbarInjector {
 	}
 
 	/**
-	 * Inject "Bulk tasking" button into a non-TaskNotes toolbar.
-	 * The native "New" button is left untouched — it creates normal files,
-	 * which is the expected behavior on non-TaskNotes views.
-	 * Only "Bulk tasking" is a TaskNotes action that makes sense universally.
+	 * Inject "New task" and "Bulk tasking" buttons into a non-TaskNotes toolbar.
+	 * "New task" opens TaskCreationModal with per-view field mapping (ADR-011).
+	 * "Bulk tasking" opens BulkTaskCreationModal for generate/convert operations.
 	 */
 	private injectButtons(toolbarEl: HTMLElement): void {
-		if (!this.plugin.settings.enableBulkActionsButton) return;
-
 		const doc = toolbarEl.ownerDocument;
 
-		// --- Bulk tasking button only ---
-		const bulkBtn = doc.createElement("div");
-		bulkBtn.className = "bases-toolbar-item tn-bases-bulk-create-btn tn-universal-injected";
-
-		const bulkInner = doc.createElement("div");
-		bulkInner.className = "text-icon-button";
-		bulkInner.tabIndex = 0;
-
-		const bulkIcon = doc.createElement("span");
-		bulkIcon.className = "text-button-icon";
-		setIcon(bulkIcon, "layers");
-		bulkInner.appendChild(bulkIcon);
-
-		const bulkLabel = doc.createElement("span");
-		bulkLabel.className = "text-button-label";
-		bulkLabel.textContent = "Bulk tasking";
-		bulkInner.appendChild(bulkLabel);
-
-		bulkBtn.appendChild(bulkInner);
-		bulkBtn.addEventListener("click", (e) => this.handleBulkCreation(e));
-
-		// Insert after the native "New" button (keep native visible)
+		// Find the native "New" button as insertion anchor
 		const nativeNewBtn = toolbarEl.querySelector(
 			".bases-toolbar-new-item-menu"
 		) as HTMLElement | null;
+
+		// --- "New task" button ---
+		const newTaskBtn = doc.createElement("div");
+		newTaskBtn.className = "bases-toolbar-item tn-bases-new-task-btn tn-universal-injected";
+
+		const newTaskInner = doc.createElement("div");
+		newTaskInner.className = "text-icon-button";
+		newTaskInner.tabIndex = 0;
+
+		const newTaskIcon = doc.createElement("span");
+		newTaskIcon.className = "text-button-icon";
+		setIcon(newTaskIcon, "plus-circle");
+		newTaskInner.appendChild(newTaskIcon);
+
+		const newTaskLabel = doc.createElement("span");
+		newTaskLabel.className = "text-button-label";
+		newTaskLabel.textContent = "New task";
+		newTaskInner.appendChild(newTaskLabel);
+
+		newTaskBtn.appendChild(newTaskInner);
+		newTaskBtn.addEventListener("click", (e) => this.handleNewTask(e));
+
 		if (nativeNewBtn) {
-			nativeNewBtn.after(bulkBtn);
+			nativeNewBtn.after(newTaskBtn);
 		} else {
-			toolbarEl.appendChild(bulkBtn);
+			toolbarEl.appendChild(newTaskBtn);
+		}
+
+		// --- "Bulk tasking" button ---
+		if (this.plugin.settings.enableBulkActionsButton) {
+			const bulkBtn = doc.createElement("div");
+			bulkBtn.className = "bases-toolbar-item tn-bases-bulk-create-btn tn-universal-injected";
+
+			const bulkInner = doc.createElement("div");
+			bulkInner.className = "text-icon-button";
+			bulkInner.tabIndex = 0;
+
+			const bulkIcon = doc.createElement("span");
+			bulkIcon.className = "text-button-icon";
+			setIcon(bulkIcon, "layers");
+			bulkInner.appendChild(bulkIcon);
+
+			const bulkLabel = doc.createElement("span");
+			bulkLabel.className = "text-button-label";
+			bulkLabel.textContent = "Bulk tasking";
+			bulkInner.appendChild(bulkLabel);
+
+			bulkBtn.appendChild(bulkInner);
+			bulkBtn.addEventListener("click", (e) => this.handleBulkCreation(e));
+
+			// Insert after the new task button
+			newTaskBtn.after(bulkBtn);
 		}
 
 		this.plugin.debugLog.log(
 			"BasesToolbarInjector",
-			"Injected Bulk tasking button into toolbar"
+			"Injected New task + Bulk tasking buttons into toolbar"
 		);
 	}
 
 	/**
 	 * Handle "Bulk tasking" click — extract view data and open BulkTaskCreationModal.
 	 */
-	private handleBulkCreation(event: MouseEvent): void {
+	private async handleBulkCreation(event: MouseEvent): Promise<void> {
 		try {
 			const button = event.currentTarget as HTMLElement;
 			const items = this.extractItemsFromToolbarContext(button);
@@ -264,6 +289,9 @@ export class BasesToolbarInjector {
 			const leaf = this.findLeafFromToolbar(button);
 			const baseFilePath = leaf ? (leaf.getViewState()?.state?.file as string) : undefined;
 
+			// Resolve per-view field mapping (ADR-011)
+			const mappingCtx = await this.resolveViewMappingFromLeaf(leaf, baseFilePath);
+
 			const modal = new BulkTaskCreationModal(
 				this.plugin.app,
 				this.plugin,
@@ -272,6 +300,9 @@ export class BasesToolbarInjector {
 					onTasksCreated: () => {
 						// No view refresh available for non-TaskNotes views
 					},
+					viewFieldMapping: mappingCtx?.viewFieldMapping,
+					sourceBaseId: mappingCtx?.baseId,
+					sourceViewId: mappingCtx?.viewId,
 				},
 				baseFilePath
 			);
@@ -282,6 +313,95 @@ export class BasesToolbarInjector {
 				"Failed to open bulk task creation: " +
 					(error instanceof Error ? error.message : String(error))
 			);
+		}
+	}
+
+	/**
+	 * Handle "New task" click — resolve view mapping context and open TaskCreationModal.
+	 * Reads the .base file's tnFieldMapping for the active view so new tasks get
+	 * per-view property remapping (ADR-011 Phase C).
+	 */
+	private async handleNewTask(event: MouseEvent): Promise<void> {
+		try {
+			const button = event.currentTarget as HTMLElement;
+			const leaf = this.findLeafFromToolbar(button);
+			const baseFilePath = leaf ? (leaf.getViewState()?.state?.file as string) : undefined;
+
+			// Resolve per-view field mapping from the .base file
+			const mappingCtx = await this.resolveViewMappingFromLeaf(leaf, baseFilePath);
+
+			// Dynamically import to avoid circular dependencies
+			const { TaskCreationModal } = await import("../modals/TaskCreationModal");
+
+			const modal = new TaskCreationModal(
+				this.plugin.app,
+				this.plugin,
+				{
+					onTaskCreated: () => {
+						// No view refresh available for non-TaskNotes views
+					},
+					viewFieldMapping: mappingCtx?.viewFieldMapping,
+					sourceBaseId: mappingCtx?.baseId,
+					sourceViewId: mappingCtx?.viewId,
+				}
+			);
+			modal.open();
+		} catch (error) {
+			console.error("[TaskNotes][BasesToolbarInjector] Error opening new task modal:", error);
+			new Notice(
+				"Failed to open task creation: " +
+					(error instanceof Error ? error.message : String(error))
+			);
+		}
+	}
+
+	/**
+	 * Resolve per-view field mapping from a workspace leaf's .base file.
+	 * Reads the YAML, finds the active view (by type from leaf state), and returns
+	 * tnFieldMapping / tnBaseId / tnViewId if configured.
+	 */
+	private async resolveViewMappingFromLeaf(
+		leaf: WorkspaceLeaf | null,
+		baseFilePath?: string
+	): Promise<{
+		viewFieldMapping?: ViewFieldMapping;
+		baseId?: string;
+		viewId?: string;
+	} | null> {
+		if (!baseFilePath) return null;
+
+		const baseFile = this.plugin.app.vault.getAbstractFileByPath(baseFilePath);
+		if (!(baseFile instanceof TFile)) return null;
+
+		try {
+			const content = await this.plugin.app.vault.read(baseFile);
+			const parsed = parseYaml(content);
+			if (!parsed?.views || !Array.isArray(parsed.views)) return null;
+
+			// Determine the active view type from the leaf's state
+			// Native Bases views store the active view index or type in state
+			const viewState = leaf?.getViewState()?.state;
+			const activeViewType = viewState?.type as string | undefined;
+
+			// Try to match by type; if no type in state, use the first view with tnFieldMapping
+			let matchingView: any = null;
+			if (activeViewType) {
+				matchingView = parsed.views.find((v: any) => v?.type === activeViewType);
+			}
+			if (!matchingView) {
+				// Fallback: first view that has tnFieldMapping configured
+				matchingView = parsed.views.find((v: any) => v?.tnFieldMapping);
+			}
+
+			if (!matchingView) return null;
+
+			return {
+				viewFieldMapping: matchingView.tnFieldMapping || undefined,
+				baseId: parsed.tnBaseId || undefined,
+				viewId: matchingView.tnViewId || undefined,
+			};
+		} catch {
+			return null;
 		}
 	}
 

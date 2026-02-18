@@ -37,6 +37,13 @@ export {
 } from "./PersonNoteService";
 export { NoteUuidService } from "./NoteUuidService";
 export {
+	BaseIdentityService,
+	type ViewFieldMapping,
+	type ViewDefaults,
+	type ParsedViewConfig,
+	type ParsedBaseFile,
+} from "./BaseIdentityService";
+export {
 	DevicePreferencesManager,
 	type DevicePreferences,
 	type NotificationScopePrefs,

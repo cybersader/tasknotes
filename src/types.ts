@@ -475,6 +475,12 @@ export interface TaskCreationData extends Partial<TaskInfo> {
 	parentNote?: string; // Optional parent note name/path for template variable
 	creationContext?: "inline-conversion" | "manual-creation" | "modal-inline-creation" | "api" | "import" | "ics-event"; // Context for folder determination
 	customFrontmatter?: Record<string, any>; // Custom frontmatter properties (including user fields)
+	/** Per-view field mapping from a .base file's tnFieldMapping (ADR-011). */
+	viewFieldMapping?: import("./identity/BaseIdentityService").ViewFieldMapping;
+	/** Source base ID for provenance tracking (ADR-011). Only written when baseIdentityTrackSourceView is enabled. */
+	sourceBaseId?: string;
+	/** Source view ID for provenance tracking (ADR-011). Only written when baseIdentityTrackSourceView is enabled. */
+	sourceViewId?: string;
 }
 
 export interface TimeEntry {

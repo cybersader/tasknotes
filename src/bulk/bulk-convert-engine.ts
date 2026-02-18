@@ -8,6 +8,7 @@ import { TFile } from "obsidian";
 import TaskNotesPlugin from "../main";
 import { BasesDataItem } from "../bases/helpers";
 import { getCurrentTimestamp } from "../utils/dateUtils";
+import { FIELD_OVERRIDE_PROPS } from "../utils/fieldOverrideUtils";
 
 export interface BulkConvertOptions {
 	/** Apply default status, priority, and dateCreated to converted notes */
@@ -28,6 +29,12 @@ export interface BulkConvertOptions {
 	reminders?: Array<{ id?: string; type: string; relatedTo?: string; offset?: string; absoluteTime?: string; description?: string }>;
 	/** Custom frontmatter properties to apply to all converted notes */
 	customFrontmatter?: Record<string, any>;
+	/** Per-view field mapping from a .base file (ADR-011). Used when writing core fields. */
+	viewFieldMapping?: import("../identity/BaseIdentityService").ViewFieldMapping;
+	/** Source base ID for provenance tracking (ADR-011). */
+	sourceBaseId?: string;
+	/** Source view ID for provenance tracking (ADR-011). */
+	sourceViewId?: string;
 	/** Callback for progress updates */
 	onProgress?: (current: number, total: number, status: string) => void;
 }
@@ -334,6 +341,65 @@ export class BulkConvertEngine {
 					if (value !== null && value !== undefined && value !== "") {
 						frontmatter[key] = value;
 					}
+				}
+			}
+
+			// Step 2.9: Apply per-view field mapping (ADR-011)
+			// Renames global property names to view-specific names and writes tracking props
+			if (options.viewFieldMapping) {
+				const mapping = options.viewFieldMapping;
+				const fieldMappingEntries: Array<{
+					viewKey: keyof typeof mapping;
+					fieldMappingKey: "due" | "scheduled" | "completedDate" | "dateCreated";
+					trackingProp: string;
+				}> = [
+					{ viewKey: "due", fieldMappingKey: "due", trackingProp: FIELD_OVERRIDE_PROPS.due },
+					{ viewKey: "scheduled", fieldMappingKey: "scheduled", trackingProp: FIELD_OVERRIDE_PROPS.scheduled },
+					{ viewKey: "completedDate", fieldMappingKey: "completedDate", trackingProp: FIELD_OVERRIDE_PROPS.completedDate },
+					{ viewKey: "dateCreated", fieldMappingKey: "dateCreated", trackingProp: FIELD_OVERRIDE_PROPS.dateCreated },
+				];
+
+				for (const { viewKey, fieldMappingKey, trackingProp } of fieldMappingEntries) {
+					const customPropName = mapping[viewKey];
+					if (!customPropName?.trim()) continue;
+					const globalPropName = fieldMapper.toUserField(fieldMappingKey);
+					if (customPropName === globalPropName) continue;
+
+					// Rename property
+					const hasGlobalValue = frontmatter[globalPropName] !== undefined;
+					if (hasGlobalValue) {
+						frontmatter[customPropName] = frontmatter[globalPropName];
+						delete frontmatter[globalPropName];
+					}
+					// Only write tracking property when value exists
+					if (hasGlobalValue || frontmatter[customPropName] !== undefined) {
+						frontmatter[trackingProp] = customPropName;
+					}
+				}
+
+				// Handle assignee separately (uses settings, not FieldMapping)
+				if (mapping.assignee?.trim()) {
+					const globalAssigneeProp = settings.assigneeFieldName || "assignee";
+					if (mapping.assignee !== globalAssigneeProp) {
+						const hasAssigneeValue = frontmatter[globalAssigneeProp] !== undefined;
+						if (hasAssigneeValue) {
+							frontmatter[mapping.assignee] = frontmatter[globalAssigneeProp];
+							delete frontmatter[globalAssigneeProp];
+						}
+						if (hasAssigneeValue || frontmatter[mapping.assignee] !== undefined) {
+							frontmatter[FIELD_OVERRIDE_PROPS.assignee] = mapping.assignee;
+						}
+					}
+				}
+			}
+
+			// Step 2.10: Write provenance tracking (ADR-011)
+			if (this.plugin.settings.baseIdentityTrackSourceView) {
+				if (options.sourceBaseId) {
+					frontmatter["tnSourceBaseId"] = options.sourceBaseId;
+				}
+				if (options.sourceViewId) {
+					frontmatter["tnSourceViewId"] = options.sourceViewId;
 				}
 			}
 

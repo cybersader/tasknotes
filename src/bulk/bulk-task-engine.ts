@@ -30,6 +30,12 @@ export interface BulkCreationOptions {
 	reminders?: Array<{ id?: string; type: string; relatedTo?: string; offset?: string; absoluteTime?: string; description?: string }>;
 	/** Custom frontmatter properties to apply to all tasks */
 	customFrontmatter?: Record<string, any>;
+	/** Per-view field mapping from a .base file (ADR-011). Passed through to TaskService. */
+	viewFieldMapping?: import("../identity/BaseIdentityService").ViewFieldMapping;
+	/** Source base ID for provenance tracking (ADR-011). */
+	sourceBaseId?: string;
+	/** Source view ID for provenance tracking (ADR-011). */
+	sourceViewId?: string;
 }
 
 export interface BulkCreationResult {
@@ -276,6 +282,17 @@ export class BulkTaskEngine {
 			// Store as single value if only one, otherwise as array
 			(taskData as Record<string, unknown>)[assigneeFieldName] =
 				assigneeLinks.length === 1 ? assigneeLinks[0] : assigneeLinks;
+		}
+
+		// Pass per-view field mapping and provenance (ADR-011)
+		if (options.viewFieldMapping) {
+			taskData.viewFieldMapping = options.viewFieldMapping;
+		}
+		if (options.sourceBaseId) {
+			taskData.sourceBaseId = options.sourceBaseId;
+		}
+		if (options.sourceViewId) {
+			taskData.sourceViewId = options.sourceViewId;
 		}
 
 		// Create the task using TaskService

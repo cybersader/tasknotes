@@ -534,6 +534,8 @@ export const DEFAULT_SETTINGS: TaskNotesSettings = {
 	// Note UUID settings (for persistent identity across renames)
 	noteUuidPropertyName: "tnId",
 	noteUuidAutoGenerate: true,
+	// Base identity (ADR-011): off by default — only useful for migration/debugging
+	baseIdentityTrackSourceView: false,
 	// Global reminder rules (virtual reminders for all tasks at runtime)
 	globalReminderRules: DEFAULT_GLOBAL_REMINDER_RULES,
 	// Upcoming View date format settings

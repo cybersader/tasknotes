@@ -103,6 +103,7 @@ import { UserRegistry } from "./identity/UserRegistry";
 import { GroupRegistry } from "./identity/GroupRegistry";
 import { PersonNoteService } from "./identity/PersonNoteService";
 import { NoteUuidService } from "./identity/NoteUuidService";
+import { BaseIdentityService } from "./identity/BaseIdentityService";
 import { DevicePreferencesManager } from "./identity/DevicePreferences";
 import { DebugLog } from "./utils/DebugLog";
 
@@ -250,6 +251,7 @@ export default class TaskNotesPlugin extends Plugin {
 	groupRegistry: GroupRegistry;
 	personNoteService: PersonNoteService;
 	noteUuidService: NoteUuidService;
+	baseIdentityService: BaseIdentityService;
 	devicePrefs: DevicePreferencesManager;
 
 	// Debug logging utility (writes to debug.log file when enabled)
@@ -414,6 +416,7 @@ export default class TaskNotesPlugin extends Plugin {
 		this.groupRegistry = new GroupRegistry(this);
 		this.personNoteService = new PersonNoteService(this);
 		this.noteUuidService = new NoteUuidService(this);
+		this.baseIdentityService = new BaseIdentityService(this);
 		this.devicePrefs = new DevicePreferencesManager(this);
 
 		// Initialize debug logging utility (writes to debug.log when enabled)

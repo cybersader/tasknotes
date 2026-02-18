@@ -418,7 +418,7 @@ export abstract class TaskModal extends Modal {
 	protected userFields: Record<string, any> = {};
 
 	// Assignee picker instance (for cleanup)
-	private assigneePicker: { getSelection: () => string[]; setSelection: (paths: string[]) => void; destroy: () => void } | null = null;
+	protected assigneePicker: { getSelection: () => string[]; setSelection: (paths: string[]) => void; destroy: () => void } | null = null;
 
 	// Dependency fields
 	protected blockedByItems: DependencyItem[] = [];
@@ -1458,6 +1458,7 @@ export abstract class TaskModal extends Modal {
 					} else {
 						this.scheduledDate = finalValue;
 					}
+					this.onStandardDateChanged(type, finalValue);
 				} else {
 					// Clear the date
 					if (type === "due") {
@@ -1465,6 +1466,7 @@ export abstract class TaskModal extends Modal {
 					} else {
 						this.scheduledDate = "";
 					}
+					this.onStandardDateChanged(type, "");
 				}
 				this.updateDateIconState();
 			},
@@ -1547,6 +1549,11 @@ export abstract class TaskModal extends Modal {
 		);
 
 		menu.show(event);
+	}
+
+	/** Hook for subclasses to react when a standard date field changes via the action bar picker. */
+	protected onStandardDateChanged(_type: "due" | "scheduled", _value: string): void {
+		// No-op in base class. TaskCreationModal overrides to sync mapped properties.
 	}
 
 	protected updateDateIconState(): void {
@@ -1830,6 +1837,24 @@ export abstract class TaskModal extends Modal {
 			} else {
 				reminderIcon.classList.remove("has-value");
 				setTooltip(reminderIcon, this.t("modals.task.actions.reminders"), {
+					placement: "top",
+				});
+			}
+		}
+
+		// Update assignee icon
+		const assigneeIcon = this.actionBar.querySelector('[data-type="assignee"]') as HTMLElement;
+		if (assigneeIcon) {
+			const assigneeField = this.plugin.settings.assigneeFieldName || "assignee";
+			const val = this.userFields[assigneeField];
+			const hasAssignee = val && (Array.isArray(val) ? val.length > 0 : String(val).trim() !== "");
+			if (hasAssignee) {
+				assigneeIcon.classList.add("has-value");
+				const displayVal = Array.isArray(val) ? val.join(", ") : String(val);
+				setTooltip(assigneeIcon, `Assignee: ${displayVal}`, { placement: "top" });
+			} else {
+				assigneeIcon.classList.remove("has-value");
+				setTooltip(assigneeIcon, this.t("modals.task.actions.assignee"), {
 					placement: "top",
 				});
 			}

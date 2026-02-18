@@ -33,6 +33,12 @@ type BulkMode = "generate" | "convert";
 export interface BulkTaskCreationModalOptions {
 	/** Called when tasks are created or notes are converted successfully */
 	onTasksCreated?: (result: BulkCreationResult | BulkConvertResult) => void;
+	/** Per-view field mapping from a .base file (ADR-011). */
+	viewFieldMapping?: import("../identity/BaseIdentityService").ViewFieldMapping;
+	/** Source base ID for provenance tracking (ADR-011). */
+	sourceBaseId?: string;
+	/** Source view ID for provenance tracking (ADR-011). */
+	sourceViewId?: string;
 }
 
 /**
@@ -1558,6 +1564,10 @@ export class BulkTaskCreationModal extends Modal {
 			priority: this.bulkPriority || undefined,
 			reminders: this.bulkReminders.length > 0 ? this.bulkReminders : undefined,
 			customFrontmatter: Object.keys(this.bulkCustomProperties).length > 0 ? this.getFlatCustomProperties() : undefined,
+			// Per-view field mapping and provenance (ADR-011)
+			viewFieldMapping: this.modalOptions.viewFieldMapping,
+			sourceBaseId: this.modalOptions.sourceBaseId,
+			sourceViewId: this.modalOptions.sourceViewId,
 			onProgress: (current, total, status) => {
 				const percent = Math.round((current / total) * 100);
 				if (this.progressBarInner) {
@@ -1628,6 +1638,10 @@ export class BulkTaskCreationModal extends Modal {
 			priority: this.bulkPriority || undefined,
 			reminders: this.bulkReminders.length > 0 ? this.bulkReminders : undefined,
 			customFrontmatter: Object.keys(this.bulkCustomProperties).length > 0 ? this.getFlatCustomProperties() : undefined,
+			// Per-view field mapping and provenance (ADR-011)
+			viewFieldMapping: this.modalOptions.viewFieldMapping,
+			sourceBaseId: this.modalOptions.sourceBaseId,
+			sourceViewId: this.modalOptions.sourceViewId,
 			onProgress: (current, total, status) => {
 				const percent = Math.round((current / total) * 100);
 				if (this.progressBarInner) {

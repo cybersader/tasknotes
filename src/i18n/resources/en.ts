@@ -2498,6 +2498,7 @@ export const en: TranslationTree = {
 				priority: "Set priority",
 				recurrence: "Set recurrence",
 				reminders: "Set reminders",
+				assignee: "Set assignee",
 			},
 			buttons: {
 				openNote: "Open note",

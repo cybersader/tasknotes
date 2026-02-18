@@ -313,6 +313,8 @@ export interface TaskNotesSettings {
 	// Note UUID settings (for persistent identity across renames)
 	noteUuidPropertyName: string; // Empty = feature disabled
 	noteUuidAutoGenerate: boolean;
+	// Base identity settings (for per-base property mapping, see ADR-011)
+	baseIdentityTrackSourceView: boolean; // Write tnSourceViewId/tnSourceBaseId on created tasks
 	// Global reminder rules (virtual reminders applied to all tasks at runtime)
 	globalReminderRules: GlobalReminderRule[];
 	// Upcoming View date format settings
