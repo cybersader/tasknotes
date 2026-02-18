@@ -4,6 +4,12 @@ All notable changes to this TaskNotes fork will be documented in this file.
 
 This fork (`cybersader/tasknotes`) adds bulk tasking, notifications, and other enhancements to the upstream [TaskNotes](https://github.com/callumalpass/tasknotes) plugin.
 
+## [4.3.39] - 2026-02-18
+
+### Fixed
+- **PersonGroupPicker dropdown stays open on collapse**: The assignee search dropdown (appended to `document.body`) now closes when the task creation modal collapses via the chevron button.
+- **Assignee icon shows "has-value" dot**: Selecting a person or group in the PersonGroupPicker now immediately updates the assignee action bar icon with the purple indicator dot.
+
 ## [4.3.38] - 2026-02-18
 
 ### Added

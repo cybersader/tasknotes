@@ -1578,6 +1578,8 @@ export class TaskCreationModal extends TaskModal {
 			this.isExpanded = false;
 			this.detailsContainer.style.display = "none";
 			this.containerEl.removeClass("expanded");
+			// Close any PersonGroupPicker dropdowns that are body-level
+			this.assigneePicker?.closeDropdown();
 		} else {
 			// Expand
 			this.expandModal();

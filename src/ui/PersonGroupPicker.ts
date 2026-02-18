@@ -44,6 +44,7 @@ export interface PickerItem {
 export function createPersonGroupPicker(options: PersonGroupPickerOptions): {
 	getSelection: () => string[];
 	setSelection: (paths: string[]) => void;
+	closeDropdown: () => void;
 	destroy: () => void;
 } {
 	const {
@@ -316,6 +317,9 @@ export function createPersonGroupPicker(options: PersonGroupPickerOptions): {
 			selectedPaths = new Set(paths);
 			renderSelectedPills();
 			renderDropdown();
+		},
+		closeDropdown: () => {
+			closeDropdown();
 		},
 		destroy: () => {
 			document.removeEventListener("click", handleOutsideClick);

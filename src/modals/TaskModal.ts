@@ -418,7 +418,7 @@ export abstract class TaskModal extends Modal {
 	protected userFields: Record<string, any> = {};
 
 	// Assignee picker instance (for cleanup)
-	protected assigneePicker: { getSelection: () => string[]; setSelection: (paths: string[]) => void; destroy: () => void } | null = null;
+	protected assigneePicker: { getSelection: () => string[]; setSelection: (paths: string[]) => void; closeDropdown: () => void; destroy: () => void } | null = null;
 
 	// Dependency fields
 	protected blockedByItems: DependencyItem[] = [];
@@ -1158,6 +1158,7 @@ export abstract class TaskModal extends Modal {
 				} else {
 					this.userFields[userField.key] = wikilinks;
 				}
+				this.updateIconStates();
 			},
 		});
 
@@ -1198,6 +1199,7 @@ export abstract class TaskModal extends Modal {
 							} else {
 								this.userFields[assigneeFieldName] = wikilinks;
 							}
+							this.updateIconStates();
 						},
 					});
 				}
