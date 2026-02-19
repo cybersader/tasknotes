@@ -846,12 +846,12 @@ export class BasesToolbarInjector {
 	private buildNotifyToggleRow(
 		section: HTMLElement,
 		notifyEnabled: boolean,
-		notifyOn: string,
-		notifyThreshold: number,
+		_notifyOn: string,
+		_notifyThreshold: number,
 		baseFile: TFile | null,
-		baseFilePath: string | undefined,
+		_baseFilePath: string | undefined,
 		viewIndex: number,
-		panel: HTMLElement,
+		_panel: HTMLElement,
 	): void {
 		const row = document.createElement("div");
 		row.className = "tn-configure-panel-row";
@@ -872,12 +872,6 @@ export class BasesToolbarInjector {
 					await this.plugin.baseIdentityService.setViewNotificationConfig(
 						baseFile, viewIndex, { notify: newValue }
 					);
-					// Re-inject to show/hide dropdown + slider
-					const parentPanel = section.closest(".view-config-menu");
-					if (parentPanel) {
-						section.remove();
-						await this.injectConfigurePanelSection(parentPanel as HTMLElement);
-					}
 				} catch (error) {
 					console.error("[TaskNotes] Failed to save notification config:", error);
 					toggle.classList.toggle("is-enabled", !newValue);
@@ -887,112 +881,15 @@ export class BasesToolbarInjector {
 		row.appendChild(toggle);
 		section.appendChild(row);
 
-		// Conditional sub-controls (only when notifications are enabled)
-		if (notifyEnabled) {
-			this.buildNotifyWhenRow(section, notifyOn, baseFile, viewIndex, panel);
-			if (notifyOn === "count_threshold") {
-				this.buildThresholdRow(section, notifyThreshold, baseFile, viewIndex);
-			}
-		}
+		// Detailed notification config (Notify when, Threshold) is in the
+		// BulkTaskCreationModal's "Base view defaults & settings" tab,
+		// accessible via the "Default properties & anchors" link below.
 	}
 
 	/**
-	 * Build "Notify when" dropdown row.
-	 */
-	private buildNotifyWhenRow(
-		section: HTMLElement,
-		currentValue: string,
-		baseFile: TFile | null,
-		viewIndex: number,
-		panel: HTMLElement,
-	): void {
-		const row = document.createElement("div");
-		row.className = "tn-configure-panel-row";
-
-		const label = document.createElement("div");
-		label.className = "tn-configure-panel-row-label";
-		label.textContent = "Notify when";
-		row.appendChild(label);
-
-		const select = document.createElement("select");
-		select.className = "tn-configure-panel-dropdown dropdown";
-		const options = [
-			{ value: "any", text: "Any results match" },
-			{ value: "new_items", text: "New items appear" },
-			{ value: "count_threshold", text: "Count exceeds threshold" },
-		];
-		for (const opt of options) {
-			const optEl = document.createElement("option");
-			optEl.value = opt.value;
-			optEl.textContent = opt.text;
-			if (opt.value === currentValue) optEl.selected = true;
-			select.appendChild(optEl);
-		}
-		select.addEventListener("change", async () => {
-			if (baseFile) {
-				try {
-					await this.plugin.baseIdentityService.setViewNotificationConfig(
-						baseFile, viewIndex, { notifyOn: select.value }
-					);
-					// Re-inject to show/hide threshold slider
-					const parentPanel = section.closest(".view-config-menu");
-					if (parentPanel) {
-						section.remove();
-						await this.injectConfigurePanelSection(parentPanel as HTMLElement);
-					}
-				} catch (error) {
-					console.error("[TaskNotes] Failed to save notifyOn:", error);
-				}
-			}
-		});
-		row.appendChild(select);
-		section.appendChild(row);
-	}
-
-	/**
-	 * Build "Threshold count" slider row.
-	 */
-	private buildThresholdRow(
-		section: HTMLElement,
-		currentValue: number,
-		baseFile: TFile | null,
-		viewIndex: number,
-	): void {
-		const row = document.createElement("div");
-		row.className = "tn-configure-panel-row";
-
-		const label = document.createElement("div");
-		label.className = "tn-configure-panel-row-label";
-		label.textContent = `Threshold: ${currentValue}`;
-		row.appendChild(label);
-
-		const slider = document.createElement("input");
-		slider.type = "range";
-		slider.className = "tn-configure-panel-slider";
-		slider.min = "1";
-		slider.max = "100";
-		slider.step = "1";
-		slider.value = String(currentValue);
-		slider.addEventListener("input", () => {
-			label.textContent = `Threshold: ${slider.value}`;
-		});
-		slider.addEventListener("change", async () => {
-			if (baseFile) {
-				try {
-					await this.plugin.baseIdentityService.setViewNotificationConfig(
-						baseFile, viewIndex, { notifyThreshold: Number(slider.value) }
-					);
-				} catch (error) {
-					console.error("[TaskNotes] Failed to save notifyThreshold:", error);
-				}
-			}
-		});
-		row.appendChild(slider);
-		section.appendChild(row);
-	}
-
-	/**
-	 * Build "Default properties & anchors" clickable row that opens the full settings modal.
+	 * Build clickable row that opens the BulkTaskCreationModal to the view settings tab.
+	 * Acts as the gateway from the compact Configure panel to the full settings modal
+	 * where users configure notifications, property mappings, and default values.
 	 */
 	private buildPropertiesLinkRow(
 		section: HTMLElement,
@@ -1006,10 +903,19 @@ export class BasesToolbarInjector {
 		row.className = "tn-configure-panel-row tn-configure-panel-settings-row";
 		row.tabIndex = 0;
 
-		const label = document.createElement("div");
-		label.className = "tn-configure-panel-row-label";
-		label.textContent = "Default properties & anchors";
-		row.appendChild(label);
+		const labelWrap = document.createElement("div");
+		labelWrap.className = "tn-configure-panel-row-label";
+
+		const labelText = document.createElement("div");
+		labelText.textContent = "View defaults & settings";
+		labelWrap.appendChild(labelText);
+
+		const hint = document.createElement("div");
+		hint.className = "tn-configure-panel-hint";
+		hint.textContent = "Notifications, property mappings, defaults";
+		labelWrap.appendChild(hint);
+
+		row.appendChild(labelWrap);
 
 		const arrow = document.createElement("div");
 		arrow.className = "tn-configure-panel-settings-arrow";

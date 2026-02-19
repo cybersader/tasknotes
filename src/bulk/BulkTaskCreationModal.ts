@@ -269,7 +269,7 @@ export class BulkTaskCreationModal extends Modal {
 			cls: `tn-bulk-modal__tab ${this.mode === "viewSettings" ? "tn-bulk-modal__tab--active" : ""}`,
 		});
 		setIcon(settingsTab.createSpan({ cls: "tn-bulk-modal__tab-icon" }), "settings");
-		settingsTab.appendText("Base view settings");
+		settingsTab.appendText("Base view defaults & settings");
 		settingsTab.addEventListener("click", () => {
 			if (this.mode !== "viewSettings") {
 				this.mode = "viewSettings";

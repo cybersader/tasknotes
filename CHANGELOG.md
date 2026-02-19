@@ -4,6 +4,18 @@ All notable changes to this TaskNotes fork will be documented in this file.
 
 This fork (`cybersader/tasknotes`) adds bulk tasking, notifications, and other enhancements to the upstream [TaskNotes](https://github.com/callumalpass/tasknotes) plugin.
 
+## [4.3.42] - 2026-02-19
+
+### Changed
+- **Configure view panel simplified**: Removed "Notify when" dropdown and threshold slider from the compact popup to avoid Obsidian layout clipping issues. The panel now shows three clean rows: show toolbar toggle, notify toggle, and a "View defaults & settings" link.
+- **"View defaults & settings" link**: Renamed from "Default properties & anchors" with a descriptive hint ("Notifications, property mappings, defaults") to clearly communicate what's accessible in the full settings modal.
+- **Tab renamed**: "Base view settings" tab in BulkTaskCreationModal renamed to "Base view defaults & settings" for clarity.
+
+### Fixed
+- **Configure view panel overflow**: Resolved popup clipping and grey-screen issues caused by injected controls exceeding Obsidian's fixed-height popup container. Detailed notification config now lives exclusively in the full modal.
+- **View mappings pre-populate Generate/Convert PropertyPicker**: Field mappings configured in view settings now appear as active property rows with "Use as" badges when opening Generate or Convert tabs.
+- **View default properties pre-loaded**: Default property values from the .base YAML are loaded into Generate/Convert custom properties on modal open.
+
 ## [4.3.41] - 2026-02-19
 
 ### Fixed
