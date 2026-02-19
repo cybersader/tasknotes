@@ -199,6 +199,15 @@ export class NotificationCache {
 	}
 
 	/**
+	 * Invalidate only the aggregated cache (not per-base caches).
+	 * Used when non-base sources change (e.g., upstream reminders fire).
+	 */
+	invalidateAggregated(): void {
+		this.plugin.debugLog.log("NotificationCache", "Aggregated cache invalidated (upstream reminder)");
+		this.aggregatedItems = null;
+	}
+
+	/**
 	 * Invalidate cache for a specific base file.
 	 */
 	invalidateBase(basePath: string): void {

@@ -1,5 +1,5 @@
 /* eslint-disable no-console */
-import { Notice, setIcon, WorkspaceLeaf, TFile, parseYaml, stringifyYaml } from "obsidian";
+import { Notice, setIcon, WorkspaceLeaf, TFile, parseYaml, stringifyYaml, Menu } from "obsidian";
 import TaskNotesPlugin from "../main";
 import { BulkTaskCreationModal } from "../bulk/BulkTaskCreationModal";
 import type { ViewFieldMapping } from "../identity/BaseIdentityService";
@@ -23,6 +23,7 @@ export class BasesToolbarInjector {
 	private scanDebounceTimer: number | null = null;
 	private periodicCheckInterval: number | null = null;
 	private scanInProgress = false;
+	private contextMenuContainers = new WeakSet<HTMLElement>();
 
 	// Debounce higher than BasesViewBase's 150ms setTimeout to avoid timing races.
 	// BasesViewBase injects at 100ms (new task) and 150ms (bulk). By 500ms both have
@@ -196,10 +197,13 @@ export class BasesToolbarInjector {
 				// Check if user disabled TaskNotes controls for this view
 				const showUI = await this.shouldShowTaskNotesUI(toolbar as HTMLElement);
 
-				// If already injected, remove if disabled; otherwise skip
+				// If already injected, remove if disabled; otherwise ensure context menu is set up
 				if (toolbar.querySelector(".tn-universal-injected")) {
 					if (!showUI) {
 						this.cleanupUniversalButtonsFrom(toolbar as HTMLElement);
+					} else {
+						// Ensure context menu is attached (idempotent via WeakSet)
+						this.setupRowContextMenu(toolbar as HTMLElement);
 					}
 					continue;
 				}
@@ -333,10 +337,170 @@ export class BasesToolbarInjector {
 			newTaskBtn.after(bulkBtn);
 		}
 
+		// Set up row context menu on the view container
+		this.setupRowContextMenu(toolbarEl);
+
 		this.plugin.debugLog.log(
 			"BasesToolbarInjector",
 			"Injected New task + Bulk tasking buttons into toolbar"
 		);
+	}
+
+	/**
+	 * Set up a delegated contextmenu listener on the Bases view container
+	 * associated with a toolbar. Right-clicking a row/card shows:
+	 * - TaskContextMenu if the file is a task
+	 * - "Edit task" + "Convert to task" otherwise
+	 *
+	 * Uses event delegation so it survives view re-renders without needing
+	 * MutationObserver re-attachment.
+	 */
+	private setupRowContextMenu(toolbarEl: HTMLElement): void {
+		// The view container is the parent of the toolbar (.bases-page or similar)
+		const container = toolbarEl.parentElement;
+		if (!container) return;
+
+		// Avoid duplicate listeners
+		if (this.contextMenuContainers.has(container)) return;
+		this.contextMenuContainers.add(container);
+
+		container.addEventListener("contextmenu", async (event: MouseEvent) => {
+			// Only handle right-clicks inside the view area, not on the toolbar itself
+			const target = event.target as HTMLElement;
+			if (!target || toolbarEl.contains(target)) return;
+
+			// Find the file path from the clicked element.
+			// Strategy 1: Look for an internal-link with data-href (Table view cells)
+			// Strategy 2: Look for a clickable-icon or link inside a card (Board view)
+			// Strategy 3: Look for any element with data-path attribute
+			const filePath = this.resolveFilePathFromClick(target, container);
+			if (!filePath) return; // Not clicking on a recognizable row/card — let native menu handle it
+
+			// Resolve to TFile
+			const file = this.plugin.app.vault.getAbstractFileByPath(filePath);
+			if (!(file instanceof TFile)) return;
+
+			// Prevent the native context menu
+			event.preventDefault();
+			event.stopPropagation();
+
+			// Check if this file is a task
+			const cache = this.plugin.app.metadataCache.getFileCache(file);
+			const frontmatter = cache?.frontmatter;
+			const isTask = frontmatter ? this.plugin.cacheManager.isTaskFile(frontmatter) : false;
+
+			if (isTask) {
+				// Show the full TaskContextMenu
+				const { showTaskContextMenu } = await import("../ui/TaskCard");
+				await showTaskContextMenu(event, file.path, this.plugin, new Date());
+			} else {
+				// Show a simple menu with convert option
+				const menu = new Menu();
+				menu.addItem((item) => {
+					item.setTitle("Convert to task")
+						.setIcon("check-square")
+						.onClick(async () => {
+							await this.plugin.convertFileToTask(file);
+						});
+				});
+				menu.addItem((item) => {
+					item.setTitle("Open note")
+						.setIcon("file-text")
+						.onClick(() => {
+							this.plugin.app.workspace.getLeaf(false).openFile(file);
+						});
+				});
+				menu.showAtMouseEvent(event);
+			}
+		});
+
+		this.plugin.debugLog.log(
+			"BasesToolbarInjector",
+			"Attached row context menu listener to view container"
+		);
+	}
+
+	/**
+	 * Resolve a file path from a right-click target element within a Bases view.
+	 * Walks up the DOM looking for recognizable file references.
+	 *
+	 * Supported patterns:
+	 * - `.internal-link[data-href]` — Table view cells with wikilinks
+	 * - `a.internal-link[href]` — Rendered markdown links
+	 * - Elements with `data-path` — Some view implementations
+	 * - Row/card ancestors containing an internal-link — Board cards, etc.
+	 */
+	private resolveFilePathFromClick(target: HTMLElement, container: HTMLElement): string | null {
+		let el: HTMLElement | null = target;
+
+		while (el && el !== container) {
+			// Direct internal-link with data-href (most common in Table view)
+			if (el.hasAttribute("data-href")) {
+				return this.resolveHrefToPath(el.getAttribute("data-href")!);
+			}
+
+			// data-path attribute (some views set this on row elements)
+			if (el.hasAttribute("data-path")) {
+				const dataPath = el.getAttribute("data-path")!;
+				if (dataPath.endsWith(".md")) return dataPath;
+				return dataPath + ".md";
+			}
+
+			// Check if this element is a table row or board card that contains an internal-link
+			if (
+				el.classList.contains("bases-table-row") ||
+				el.classList.contains("bases-board-card") ||
+				el.classList.contains("bases-table-cell-text") ||
+				el.hasAttribute("data-row-id")
+			) {
+				const link = el.querySelector(".internal-link[data-href]") as HTMLElement | null;
+				if (link) {
+					return this.resolveHrefToPath(link.getAttribute("data-href")!);
+				}
+			}
+
+			el = el.parentElement;
+		}
+
+		// Last resort: check if target is inside any element that contains an internal-link
+		// Walk back up and look for the nearest row-like container
+		el = target;
+		while (el && el !== container) {
+			// Look for table row containers (tr, div with role=row, etc.)
+			const tagName = el.tagName?.toLowerCase();
+			if (tagName === "tr" || el.getAttribute("role") === "row") {
+				const link = el.querySelector(".internal-link[data-href]") as HTMLElement | null;
+				if (link) {
+					return this.resolveHrefToPath(link.getAttribute("data-href")!);
+				}
+			}
+			el = el.parentElement;
+		}
+
+		return null;
+	}
+
+	/**
+	 * Resolve an internal-link href (which may be a basename or partial path)
+	 * to a full vault file path.
+	 */
+	private resolveHrefToPath(href: string): string | null {
+		if (!href) return null;
+
+		// Try direct path first
+		const directFile = this.plugin.app.vault.getAbstractFileByPath(href);
+		if (directFile instanceof TFile) return directFile.path;
+
+		// Try with .md extension
+		const withMd = href.endsWith(".md") ? href : href + ".md";
+		const mdFile = this.plugin.app.vault.getAbstractFileByPath(withMd);
+		if (mdFile instanceof TFile) return mdFile.path;
+
+		// Use metadataCache to resolve shortest-path links (wikilink style)
+		const resolved = this.plugin.app.metadataCache.getFirstLinkpathDest(href, "");
+		if (resolved instanceof TFile) return resolved.path;
+
+		return null;
 	}
 
 	/**
@@ -398,6 +562,12 @@ export class BasesToolbarInjector {
 			// Resolve per-view field mapping from the .base file
 			const mappingCtx = await this.resolveViewMappingFromLeaf(leaf, baseFilePath);
 
+			// Extract item paths from the view for PropertyPicker discovery context
+			const viewItems = this.extractItemsFromToolbarContext(button);
+			const contextItemPaths = viewItems
+				.map((item: any) => item.path)
+				.filter((p: any): p is string => typeof p === "string");
+
 			// Dynamically import to avoid circular dependencies
 			const { TaskCreationModal } = await import("../modals/TaskCreationModal");
 
@@ -411,6 +581,7 @@ export class BasesToolbarInjector {
 					viewFieldMapping: mappingCtx?.viewFieldMapping,
 					sourceBaseId: mappingCtx?.baseId,
 					sourceViewId: mappingCtx?.viewId,
+					contextItemPaths: contextItemPaths.length > 0 ? contextItemPaths : undefined,
 				}
 			);
 			modal.open();

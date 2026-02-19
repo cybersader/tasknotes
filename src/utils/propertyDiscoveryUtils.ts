@@ -320,6 +320,16 @@ export function getAllTaskFilePaths(plugin: TaskNotesPlugin): string[] {
 	return paths;
 }
 
+/**
+ * Get all markdown file paths in the vault (not just task files).
+ * Used when property discovery should include non-task notes,
+ * e.g., for base view defaults that query across all file types.
+ */
+export function getAllMarkdownFilePaths(plugin: TaskNotesPlugin): string[] {
+	if (!plugin.app) return [];
+	return plugin.app.vault.getMarkdownFiles().map(f => f.path);
+}
+
 // ── Type conversion engine ────────────────────────────────────
 
 /**

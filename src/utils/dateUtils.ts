@@ -392,6 +392,29 @@ export function parseDateAsLocal(dateString: string): Date {
 }
 
 /**
+ * Safe wrapper around parseDateAsLocal that returns null instead of throwing.
+ * Also handles Obsidian YAML Date objects (which are not strings).
+ * Use this when parsing user-provided or frontmatter date values that may be
+ * invalid, placeholder text, or Date objects from YAML parsing.
+ */
+export function tryParseDateAsLocal(value: unknown): Date | null {
+	if (!value) return null;
+
+	// Handle Obsidian YAML Date objects
+	if (value instanceof Date) {
+		return isNaN(value.getTime()) ? null : value;
+	}
+
+	if (typeof value !== "string") return null;
+
+	try {
+		return parseDateAsLocal(value);
+	} catch {
+		return null;
+	}
+}
+
+/**
  * Normalize a date string to YYYY-MM-DD format for storage/comparison
  */
 export function normalizeDateString(dateString: string): string {

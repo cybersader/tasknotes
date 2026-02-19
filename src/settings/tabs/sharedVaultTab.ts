@@ -1,4 +1,4 @@
-import { Notice, Setting, TFile } from "obsidian";
+import { Modal, Notice, Setting, TFile, setIcon } from "obsidian";
 import TaskNotesPlugin from "../../main";
 import { createSettingGroup } from "../components/settingHelpers";
 import { sendTestNotification } from "./featuresTab";
@@ -6,6 +6,7 @@ import { FolderSuggest } from "../components/FolderSuggest";
 import { TagSuggest } from "../components/TagSuggest";
 import { openFileSelector } from "../../modals/FileSelectorModal";
 import { createAvatar } from "../../ui/PersonAvatar";
+import { createPersonGroupPicker } from "../../ui/PersonGroupPicker";
 import type { TranslationKey } from "../../i18n";
 import type { UserMappedField, DeviceUserMapping, LeadTime } from "../../types/settings";
 import { getColorFromName } from "../../ui/PersonAvatar";
@@ -421,42 +422,135 @@ function renderGroupNotesSection(
 					});
 			});
 
-			// Discovered groups display
+			// Discovery statistics + management
 			group.addSetting((setting) => {
 				setting
-					.setName("Discovered groups")
-					.setDesc("Groups found in the configured folder");
+					.setName("Discovery")
+					.setDesc("Persons and groups found in configured folders");
 
-				const listEl = setting.controlEl.createDiv({ cls: "tasknotes-group-list" });
+				const statsContainer = setting.controlEl.createDiv({ cls: "tasknotes-discovery-stats" });
+				const detailsContainer = setting.controlEl.createDiv({ cls: "tasknotes-discovery-details" });
+				detailsContainer.style.display = "none";
 
-				const refreshGroups = async () => {
-					listEl.empty();
+				const refreshDiscovery = async () => {
+					statsContainer.empty();
+					detailsContainer.empty();
+
+					const persons = plugin.personNoteService?.discoverPersons() || [];
 					const groups = await plugin.groupRegistry.discoverGroups();
 
-					if (groups.length === 0) {
-						listEl.createSpan({
-							text: "No groups found. Create a note with type: group in frontmatter.",
-							cls: "tasknotes-group-list__empty"
+					// Sort alphabetically
+					persons.sort((a, b) => a.displayName.localeCompare(b.displayName));
+					groups.sort((a, b) => a.displayName.localeCompare(b.displayName));
+
+					// Summary line
+					const summaryEl = statsContainer.createDiv({ cls: "tasknotes-discovery-stats__summary" });
+					summaryEl.textContent = `${persons.length} person${persons.length !== 1 ? "s" : ""} \u00B7 ${groups.length} group${groups.length !== 1 ? "s" : ""}`;
+
+					// Toggle details link
+					if (persons.length > 0 || groups.length > 0) {
+						const toggleLink = statsContainer.createEl("a", {
+							text: "Show details",
+							cls: "tasknotes-discovery-stats__toggle",
 						});
-					} else {
-						for (const grp of groups) {
-							const itemEl = listEl.createDiv({ cls: "tasknotes-group-list__item" });
-							itemEl.createSpan({
-								text: `${grp.displayName} (${grp.memberPaths.length} members)`,
-								cls: "tasknotes-group-list__name"
-							});
+						toggleLink.style.cssText = "cursor: pointer; color: var(--text-accent); font-size: var(--font-ui-smaller); margin-left: 8px;";
+						let detailsOpen = false;
+						toggleLink.addEventListener("click", () => {
+							detailsOpen = !detailsOpen;
+							detailsContainer.style.display = detailsOpen ? "block" : "none";
+							toggleLink.textContent = detailsOpen ? "Hide details" : "Show details";
+						});
+
+						// --- People section ---
+						const peopleSection = detailsContainer.createDiv({ cls: "tn-discovery-section" });
+						const peopleHeader = peopleSection.createDiv({ cls: "tn-discovery-section__header" });
+						setIcon(peopleHeader.createSpan(), "user");
+						peopleHeader.createSpan({ text: ` People (${persons.length})` });
+
+						if (persons.length === 0) {
+							const emptyEl = peopleSection.createDiv({ cls: "tn-discovery-section__empty" });
+							emptyEl.textContent = "No person notes found";
+							if (plugin.settings.personNotesFolder) {
+								emptyEl.textContent += ` in ${plugin.settings.personNotesFolder}`;
+							}
+						} else {
+							for (const p of persons) {
+								const row = peopleSection.createDiv({ cls: "tn-discovery-row" });
+								const iconEl = row.createSpan({ cls: "tn-discovery-row__icon" });
+								setIcon(iconEl, "user");
+								const info = row.createDiv({ cls: "tn-discovery-row__info" });
+								info.createDiv({ cls: "tn-discovery-row__name", text: p.displayName });
+								const meta: string[] = [];
+								if (p.role) meta.push(p.role);
+								if (p.department) meta.push(p.department);
+								if (meta.length > 0) {
+									info.createDiv({ cls: "tn-discovery-row__meta", text: meta.join(" \u00B7 ") });
+								}
+								const openBtn = row.createEl("a", { cls: "tn-discovery-row__action", attr: { "aria-label": "Open note" } });
+								setIcon(openBtn, "external-link");
+								openBtn.style.cssText = "cursor: pointer; color: var(--text-muted); opacity: 0.6;";
+								openBtn.addEventListener("click", () => {
+									plugin.app.workspace.openLinkText(p.path, "", false);
+								});
+								openBtn.addEventListener("mouseenter", () => { openBtn.style.opacity = "1"; });
+								openBtn.addEventListener("mouseleave", () => { openBtn.style.opacity = "0.6"; });
+							}
+						}
+
+						// --- Groups section ---
+						const groupsSection = detailsContainer.createDiv({ cls: "tn-discovery-section" });
+						const groupsHeader = groupsSection.createDiv({ cls: "tn-discovery-section__header" });
+						setIcon(groupsHeader.createSpan(), "users");
+						groupsHeader.createSpan({ text: ` Groups (${groups.length})` });
+
+						if (groups.length === 0) {
+							const emptyEl = groupsSection.createDiv({ cls: "tn-discovery-section__empty" });
+							emptyEl.textContent = "No group notes found";
+							if (plugin.settings.groupNotesFolder) {
+								emptyEl.textContent += ` in ${plugin.settings.groupNotesFolder}`;
+							}
+						} else {
+							for (const g of groups) {
+								const row = groupsSection.createDiv({ cls: "tn-discovery-row" });
+								const iconEl = row.createSpan({ cls: "tn-discovery-row__icon" });
+								setIcon(iconEl, "users");
+								const info = row.createDiv({ cls: "tn-discovery-row__info" });
+								info.createDiv({ cls: "tn-discovery-row__name", text: g.displayName });
+								const memberCount = g.memberPaths.length;
+								info.createDiv({
+									cls: "tn-discovery-row__meta",
+									text: `${memberCount} member${memberCount !== 1 ? "s" : ""}`,
+								});
+								const openBtn = row.createEl("a", { cls: "tn-discovery-row__action", attr: { "aria-label": "Open note" } });
+								setIcon(openBtn, "external-link");
+								openBtn.style.cssText = "cursor: pointer; color: var(--text-muted); opacity: 0.6;";
+								openBtn.addEventListener("click", () => {
+									plugin.app.workspace.openLinkText(g.notePath, "", false);
+								});
+								openBtn.addEventListener("mouseenter", () => { openBtn.style.opacity = "1"; });
+								openBtn.addEventListener("mouseleave", () => { openBtn.style.opacity = "0.6"; });
+							}
 						}
 					}
+
 				};
 
-				// Refresh button
+				// Buttons: Refresh, Create person, Create group
 				setting.addButton((btn) => {
 					btn.setButtonText("Refresh")
-						.onClick(refreshGroups);
+						.onClick(refreshDiscovery);
+				});
+				setting.addButton((btn) => {
+					btn.setButtonText("Create person")
+						.onClick(() => openCreatePersonGroupModal(plugin, "person", save, () => refreshDiscovery()));
+				});
+				setting.addButton((btn) => {
+					btn.setButtonText("Create group")
+						.onClick(() => openCreatePersonGroupModal(plugin, "group", save, () => refreshDiscovery()));
 				});
 
 				// Initial load
-				refreshGroups();
+				refreshDiscovery();
 			});
 		}
 	);
@@ -1315,4 +1409,180 @@ function renderIdentityEditSection(
 					renderSharedVaultTab(container, plugin, save);
 				});
 		});
+}
+
+/**
+ * Mini form modal for creating a new person or group note.
+ */
+function openCreatePersonGroupModal(
+	plugin: TaskNotesPlugin,
+	type: "person" | "group",
+	save: () => void,
+	onCreated: () => void
+): void {
+	const modal = new Modal(plugin.app);
+	modal.titleEl.setText(type === "person" ? "Create person note" : "Create group note");
+
+	const { contentEl } = modal;
+	contentEl.addClass("tasknotes-plugin");
+
+	let name = "";
+	let role = "";
+	let department = "";
+
+	// Name field (required)
+	new Setting(contentEl)
+		.setName("Name")
+		.setDesc("Display name for the " + type)
+		.addText((text) => {
+			text.setPlaceholder(type === "person" ? "Jane Doe" : "Engineering Team");
+			text.onChange((v) => { name = v.trim(); });
+			// Auto-focus
+			setTimeout(() => text.inputEl.focus(), 50);
+		});
+
+	if (type === "person") {
+		new Setting(contentEl)
+			.setName("Role (optional)")
+			.addText((text) => {
+				text.setPlaceholder("Software Engineer");
+				text.onChange((v) => { role = v.trim(); });
+			});
+
+		new Setting(contentEl)
+			.setName("Department (optional)")
+			.addText((text) => {
+				text.setPlaceholder("Engineering");
+				text.onChange((v) => { department = v.trim(); });
+			});
+	}
+
+	// Members picker (groups only)
+	let selectedMemberPaths: string[] = [];
+	let memberPicker: ReturnType<typeof createPersonGroupPicker> | null = null;
+	if (type === "group") {
+		const memberSetting = new Setting(contentEl)
+			.setName("Members")
+			.setDesc("Select persons or groups to add as members");
+
+		const pickerContainer = memberSetting.controlEl.createDiv({ cls: "tn-group-member-picker" });
+		pickerContainer.style.cssText = "width: 100%; min-width: 250px;";
+
+		// Discover persons synchronously, groups async (same pattern as TaskModal)
+		const persons = plugin.personNoteService?.discoverPersons() || [];
+
+		memberPicker = createPersonGroupPicker({
+			container: pickerContainer,
+			persons,
+			groups: [],
+			multiSelect: true,
+			placeholder: "Search for members...",
+			initialSelection: [],
+			onChange: (paths) => { selectedMemberPaths = paths; },
+		});
+
+		// Load groups async and recreate picker (same pattern as TaskModal)
+		plugin.groupRegistry.discoverGroups().then((groupsAvailable) => {
+			if (groupsAvailable.length > 0 && memberPicker) {
+				const currentSelection = memberPicker.getSelection();
+				memberPicker.destroy();
+				pickerContainer.empty();
+				memberPicker = createPersonGroupPicker({
+					container: pickerContainer,
+					persons,
+					groups: groupsAvailable,
+					multiSelect: true,
+					placeholder: "Search for members...",
+					initialSelection: currentSelection,
+					onChange: (paths) => { selectedMemberPaths = paths; },
+				});
+			}
+		});
+	}
+
+	// Create button
+	new Setting(contentEl)
+		.addButton((btn) => {
+			btn.setButtonText("Create")
+				.setCta()
+				.onClick(async () => {
+					if (!name) {
+						new Notice("Name is required");
+						return;
+					}
+
+					const typeProp = plugin.settings.identityTypePropertyName || "type";
+					const typeValue = type === "person"
+						? (plugin.settings.personTypeValue || "tn-person")
+						: (plugin.settings.groupTypeValue || "tn-group");
+					const folder = type === "person"
+						? plugin.settings.personNotesFolder
+						: (plugin.settings.groupNotesFolder || plugin.settings.personNotesFolder);
+
+					if (!folder) {
+						new Notice(`Configure ${type} notes folder first`);
+						return;
+					}
+
+					// Build frontmatter
+					const lines: string[] = ["---"];
+					lines.push(`${typeProp}: ${typeValue}`);
+					if (type === "person") {
+						if (role) lines.push(`role: ${role}`);
+						if (department) lines.push(`department: ${department}`);
+					} else {
+						// Convert selected member paths to wikilinks
+						if (selectedMemberPaths.length > 0) {
+							const wikilinks = selectedMemberPaths.map((p) => {
+								const basename = p.replace(/\.md$/, "").split("/").pop() || p;
+								return `"[[${basename}]]"`;
+							});
+							lines.push(`members: [${wikilinks.join(", ")}]`);
+						} else {
+							lines.push("members: []");
+						}
+					}
+					lines.push("---");
+					lines.push("");
+					lines.push(`# ${name}`);
+					lines.push("");
+
+					const filePath = `${folder}/${name}.md`;
+
+					// Check if file exists
+					if (plugin.app.vault.getAbstractFileByPath(filePath)) {
+						new Notice(`"${filePath}" already exists`);
+						return;
+					}
+
+					// Ensure folder exists
+					const folderObj = plugin.app.vault.getAbstractFileByPath(folder);
+					if (!folderObj) {
+						await plugin.app.vault.createFolder(folder);
+					}
+
+					await plugin.app.vault.create(filePath, lines.join("\n"));
+					new Notice(`Created ${type} note: ${name}`);
+					modal.close();
+					onCreated();
+
+					// Open the new note
+					const file = plugin.app.vault.getAbstractFileByPath(filePath);
+					if (file instanceof TFile) {
+						await plugin.app.workspace.getLeaf().openFile(file);
+					}
+				});
+		});
+
+	// Clean up picker on close
+	const origOnClose = modal.onClose.bind(modal);
+	modal.onClose = () => {
+		if (memberPicker) {
+			memberPicker.destroy();
+			memberPicker = null;
+		}
+		origOnClose();
+	};
+
+	modal.open();
 }

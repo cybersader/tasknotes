@@ -10,7 +10,8 @@ import {
 } from "../types/settings";
 import { showTaskContextMenu } from "../ui/TaskCard";
 import { createAvatarStack } from "../ui/PersonAvatar";
-import { hasTimeComponent, formatTime, parseDate, parseDateAsLocal, getDatePart, combineDateAndTime, formatDateForUpcomingView, UpcomingViewDateSettings } from "../utils/dateUtils";
+import { hasTimeComponent, formatTime, parseDate, parseDateAsLocal, tryParseDateAsLocal, getDatePart, combineDateAndTime, formatDateForUpcomingView, UpcomingViewDateSettings } from "../utils/dateUtils";
+import { normalizeDateValue } from "../utils/propertyDiscoveryUtils";
 import { DueDateModal } from "../modals/DueDateModal";
 import { BulkOperationEngine, BulkItem, formatResultNotice } from "../bulk";
 import { readFieldOverrides, resolveFieldName } from "../utils/fieldOverrideUtils";
@@ -273,11 +274,13 @@ export class UpcomingView extends BasesViewBase {
 			const matchCount = isBaseNotification ? frontmatter?.matchCount : undefined;
 			const sourceBasePath = isBaseNotification ? this.extractWikilinkPath(frontmatter?.sourceBase) : undefined;
 
-			// Get dates
-			const dueDate = frontmatter?.[this.plugin.fieldMapper.toUserField("due")] ||
+			// Get dates — normalize to handle YAML Date objects and invalid placeholders
+			const rawDueDate = frontmatter?.[this.plugin.fieldMapper.toUserField("due")] ||
 				frontmatter?.due || frontmatter?.Review_date;
-			const scheduledDate = frontmatter?.[this.plugin.fieldMapper.toUserField("scheduled")] ||
+			const rawScheduledDate = frontmatter?.[this.plugin.fieldMapper.toUserField("scheduled")] ||
 				frontmatter?.scheduled;
+			const dueDate = normalizeDateValue(rawDueDate) ?? undefined;
+			const scheduledDate = normalizeDateValue(rawScheduledDate) ?? undefined;
 
 			// FILTER: Only include items that are tasks OR have a due date
 			// This prevents random notes from appearing in the Upcoming view
@@ -439,8 +442,9 @@ export class UpcomingView extends BasesViewBase {
 
 		const now = new Date();
 		const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-		// Use timezone-safe parsing to avoid off-by-one errors in non-UTC timezones
-		const due = parseDateAsLocal(dueDate);
+		// Use safe parsing — invalid/placeholder dates (e.g. "(YYYY-MM-DD)") return null
+		const due = tryParseDateAsLocal(dueDate);
+		if (!due) return "later";
 		const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate());
 
 		const diffDays = Math.floor((dueDay.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
@@ -502,8 +506,9 @@ export class UpcomingView extends BasesViewBase {
 		const settings = this.getDateSettings();
 		const now = new Date();
 		const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-		// Use timezone-safe parsing to avoid off-by-one errors in non-UTC timezones
-		const due = parseDateAsLocal(dueDate);
+		// Use safe parsing — invalid/placeholder dates return null
+		const due = tryParseDateAsLocal(dueDate);
+		if (!due) return undefined;
 		const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate());
 
 		const diffDays = Math.floor((dueDay.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));

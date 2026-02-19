@@ -1131,7 +1131,9 @@ export abstract class TaskModal extends Modal {
 		const setting = new Setting(container).setName(userField.displayName);
 
 		// Create a container for the picker inside the setting control area
+		// Use data-field-key to distinguish assignee from creator (both use this method)
 		const pickerContainer = setting.controlEl.createDiv({ cls: "tn-task-modal-assignee" });
+		pickerContainer.dataset.fieldKey = userField.key;
 
 		// Parse current assignee value to paths for initial selection
 		const currentValue = this.userFields[userField.key];
@@ -1159,6 +1161,21 @@ export abstract class TaskModal extends Modal {
 					this.userFields[userField.key] = wikilinks;
 				}
 				this.updateIconStates();
+			},
+			onConfigureClick: () => {
+				// Close this modal and open settings to the Shared Vault tab
+				this.close();
+				// @ts-ignore - openTab is available on Obsidian's setting instance
+				const settingInstance = this.plugin.app.setting;
+				if (settingInstance) {
+					settingInstance.open();
+					// Navigate to the plugin's settings tab, then the Shared Vault sub-tab
+					settingInstance.openTabById(this.plugin.manifest.id);
+					setTimeout(() => {
+						const btn = settingInstance.containerEl?.querySelector('[data-tab-id="shared-vault"]') as HTMLElement;
+						if (btn) btn.click();
+					}, 200);
+				}
 			},
 		});
 

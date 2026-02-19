@@ -1,5 +1,5 @@
 /* eslint-disable no-console */
-import { Notice, TFile, EventRef } from "obsidian";
+import { TFile, EventRef } from "obsidian";
 import TaskNotesPlugin from "../main";
 import { TaskInfo, Reminder, EVENT_TASK_UPDATED } from "../types";
 import { parseDateToLocal } from "../utils/dateUtils";
@@ -12,6 +12,19 @@ interface NotificationQueueItem {
 	notifyAt: number;
 }
 
+/**
+ * Info about a reminder that has fired and is waiting to be consumed
+ * by the unified notification system (ToastNotification + status bar).
+ */
+export interface FiredReminderInfo {
+	taskPath: string;
+	message: string;
+	firedAt: number;
+	reminderType: string; // "due-date" | "overdue" | "lead-time" | "start-date"
+	reminderId: string;
+	task: TaskInfo;
+}
+
 export class NotificationService {
 	private plugin: TaskNotesPlugin;
 	private notificationQueue: NotificationQueueItem[] = [];
@@ -20,6 +33,8 @@ export class NotificationService {
 	private processedReminders: Set<string> = new Set(); // Track processed reminders to avoid duplicates
 	private sessionFiredReminders: Set<string> = new Set(); // Track persistent/overdue reminders fired this scan cycle
 	private taskUpdateListener?: EventRef;
+	/** Reminders that have fired and are waiting to be consumed by the unified toast system */
+	private firedReminders: Map<string, FiredReminderInfo> = new Map();
 	private lastBroadScanTime: number = Date.now();
 	private lastQuickCheckTime: number = Date.now();
 
@@ -69,6 +84,7 @@ export class NotificationService {
 		this.notificationQueue = [];
 		this.processedReminders.clear();
 		this.sessionFiredReminders.clear();
+		this.firedReminders.clear();
 	}
 
 	private startBroadScan(): void {
@@ -630,8 +646,8 @@ export class NotificationService {
 				const semanticType = item.reminder.semanticType;
 
 				if (semanticType === "due-date") {
-					// Fire once per session — the Notice persists until clicked, so no need to re-fire.
-					// Using processedReminders (not sessionFiredReminders) prevents stacking on each scan.
+					// Fire once per session — stored in firedReminders map for unified toast display.
+					// Using processedReminders (not sessionFiredReminders) prevents re-firing on each scan.
 					this.processedReminders.add(reminderId);
 					console.log(`[NotificationService] Due-date reminder fired once for ${item.taskPath}`);
 				} else if (semanticType === "overdue" && item.reminder.repeatIntervalHours) {
@@ -690,6 +706,7 @@ export class NotificationService {
 
 		const notifType = this.plugin.devicePrefs.getNotificationType();
 
+		// System (desktop OS) notifications — kept as-is
 		if (notifType === "system" || notifType === "both") {
 			if ("Notification" in window && Notification.permission === "granted") {
 				const notification = new Notification("TaskNotes Reminder", {
@@ -697,19 +714,31 @@ export class NotificationService {
 					tag: `tasknotes-${item.taskPath}-${item.reminder.id}`,
 				});
 
-				// Open task note when notification is clicked
 				notification.onclick = () => {
 					this.plugin.app.workspace.openLinkText(item.taskPath, "", false);
 					notification.close();
 				};
-			} else if (notifType === "system") {
-				// Fallback to in-app only when system-only (not both)
-				this.showInAppNotice(message, item.taskPath);
 			}
 		}
 
+		// In-app notifications: store in firedReminders map for the unified
+		// toast/bell/upcoming system to consume (replaces old Notice approach)
 		if (notifType === "in-app" || notifType === "both") {
-			this.showInAppNotice(message, item.taskPath);
+			const key = `${item.taskPath}-${item.reminder.id}`;
+			this.firedReminders.set(key, {
+				taskPath: item.taskPath,
+				message,
+				firedAt: Date.now(),
+				reminderType: item.reminder.semanticType || "custom",
+				reminderId: item.reminder.id,
+				task,
+			});
+			console.log(`[NotificationService] Fired reminder stored for unified display: ${key}`);
+
+			// Invalidate notification cache so the next bell/toast check picks this up
+			if (this.plugin.notificationCache) {
+				this.plugin.notificationCache.invalidateAggregated();
+			}
 		}
 
 		// Trigger webhook for reminder
@@ -722,19 +751,6 @@ export class NotificationService {
 				notificationType: notifType,
 			});
 		}
-	}
-
-	private showInAppNotice(message: string, taskPath: string): void {
-		const notice = new Notice(message, 0); // 0 = persistent until clicked
-
-		// Add click handler to open the task
-		(notice as any).noticeEl.addEventListener("click", () => {
-			this.plugin.app.workspace.openLinkText(taskPath, "", false);
-			notice.hide();
-		});
-
-		// Add styling to make it clickable
-		(notice as any).noticeEl.style.cursor = "pointer";
 	}
 
 	private generateDefaultMessage(task: TaskInfo, reminder: Reminder): string {
@@ -793,6 +809,33 @@ export class NotificationService {
 		keysToRemove.forEach((key) => this.processedReminders.delete(key));
 	}
 
+	/**
+	 * Get all fired reminders waiting to be consumed by the unified notification system.
+	 * Called by VaultWideNotificationService to include upstream reminders in aggregation.
+	 */
+	getFiredReminders(): FiredReminderInfo[] {
+		return Array.from(this.firedReminders.values());
+	}
+
+	/**
+	 * Clear a specific fired reminder after it has been seen/dismissed in the toast UI.
+	 */
+	clearFiredReminder(key: string): void {
+		this.firedReminders.delete(key);
+	}
+
+	/**
+	 * Clear all fired reminders for a specific task path.
+	 * Called when a task is completed or its reminders change.
+	 */
+	clearFiredRemindersForTask(taskPath: string): void {
+		for (const key of this.firedReminders.keys()) {
+			if (key.startsWith(`${taskPath}-`)) {
+				this.firedReminders.delete(key);
+			}
+		}
+	}
+
 	private clearSessionFiredRemindersForTask(taskPath: string): void {
 		const keysToRemove: string[] = [];
 		for (const key of this.sessionFiredReminders) {
@@ -814,12 +857,26 @@ export class NotificationService {
 				// Clear any existing notifications for this task path
 				this.removeNotificationsForTask(path);
 
-				// Clear processed reminders for this task so they can trigger again if needed
-				this.clearProcessedRemindersForTask(path);
-				this.clearSessionFiredRemindersForTask(path);
+				// Only clear processed/session-fired reminders when reminder-relevant
+				// properties actually changed. Without this guard, any metadata update
+				// (e.g., metadataCache refresh) clears the dedup set, causing
+				// persistent "due-date" reminders to re-fire repeatedly.
+				const reminderRelevantChanged =
+					!originalTask ||
+					originalTask.status !== updatedTask.status ||
+					originalTask.due !== updatedTask.due ||
+					originalTask.scheduled !== updatedTask.scheduled ||
+					JSON.stringify(originalTask.reminders) !== JSON.stringify(updatedTask.reminders);
+
+				if (reminderRelevantChanged) {
+					this.clearProcessedRemindersForTask(path);
+					this.clearSessionFiredRemindersForTask(path);
+					this.clearFiredRemindersForTask(path);
+				}
 
 				// If task is now completed, block all virtual reminders and stop
 				if (this.plugin.statusManager.isCompletedStatus(updatedTask.status)) {
+					this.clearFiredRemindersForTask(path);
 					const rules = this.plugin.settings.globalReminderRules;
 					if (rules) {
 						for (const rule of rules) {

@@ -40,7 +40,7 @@ export class ReminderModal extends Modal {
 	// Transient state: tracks recently demoted keys for "Undo" affordance
 	private recentlyDemotedKeys = new Set<string>();
 	// Persist vault-wide checkbox across PropertyPicker re-renders
-	private pickerVaultWide = false;
+	private pickerScope: import("../ui/PropertyPicker").PropertyScope | undefined;
 
 	constructor(
 		app: App,
@@ -483,8 +483,8 @@ export class ReminderModal extends Modal {
 			itemPaths: this.itemPaths,
 			excludeKeys: anchorKeySet,
 			allowedConversionTargets: ["date"],
-			initialVaultWide: this.pickerVaultWide,
-			onVaultWideChange: (checked: boolean) => { this.pickerVaultWide = checked; },
+			initialScope: this.pickerScope,
+			onScopeChange: (scope) => { this.pickerScope = scope; },
 			onSelect: (key: string, type: PropertyType) => {
 				if (type === "date") {
 					// Set as the "Relative to" anchor directly

@@ -29,6 +29,8 @@ export interface PersonGroupPickerOptions {
 	initialSelection?: string[];
 	/** Callback when selection changes */
 	onChange?: (selectedPaths: string[]) => void;
+	/** Callback when user clicks "Open settings" in empty state guidance */
+	onConfigureClick?: () => void;
 }
 
 export interface PickerItem {
@@ -55,6 +57,7 @@ export function createPersonGroupPicker(options: PersonGroupPickerOptions): {
 		placeholder = "Search people or groups...",
 		initialSelection = [],
 		onChange,
+		onConfigureClick,
 	} = options;
 
 	// State
@@ -155,7 +158,27 @@ export function createPersonGroupPicker(options: PersonGroupPickerOptions): {
 
 		if (filteredItems.length === 0) {
 			const emptyMsg = dropdown.createDiv({ cls: "tn-pgp-empty" });
-			emptyMsg.textContent = query ? "No matches found" : "No options available";
+			if (query) {
+				emptyMsg.textContent = "No matches found";
+			} else if (allItems.length === 0) {
+				// No persons or groups configured at all — show guidance
+				emptyMsg.createDiv({ cls: "tn-pgp-empty-title", text: "No person or group notes found" });
+				const hint = emptyMsg.createDiv({ cls: "tn-pgp-empty-hint" });
+				hint.textContent = "Configure person notes folder and type property in ";
+				if (onConfigureClick) {
+					const link = hint.createEl("a", { text: "Settings \u2192 Shared vault" });
+					link.style.cssText = "cursor: pointer; color: var(--text-accent)";
+					link.addEventListener("click", (e) => {
+						e.preventDefault();
+						e.stopPropagation();
+						onConfigureClick();
+					});
+				} else {
+					hint.appendText("Settings \u2192 Shared vault");
+				}
+			} else {
+				emptyMsg.textContent = "No options available";
+			}
 			return;
 		}
 

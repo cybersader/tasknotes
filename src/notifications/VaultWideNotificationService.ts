@@ -90,11 +90,13 @@ export class VaultWideNotificationService {
 			allItems.push(...basesItems);
 		}
 
-		// Source 2: Upstream reminders (future - requires NotificationService integration)
-		// if (settings.enabledSources.upstreamReminders) {
-		//   const reminderItems = await this.getUpstreamReminderItems();
-		//   allItems.push(...reminderItems);
-		// }
+		// Source 2: Upstream task reminders (due-date, overdue, lead-time)
+		if (settings.enabledSources.upstreamReminders) {
+			this.plugin.debugLog.log("VaultWideNotificationService", "Fetching upstream reminder items...");
+			const reminderItems = this.getUpstreamReminderItems();
+			this.plugin.debugLog.log("VaultWideNotificationService", `Got ${reminderItems.length} items from upstream reminders`);
+			allItems.push(...reminderItems);
+		}
 
 		// Source 3: View-entry tracking (future - requires ViewEntryTracker)
 		// if (settings.enabledSources.viewEntry) {
@@ -308,6 +310,84 @@ export class VaultWideNotificationService {
 		}
 
 		return items;
+	}
+
+	/**
+	 * Get notification items from upstream NotificationService fired reminders.
+	 * Converts FiredReminderInfo into AggregatedNotificationItem format so they
+	 * appear in the unified toast + bell + upcoming view system.
+	 */
+	private getUpstreamReminderItems(): AggregatedNotificationItem[] {
+		const notificationService = this.plugin.notificationService;
+		if (!notificationService) return [];
+
+		const fired = notificationService.getFiredReminders();
+		if (fired.length === 0) return [];
+
+		const items: AggregatedNotificationItem[] = [];
+
+		for (const info of fired) {
+			const task = info.task;
+			const dueDate = task.due;
+			const scheduledDate = task.scheduled;
+
+			// Categorize by time using due date
+			const timeCategory = dueDate ? this.categorizeByTimeFromDate(dueDate) : "today";
+			const timeContext = info.message;
+
+			items.push({
+				path: info.taskPath,
+				title: task.title || "Untitled",
+				isTask: true,
+				status: task.status,
+				dueDate,
+				scheduledDate,
+				sources: [{
+					type: "upstream",
+					name: this.getReminderTypeLabel(info.reminderType),
+				}],
+				timeCategory,
+				timeContext,
+			});
+		}
+
+		return items;
+	}
+
+	/**
+	 * Categorize by time from a date string (shared logic with categorizeByTime).
+	 */
+	private categorizeByTimeFromDate(dateStr: string): TimeCategory {
+		try {
+			const now = new Date();
+			const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+			const due = new Date(dateStr);
+			const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate());
+
+			const diffDays = Math.floor((dueDay.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+			if (diffDays < 0) return "overdue";
+			if (diffDays === 0) return "today";
+			if (diffDays === 1) return "tomorrow";
+			if (diffDays <= 7) return "thisWeek";
+			if (diffDays <= 30) return "thisMonth";
+			return "later";
+		} catch {
+			return "today";
+		}
+	}
+
+	/**
+	 * Get a human-readable label for a reminder type.
+	 */
+	private getReminderTypeLabel(type: string): string {
+		switch (type) {
+			case "due-date": return "Due date reminder";
+			case "overdue": return "Overdue reminder";
+			case "lead-time": return "Lead time reminder";
+			case "start-date": return "Start date reminder";
+			default: return "Task reminder";
+		}
 	}
 
 	/**

@@ -13,8 +13,12 @@ import {
 	getUTCEndOfMonth,
 	getTodayLocal,
 	parseDateAsLocal,
+	getDatePart,
+	getTimePart,
+	combineDateAndTime,
 } from "../utils/dateUtils";
 import { formatTimestampForDisplay } from "../utils/dateUtils";
+import { DateContextMenu } from "../components/DateContextMenu";
 import {
 	generateRecurringInstances,
 	extractTaskInfo,
@@ -525,7 +529,7 @@ export class TaskEditModal extends TaskModal {
 
 		const propHelp = propLabelRow.createSpan({ cls: "task-edit-modal__help" });
 		setIcon(propHelp, "help-circle");
-		setTooltip(propHelp, "Search and add properties from your vault. Use the mapping dropdown to assign a property as a core task field. Configure default mappings in Settings \u2192 Task properties.");
+		setTooltip(propHelp, "Add extra frontmatter fields (e.g., review_date, client, effort_hours) to this task. Search existing properties from your vault, or create new ones. Use the scope chips to filter by source: this note, view items, all tasks, or all files.");
 
 		// PropertyPicker for adding more (above the fields list, matching bulk modal layout)
 		const pickerContainer = sectionContainer.createDiv("discovered-properties-picker");
@@ -641,9 +645,13 @@ export class TaskEditModal extends TaskModal {
 			// Type badge
 			header.createDiv({ cls: "tn-prop-row__type-badge", text: prop.type });
 
-			// Value input
+			// Value area — mapped fields get click-to-edit, unmapped get basic inputs
 			const valueContainer = header.createDiv({ cls: "tn-prop-row__value" });
-			this.createPropertyValueInput(valueContainer, prop);
+			if (currentMapping) {
+				this.createMappedValueDisplay(valueContainer, prop, currentMapping as OverridableField);
+			} else {
+				this.createPropertyValueInput(valueContainer, prop);
+			}
 
 			// Mapping badge
 			if (currentMapping) {
@@ -855,6 +863,132 @@ export class TaskEditModal extends TaskModal {
 				});
 				break;
 			}
+		}
+	}
+
+	/**
+	 * Create a read-only clickable value display for a mapped property.
+	 * Clicking opens the appropriate rich editor (DateContextMenu for dates,
+	 * scrolls to PersonGroupPicker for assignee).
+	 */
+	private createMappedValueDisplay(
+		container: HTMLElement,
+		prop: DiscoveredProperty,
+		mappedField: OverridableField
+	): void {
+		const isDateField = ["due", "scheduled", "completedDate", "dateCreated"].includes(mappedField);
+		const isAssigneeField = mappedField === "assignee";
+
+		const currentValue = this.userFields[prop.key];
+		const hasValue = currentValue !== null && currentValue !== undefined && currentValue !== "";
+
+		const display = container.createDiv({ cls: "tn-prop-row__value-display" });
+		display.style.cssText = "cursor: pointer; display: flex; align-items: center; gap: 4px;";
+
+		if (isDateField) {
+			const valueText = hasValue ? String(currentValue) : "Click to set...";
+			const span = display.createSpan({
+				text: valueText,
+				cls: hasValue ? "tn-prop-row__value-set" : "tn-prop-row__value-placeholder",
+			});
+			if (!hasValue) span.style.color = "var(--text-faint)";
+
+			display.addEventListener("click", (event) => {
+				this.showMappedDatePicker(event, prop.key, mappedField);
+			});
+		} else if (isAssigneeField) {
+			const displayValue = hasValue
+				? (Array.isArray(currentValue) ? currentValue.join(", ") : String(currentValue))
+				: "Click to set...";
+			const span = display.createSpan({
+				text: displayValue,
+				cls: hasValue ? "tn-prop-row__value-set" : "tn-prop-row__value-placeholder",
+			});
+			if (!hasValue) span.style.color = "var(--text-faint)";
+
+			display.addEventListener("click", () => {
+				this.scrollToAssigneePickerFromProp();
+			});
+		} else {
+			// Fallback for other mapped types: regular input
+			this.createPropertyValueInput(container, prop);
+		}
+	}
+
+	/**
+	 * Open DateContextMenu for a mapped date property.
+	 * Syncs value to both userFields[propName] AND the corresponding standard field.
+	 */
+	private showMappedDatePicker(
+		event: UIEvent,
+		propName: string,
+		mappedField: OverridableField
+	): void {
+		const currentValue = this.userFields[propName] || "";
+		const menu = new DateContextMenu({
+			currentValue: currentValue ? getDatePart(currentValue) : undefined,
+			currentTime: currentValue ? getTimePart(currentValue) : undefined,
+			title: `Set ${propName}`,
+			plugin: this.plugin,
+			app: this.app,
+			onSelect: (value: string | null, time: string | null) => {
+				const finalValue = value
+					? (time ? combineDateAndTime(value, time) : value)
+					: "";
+				// Store in userFields for the mapped property
+				this.userFields[propName] = finalValue;
+				// Sync to standard field so action bar icon state updates
+				if (mappedField === "due") this.dueDate = finalValue;
+				else if (mappedField === "scheduled") this.scheduledDate = finalValue;
+				this.updateDateIconState();
+				// Re-render to show updated value
+				this.reRenderDiscoveredFields();
+			},
+		});
+		menu.show(event);
+	}
+
+	/**
+	 * Scroll to and highlight the assignee PersonGroupPicker.
+	 * Expands the details section if collapsed.
+	 */
+	private scrollToAssigneePickerFromProp(): void {
+		if (!this.isExpanded) {
+			this.expandModal();
+		}
+
+		setTimeout(() => {
+			const assigneeFieldName = this.plugin.settings.assigneeFieldName || "assignee";
+			const pickerEl = this.containerEl.querySelector(
+				`.tn-task-modal-assignee[data-field-key="${assigneeFieldName}"]`
+			) as HTMLElement ?? this.containerEl.querySelector(".tn-task-modal-assignee") as HTMLElement;
+			if (pickerEl) {
+				pickerEl.scrollIntoView({ behavior: "smooth", block: "center" });
+				pickerEl.style.outline = "2px solid var(--interactive-accent)";
+				pickerEl.style.outlineOffset = "4px";
+				pickerEl.style.borderRadius = "4px";
+				setTimeout(() => {
+					pickerEl.style.outline = "";
+					pickerEl.style.outlineOffset = "";
+					pickerEl.style.borderRadius = "";
+				}, 1500);
+				const searchInput = pickerEl.querySelector("input") as HTMLInputElement;
+				if (searchInput) searchInput.focus();
+			}
+		}, 150);
+	}
+
+	/** Re-render discovered property rows to reflect updated values. */
+	private reRenderDiscoveredFields(): void {
+		const fieldsContainer = this.containerEl.querySelector(".discovered-properties-fields") as HTMLElement;
+		if (fieldsContainer) {
+			const configuredKeys = new Set(
+				(this.plugin.settings?.userFields || [])
+					.filter((f: any) => f?.key)
+					.map((f: any) => f.key)
+			);
+			fieldsContainer.empty();
+			this.renderDiscoveredPropertyFields(fieldsContainer, configuredKeys);
 		}
 	}
 

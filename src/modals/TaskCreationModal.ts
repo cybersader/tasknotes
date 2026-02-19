@@ -56,6 +56,10 @@ export interface TaskCreationOptions {
 	sourceBaseId?: string;
 	/** Source view ID for provenance tracking (ADR-011). */
 	sourceViewId?: string;
+	/** File paths from the base view's current results — used for PropertyPicker discovery context. */
+	contextItemPaths?: string[];
+	/** Active file path when modal was opened — used for "This note" scope in PropertyPicker. */
+	currentFilePath?: string;
 }
 
 /**
@@ -770,8 +774,11 @@ export class TaskCreationModal extends TaskModal {
 
 		const sectionContainer = container.createDiv("discovered-properties-container");
 		const sectionLabel = sectionContainer.createDiv("detail-label");
-		sectionLabel.createSpan({ text: "Additional properties" });
-		sectionLabel.style.cssText = "color: var(--text-muted); font-size: var(--font-ui-smaller);";
+		sectionLabel.createSpan({ text: "Properties & anchors" });
+		const helpIcon = sectionLabel.createSpan({ cls: "tn-pp-help-icon" });
+		setIcon(helpIcon, "help-circle");
+		setTooltip(helpIcon, "Add extra frontmatter fields (e.g., review_date, client, effort_hours) to this task. Search existing properties from your vault, or create new ones. Use the scope chips to filter by source: this note, view items, all tasks, or all files.");
+		sectionLabel.style.cssText = "color: var(--text-muted); font-size: var(--font-ui-smaller); display: flex; align-items: center; gap: 4px;";
 
 		// PropertyPicker search (above the fields list)
 		const pickerContainer = sectionContainer.createDiv("discovered-properties-picker");
@@ -788,6 +795,8 @@ export class TaskCreationModal extends TaskModal {
 		this.propertyPickerInstance = createPropertyPicker({
 			container: pickerContainer,
 			plugin: this.plugin,
+			itemPaths: this.options.contextItemPaths,
+			currentFilePath: this.options.currentFilePath,
 			excludeKeys: this.propertyPickerExcludeKeys,
 			useAsOptions: Object.entries(OVERRIDABLE_FIELD_LABELS).map(([key, label]) => ({
 				key,
@@ -1065,9 +1074,12 @@ export class TaskCreationModal extends TaskModal {
 			this.expandModal();
 		}
 
-		// Find the assignee picker container and scroll to it
+		// Find the assignee picker container (not creator) using data-field-key
 		setTimeout(() => {
-			const pickerEl = this.containerEl.querySelector(".tn-task-modal-assignee") as HTMLElement;
+			const assigneeFieldName = this.plugin.settings.assigneeFieldName || "assignee";
+			const pickerEl = this.containerEl.querySelector(
+				`.tn-task-modal-assignee[data-field-key="${assigneeFieldName}"]`
+			) as HTMLElement ?? this.containerEl.querySelector(".tn-task-modal-assignee") as HTMLElement;
 			if (pickerEl) {
 				pickerEl.scrollIntoView({ behavior: "smooth", block: "center" });
 				// Flash highlight to draw attention

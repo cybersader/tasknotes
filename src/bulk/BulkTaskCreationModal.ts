@@ -139,7 +139,9 @@ export class BulkTaskCreationModal extends Modal {
 		this.baseFilePath = baseFilePath;
 		this.engine = new BulkTaskEngine(plugin);
 		this.convertEngine = new BulkConvertEngine(plugin);
-		this.mode = options.openToViewSettings ? "viewSettings" : (plugin.settings.defaultBulkMode || "generate");
+		const requestedMode = options.openToViewSettings ? "viewSettings" : (plugin.settings.defaultBulkMode || "generate");
+		// Fall back from viewSettings if no base file context (e.g., opened from file explorer)
+		this.mode = (requestedMode === "viewSettings" && !baseFilePath) ? "generate" : requestedMode;
 	}
 
 	onOpen() {
@@ -242,6 +244,7 @@ export class BulkTaskCreationModal extends Modal {
 		const generateTab = tabsContainer.createEl("button", {
 			cls: `tn-bulk-modal__tab ${this.mode === "generate" ? "tn-bulk-modal__tab--active" : ""}`,
 			text: "Generate new tasks",
+			attr: { "data-mode": "generate" },
 		});
 		generateTab.addEventListener("click", () => {
 			if (this.mode !== "generate") {
@@ -255,6 +258,7 @@ export class BulkTaskCreationModal extends Modal {
 		const convertTab = tabsContainer.createEl("button", {
 			cls: `tn-bulk-modal__tab ${this.mode === "convert" ? "tn-bulk-modal__tab--active" : ""}`,
 			text: "Convert to tasks",
+			attr: { "data-mode": "convert" },
 		});
 		convertTab.addEventListener("click", () => {
 			if (this.mode !== "convert") {
@@ -264,19 +268,22 @@ export class BulkTaskCreationModal extends Modal {
 			}
 		});
 
-		// View Settings tab — icon before text
-		const settingsTab = tabsContainer.createEl("button", {
-			cls: `tn-bulk-modal__tab ${this.mode === "viewSettings" ? "tn-bulk-modal__tab--active" : ""}`,
-		});
-		setIcon(settingsTab.createSpan({ cls: "tn-bulk-modal__tab-icon" }), "settings");
-		settingsTab.appendText("Base view defaults & settings");
-		settingsTab.addEventListener("click", () => {
-			if (this.mode !== "viewSettings") {
-				this.mode = "viewSettings";
-				this.onModeChanged();
-				this.updateTabStyles(tabsContainer);
-			}
-		});
+		// View Settings tab — only shown when opened from a Bases view (has baseFilePath)
+		if (this.baseFilePath) {
+			const settingsTab = tabsContainer.createEl("button", {
+				cls: `tn-bulk-modal__tab ${this.mode === "viewSettings" ? "tn-bulk-modal__tab--active" : ""}`,
+				attr: { "data-mode": "viewSettings" },
+			});
+			setIcon(settingsTab.createSpan({ cls: "tn-bulk-modal__tab-icon" }), "settings");
+			settingsTab.appendText("Base view defaults & settings");
+			settingsTab.addEventListener("click", () => {
+				if (this.mode !== "viewSettings") {
+					this.mode = "viewSettings";
+					this.onModeChanged();
+					this.updateTabStyles(tabsContainer);
+				}
+			});
+		}
 	}
 
 	/**
@@ -284,9 +291,9 @@ export class BulkTaskCreationModal extends Modal {
 	 */
 	private updateTabStyles(tabsContainer: HTMLElement) {
 		const tabs = tabsContainer.querySelectorAll(".tn-bulk-modal__tab");
-		const modes: BulkMode[] = ["generate", "convert", "viewSettings"];
-		tabs.forEach((tab, index) => {
-			tab.toggleClass("tn-bulk-modal__tab--active", modes[index] === this.mode);
+		tabs.forEach((tab) => {
+			const tabMode = (tab as HTMLElement).dataset.mode;
+			tab.toggleClass("tn-bulk-modal__tab--active", tabMode === this.mode);
 		});
 	}
 
@@ -1392,6 +1399,7 @@ export class BulkTaskCreationModal extends Modal {
 			plugin: this.plugin,
 			itemPaths: this.items.map(i => i.path).filter((p): p is string => !!p),
 			excludeKeys: new Set(Object.keys(this.viewDefaultProperties)),
+			includeNonTaskFiles: true,
 			useAsOptions: Object.entries(OVERRIDABLE_FIELD_LABELS).map(([key, label]) => ({
 				key,
 				label,
@@ -1888,7 +1896,7 @@ export class BulkTaskCreationModal extends Modal {
 	 * Get action button text for the current mode.
 	 */
 	private getActionButtonText(): string {
-		if (this.mode === "viewSettings") return "Done";
+		if (this.mode === "viewSettings") return "Save";
 		return this.mode === "generate" ? "Generate tasks" : "Convert to tasks";
 	}
 
@@ -1932,7 +1940,7 @@ export class BulkTaskCreationModal extends Modal {
 		// Update action button
 		if (this.actionButton) {
 			if (isViewSettings) {
-				this.actionButton.textContent = "Done";
+				this.actionButton.textContent = "Save";
 				this.actionButton.disabled = false;
 			} else {
 				this.actionButton.textContent = this.getActionButtonText();
@@ -2421,7 +2429,22 @@ export class BulkTaskCreationModal extends Modal {
 	 */
 	private async executeAction() {
 		if (this.mode === "viewSettings") {
-			this.close();
+			// Save all view settings to .base file (don't close — user closes with X)
+			await this.saveViewFieldMapping();
+			await this.saveViewDefaults();
+			await this.saveViewNotificationConfig();
+			await this.preloadBulkFromViewSettings();
+			// Brief "Saved!" feedback on the button
+			if (this.actionButton) {
+				this.actionButton.textContent = "Saved!";
+				this.actionButton.disabled = true;
+				setTimeout(() => {
+					if (this.actionButton) {
+						this.actionButton.textContent = "Save";
+						this.actionButton.disabled = false;
+					}
+				}, 1500);
+			}
 			return;
 		}
 		if (this.mode === "generate") {

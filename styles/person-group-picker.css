@@ -155,3 +155,16 @@
     font-size: var(--font-ui-small);
     font-style: italic;
 }
+
+.tn-pgp-empty-title {
+    font-weight: 500;
+    font-style: normal;
+    color: var(--text-normal);
+    margin-bottom: 4px;
+}
+
+.tn-pgp-empty-hint {
+    font-size: var(--font-ui-smaller);
+    font-style: normal;
+    line-height: 1.4;
+}

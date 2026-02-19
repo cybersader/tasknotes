@@ -6,6 +6,7 @@ import {
 	Editor,
 	MarkdownView,
 	TFile,
+	TFolder,
 	Platform,
 	addIcon,
 	Command,
@@ -482,6 +483,9 @@ export default class TaskNotesPlugin extends Plugin {
 		// Add commands
 		this.addCommands();
 
+		// Register file explorer right-click menu items
+		this.registerFileMenuHandlers();
+
 		// Add settings tab
 		this.addSettingTab(new TaskNotesSettingTab(this.app, this));
 
@@ -910,6 +914,168 @@ export default class TaskNotesPlugin extends Plugin {
 		}
 
 		await this.readyPromise;
+	}
+
+	/**
+	 * Register context menu items for the file explorer.
+	 * - Single file: "Edit task" (if task) or "Convert to task" (if not)
+	 * - Multi-select: "Bulk convert to tasks"
+	 */
+	private registerFileMenuHandlers(): void {
+		// Single file right-click
+		this.registerEvent(
+			this.app.workspace.on("file-menu", (menu, file) => {
+				if (!(file instanceof TFile) || file.extension !== "md") return;
+
+				const cache = this.app.metadataCache.getFileCache(file);
+				const frontmatter = cache?.frontmatter;
+				const isTask = frontmatter ? this.cacheManager.isTaskFile(frontmatter) : false;
+
+				if (isTask) {
+					// Show quick context menu option to edit task
+					menu.addItem((item) => {
+						item.setTitle("Edit task")
+							.setIcon("pencil")
+							.onClick(async () => {
+								const task = await this.cacheManager.getTaskInfo(file.path);
+								if (task) {
+									this.openTaskEditModal(task);
+								}
+							});
+					});
+				} else {
+					// Show convert to task option
+					menu.addItem((item) => {
+						item.setTitle("Convert to task")
+							.setIcon("check-square")
+							.onClick(async () => {
+								// Reuse the convertCurrentNoteToTask logic but for a specific file
+								await this.convertFileToTask(file);
+							});
+					});
+				}
+			})
+		);
+
+		// Multi-file right-click
+		this.registerEvent(
+			this.app.workspace.on("files-menu", (menu, files) => {
+				const mdFiles = files.filter(
+					(f): f is TFile => f instanceof TFile && f.extension === "md"
+				);
+				if (mdFiles.length === 0) return;
+
+				menu.addItem((item) => {
+					item.setTitle(`Bulk tasking (${mdFiles.length} files)`)
+						.setIcon("check-square")
+						.onClick(async () => {
+							const { BulkTaskCreationModal } = await import(
+								"./bulk/BulkTaskCreationModal"
+							);
+							// Build BasesDataItem[] from selected files
+							const items = mdFiles.map((f) => ({
+								path: f.path,
+								file: f,
+								name: f.basename,
+								properties: this.app.metadataCache.getFileCache(f)?.frontmatter || {},
+							}));
+							// No baseFilePath — opened from file explorer, not a Bases view
+							new BulkTaskCreationModal(this.app, this, items).open();
+						});
+				});
+			})
+		);
+
+		// Folder right-click → Bulk tasking for all markdown files under the folder
+		this.registerEvent(
+			this.app.workspace.on("file-menu", (menu, file) => {
+				if (!(file instanceof TFolder)) return;
+
+				const folderPath = file.path;
+				const mdFiles = this.app.vault.getMarkdownFiles().filter(
+					(f) => f.path.startsWith(folderPath + "/")
+				);
+				if (mdFiles.length === 0) return;
+
+				menu.addItem((item) => {
+					item.setTitle(`Bulk tasking (${mdFiles.length} files in folder)`)
+						.setIcon("check-square")
+						.onClick(async () => {
+							const { BulkTaskCreationModal } = await import(
+								"./bulk/BulkTaskCreationModal"
+							);
+							const items = mdFiles.map((f) => ({
+								path: f.path,
+								file: f,
+								name: f.basename,
+								properties: this.app.metadataCache.getFileCache(f)?.frontmatter || {},
+							}));
+							new BulkTaskCreationModal(this.app, this, items).open();
+						});
+				});
+			})
+		);
+	}
+
+	/**
+	 * Convert a specific file to a task (used by file explorer context menu).
+	 * Similar to convertCurrentNoteToTask() but accepts a file parameter.
+	 */
+	async convertFileToTask(file: TFile): Promise<void> {
+		// Check if already a task
+		const existingTask = await this.cacheManager.getTaskInfo(file.path);
+		if (existingTask) {
+			new Notice(this.i18n.translate("commands.convertCurrentNoteToTask.alreadyTask"));
+			return;
+		}
+
+		const metadata = this.app.metadataCache.getFileCache(file);
+		const frontmatter: Record<string, any> = metadata?.frontmatter || {};
+		const content = await this.app.vault.read(file);
+
+		let details = "";
+		const frontmatterMatch = content.match(/^---\n[\s\S]*?\n---\n*/);
+		if (frontmatterMatch) {
+			details = content.slice(frontmatterMatch[0].length).trim();
+		} else {
+			details = content.trim();
+		}
+
+		const now = getCurrentTimestamp();
+		const taskInfo: TaskInfo = {
+			path: file.path,
+			title: frontmatter.title || file.basename,
+			status: frontmatter.status ?? this.settings.defaultTaskStatus,
+			priority: frontmatter.priority ?? this.settings.defaultTaskPriority,
+			archived: false,
+			due: frontmatter.due || undefined,
+			scheduled: frontmatter.scheduled || undefined,
+			contexts: frontmatter.contexts
+				? (Array.isArray(frontmatter.contexts) ? frontmatter.contexts : [frontmatter.contexts])
+				: undefined,
+			projects: frontmatter.projects
+				? (Array.isArray(frontmatter.projects) ? frontmatter.projects : [frontmatter.projects])
+				: undefined,
+			tags: frontmatter.tags
+				? (Array.isArray(frontmatter.tags) ? frontmatter.tags : [frontmatter.tags])
+				: [],
+			timeEstimate: frontmatter.timeEstimate || undefined,
+			recurrence: frontmatter.recurrence || undefined,
+			dateCreated: frontmatter.dateCreated || now,
+			dateModified: now,
+			details: details,
+		};
+
+		new TaskEditModal(this.app, this, {
+			task: taskInfo,
+			onTaskUpdated: (updatedTask) => {
+				new Notice(
+					this.i18n.translate("commands.convertCurrentNoteToTask.success", {
+						title: updatedTask.title,
+					})
+				);
+			},
+		}).open();
 	}
 
 	/**
@@ -2498,20 +2664,49 @@ export default class TaskNotesPlugin extends Plugin {
 
 	openTaskCreationModal(prePopulatedValues?: Partial<TaskInfo>) {
 		const values: Partial<TaskInfo> = { ...prePopulatedValues };
+		let contextItemPaths: string[] | undefined;
+		let currentFilePath: string | undefined;
+
+		// Detect active context for PropertyPicker scope
+		const activeLeaf = this.app.workspace.activeLeaf;
+
+		// Check if active leaf is a Bases view — extract item paths
+		if (activeLeaf?.view?.getViewType?.() === "bases") {
+			const view = activeLeaf.view as any;
+			const controller = view.controller ||
+				(view.basesContainer || view.container)?.controller;
+			if (controller?.results) {
+				const paths: string[] = [];
+				for (const [, entry] of controller.results) {
+					const file = (entry as any).file;
+					if (file?.path) paths.push(file.path);
+				}
+				if (paths.length > 0) contextItemPaths = paths;
+			}
+		}
+
+		// Always capture active file for "This note" scope
+		const activeFile = this.app.workspace.getActiveFile();
+		if (activeFile) {
+			currentFilePath = activeFile.path;
+		}
 
 		// Include current note as project if enabled (fixes missing functionality)
 		if (this.settings.taskCreationDefaults.useParentNoteAsProject && !values.projects?.length) {
-			const currentFile = this.app.workspace.getActiveFile();
-			if (currentFile) {
+			if (activeFile) {
 				const parentNote = this.app.fileManager.generateMarkdownLink(
-					currentFile,
-					currentFile.path
+					activeFile,
+					activeFile.path
 				);
 				values.projects = [parentNote];
 			}
 		}
 
-		new TaskCreationModal(this.app, this, { prePopulatedValues: Object.keys(values).length > 0 ? values : undefined }).open();
+		new TaskCreationModal(this.app, this, {
+			prePopulatedValues: Object.keys(values).length > 0 ? values : undefined,
+			contextItemPaths,
+			currentFilePath,
+		}).open();
 	}
 
 	/**

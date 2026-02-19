@@ -2060,3 +2060,124 @@ select.tasknotes-settings__card-input {
     white-space: nowrap;
     margin-top: 1px;
 }
+
+/* ================================================
+   DISCOVERY STATS (Person/Group settings)
+   ================================================ */
+
+.tasknotes-discovery-stats__summary {
+    display: inline;
+    font-size: var(--font-ui-small);
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+.tasknotes-discovery-details {
+    margin-top: 8px;
+    padding: 8px 12px;
+    background: var(--background-secondary);
+    border-radius: var(--radius-s);
+    font-size: var(--font-ui-smaller);
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.tasknotes-discovery-details__header {
+    font-weight: 600;
+    color: var(--text-normal);
+    margin-top: 6px;
+    margin-bottom: 2px;
+}
+
+.tasknotes-discovery-details__header:first-child {
+    margin-top: 0;
+}
+
+.tasknotes-discovery-details__item {
+    color: var(--text-muted);
+    padding: 1px 0;
+}
+
+/* Structured discovery sections */
+.tn-discovery-section {
+    margin-bottom: 8px;
+}
+
+.tn-discovery-section__header {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-weight: 600;
+    font-size: var(--font-ui-small);
+    color: var(--text-normal);
+    margin-bottom: 4px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.tn-discovery-section__header .svg-icon {
+    width: 14px;
+    height: 14px;
+    color: var(--text-muted);
+}
+
+.tn-discovery-section__empty {
+    color: var(--text-faint);
+    font-size: var(--font-ui-smaller);
+    font-style: italic;
+    padding: 4px 0;
+}
+
+.tn-discovery-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 4px;
+    border-radius: var(--radius-s);
+}
+
+.tn-discovery-row:hover {
+    background: var(--background-modifier-hover);
+}
+
+.tn-discovery-row__icon {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+}
+
+.tn-discovery-row__icon .svg-icon {
+    width: 14px;
+    height: 14px;
+    color: var(--text-muted);
+}
+
+.tn-discovery-row__info {
+    flex: 1;
+    min-width: 0;
+}
+
+.tn-discovery-row__name {
+    font-size: var(--font-ui-small);
+    color: var(--text-normal);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tn-discovery-row__meta {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
+
+.tn-discovery-row__action {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    padding: 2px;
+}
+
+.tn-discovery-row__action .svg-icon {
+    width: 12px;
+    height: 12px;
+}

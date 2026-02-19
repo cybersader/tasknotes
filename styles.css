@@ -19995,6 +19995,127 @@ select.tasknotes-settings__card-input {
     margin-top: 1px;
 }
 
+/* ================================================
+   DISCOVERY STATS (Person/Group settings)
+   ================================================ */
+
+.tasknotes-discovery-stats__summary {
+    display: inline;
+    font-size: var(--font-ui-small);
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+.tasknotes-discovery-details {
+    margin-top: 8px;
+    padding: 8px 12px;
+    background: var(--background-secondary);
+    border-radius: var(--radius-s);
+    font-size: var(--font-ui-smaller);
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.tasknotes-discovery-details__header {
+    font-weight: 600;
+    color: var(--text-normal);
+    margin-top: 6px;
+    margin-bottom: 2px;
+}
+
+.tasknotes-discovery-details__header:first-child {
+    margin-top: 0;
+}
+
+.tasknotes-discovery-details__item {
+    color: var(--text-muted);
+    padding: 1px 0;
+}
+
+/* Structured discovery sections */
+.tn-discovery-section {
+    margin-bottom: 8px;
+}
+
+.tn-discovery-section__header {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-weight: 600;
+    font-size: var(--font-ui-small);
+    color: var(--text-normal);
+    margin-bottom: 4px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.tn-discovery-section__header .svg-icon {
+    width: 14px;
+    height: 14px;
+    color: var(--text-muted);
+}
+
+.tn-discovery-section__empty {
+    color: var(--text-faint);
+    font-size: var(--font-ui-smaller);
+    font-style: italic;
+    padding: 4px 0;
+}
+
+.tn-discovery-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 4px;
+    border-radius: var(--radius-s);
+}
+
+.tn-discovery-row:hover {
+    background: var(--background-modifier-hover);
+}
+
+.tn-discovery-row__icon {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+}
+
+.tn-discovery-row__icon .svg-icon {
+    width: 14px;
+    height: 14px;
+    color: var(--text-muted);
+}
+
+.tn-discovery-row__info {
+    flex: 1;
+    min-width: 0;
+}
+
+.tn-discovery-row__name {
+    font-size: var(--font-ui-small);
+    color: var(--text-normal);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tn-discovery-row__meta {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
+
+.tn-discovery-row__action {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    padding: 2px;
+}
+
+.tn-discovery-row__action .svg-icon {
+    width: 12px;
+    height: 12px;
+}
+
 /* ===== WEBHOOK-SETTINGS.CSS ===== */
 /* 
  * Webhook Settings UI Styles
@@ -22690,6 +22811,19 @@ select.tasknotes-settings__card-input {
     font-style: italic;
 }
 
+.tn-pgp-empty-title {
+    font-weight: 500;
+    font-style: normal;
+    color: var(--text-normal);
+    margin-bottom: 4px;
+}
+
+.tn-pgp-empty-hint {
+    font-size: var(--font-ui-smaller);
+    font-style: normal;
+    line-height: 1.4;
+}
+
 
 /* ===== PROPERTY-PICKER.CSS ===== */
 /* ================================================
@@ -22702,12 +22836,13 @@ select.tasknotes-settings__card-input {
     width: 100%;
 }
 
-/* Header row: search + toggle */
+/* Header row: search + scope chips */
 .tn-pp-header {
     display: flex;
     align-items: center;
     gap: 8px;
     margin-bottom: var(--size-4-2);
+    flex-wrap: wrap;
 }
 
 .tn-pp-search-container {
@@ -22750,27 +22885,46 @@ select.tasknotes-settings__card-input {
     box-shadow: 0 0 0 2px var(--background-modifier-border-focus);
 }
 
-/* Vault-wide toggle */
-.tn-pp-toggle-container {
+/* Scope chips — replace vault-wide toggle */
+.tn-pp-scope-chips {
+    display: flex;
+    gap: 4px;
     flex-shrink: 0;
+    flex-wrap: wrap;
 }
 
-.tn-pp-toggle-label {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    cursor: pointer;
+.tn-pp-scope-chip {
+    padding: 2px 8px;
+    border-radius: 12px;
     font-size: var(--font-ui-smaller);
+    cursor: pointer;
+    background: var(--background-modifier-hover);
     color: var(--text-muted);
+    border: 1px solid transparent;
     white-space: nowrap;
     user-select: none;
+    transition: background 0.15s, color 0.15s;
 }
 
-.tn-pp-toggle-checkbox {
-    margin: 0;
+.tn-pp-scope-chip--active {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+.tn-pp-scope-chip:hover:not(.tn-pp-scope-chip--active) {
+    background: var(--background-modifier-hover);
+    border-color: var(--background-modifier-border);
+}
+
+/* Help icon next to "Additional properties" */
+.tn-pp-help-icon {
+    display: inline-flex;
+    color: var(--text-faint);
+    cursor: help;
+}
+.tn-pp-help-icon svg {
     width: 14px;
     height: 14px;
-    cursor: pointer;
 }
 
 /* Dropdown - fixed positioning to escape modal overflow */

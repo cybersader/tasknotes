@@ -20,6 +20,7 @@ import {
 	discoverCustomProperties,
 	buildPropertyCatalog,
 	getAllTaskFilePaths,
+	getAllMarkdownFilePaths,
 	convertPropertyType,
 	keyToDisplayName,
 } from "../utils/propertyDiscoveryUtils";
@@ -33,6 +34,9 @@ export interface UseAsOption {
 	/** Required property type for this mapping (e.g., "date") — auto-converts if mismatched */
 	requiresType: PropertyType;
 }
+
+/** Discovery scope for the PropertyPicker. */
+export type PropertyScope = "currentNote" | "viewItems" | "allTasks" | "allFiles";
 
 export interface PropertyPickerOptions {
 	/** Container element to render into */
@@ -60,10 +64,16 @@ export interface PropertyPickerOptions {
 	useAsOptions?: UseAsOption[];
 	/** Currently claimed mappings: { fieldKey: propertyKey } — disables claimed options. */
 	claimedMappings?: Record<string, string>;
-	/** Initial state of the vault-wide checkbox (for restoring across re-renders) */
+	/** Initial scope for property discovery (for restoring across re-renders) */
+	initialScope?: PropertyScope;
+	/** Called when the scope changes */
+	onScopeChange?: (scope: PropertyScope) => void;
+	/** @deprecated Use initialScope="allFiles" instead. When true, vault-wide scan includes all markdown files. */
 	initialVaultWide?: boolean;
-	/** Called when the vault-wide checkbox changes */
+	/** @deprecated Use onScopeChange instead. */
 	onVaultWideChange?: (checked: boolean) => void;
+	/** @deprecated Use scope chips instead. When true, vault-wide scan includes all markdown files, not just task files */
+	includeNonTaskFiles?: boolean;
 }
 
 /** Type badge color mapping */
@@ -132,11 +142,19 @@ export function createPropertyPicker(options: PropertyPickerOptions): {
 		allowedConversionTargets,
 		useAsOptions,
 		claimedMappings,
+		includeNonTaskFiles,
 	} = options;
 
-	// State
+	// State — resolve initial scope from options (with backward compat for initialVaultWide)
 	let searchQuery = "";
-	let isVaultWide = options.initialVaultWide ?? false;
+	const defaultScope: PropertyScope = options.initialScope
+		? options.initialScope
+		: options.initialVaultWide
+			? (includeNonTaskFiles ? "allFiles" : "allTasks")
+			: itemPaths?.length ? "viewItems"
+			: currentFilePath ? "currentNote"
+			: "allTasks";
+	let currentScope: PropertyScope = defaultScope;
 	let isDropdownOpen = false;
 	let discoveredProps: DiscoveredProperty[] = [];
 	let catalogEntries: PropertyCatalogEntry[] = [];
@@ -146,7 +164,7 @@ export function createPropertyPicker(options: PropertyPickerOptions): {
 	container.empty();
 	container.addClass("tn-property-picker");
 
-	// Header row: search + vault-wide toggle
+	// Header row: search + scope chips
 	const headerRow = container.createDiv({ cls: "tn-pp-header" });
 
 	const searchContainer = headerRow.createDiv({ cls: "tn-pp-search-container" });
@@ -162,17 +180,42 @@ export function createPropertyPicker(options: PropertyPickerOptions): {
 	// Inline style to override Obsidian's input padding (higher specificity than class selectors)
 	searchInput.style.paddingLeft = "34px";
 
-	const toggleContainer = headerRow.createDiv({ cls: "tn-pp-toggle-container" });
-	const toggleLabel = toggleContainer.createEl("label", {
-		cls: "tn-pp-toggle-label",
-		attr: { title: "When enabled, shows properties from all task files in the vault instead of just this task" },
-	});
-	const toggleCheckbox = toggleLabel.createEl("input", {
-		attr: { type: "checkbox" },
-		cls: "tn-pp-toggle-checkbox",
-	});
-	if (isVaultWide) toggleCheckbox.checked = true;
-	toggleLabel.createSpan({ text: "Vault-wide", cls: "tn-pp-toggle-text" });
+	// Scope chips — replace the old vault-wide checkbox
+	const scopeChipsContainer = headerRow.createDiv({ cls: "tn-pp-scope-chips" });
+
+	type ScopeChipDef = { scope: PropertyScope; label: string; available: boolean };
+	const scopeChips: ScopeChipDef[] = [
+		{ scope: "currentNote", label: "This note", available: !!currentFilePath },
+		{ scope: "viewItems", label: "View items", available: !!(itemPaths?.length) },
+		{ scope: "allTasks", label: "All tasks", available: true },
+		{ scope: "allFiles", label: "All files", available: true },
+	];
+
+	function renderScopeChips() {
+		scopeChipsContainer.empty();
+		for (const chip of scopeChips) {
+			if (!chip.available) continue;
+			const el = scopeChipsContainer.createSpan({
+				cls: `tn-pp-scope-chip${chip.scope === currentScope ? " tn-pp-scope-chip--active" : ""}`,
+				text: chip.label,
+			});
+			el.addEventListener("click", () => {
+				if (chip.scope === currentScope) return;
+				currentScope = chip.scope;
+				if (options.onScopeChange) options.onScopeChange(currentScope);
+				// Backward compat: fire onVaultWideChange if provided
+				if (options.onVaultWideChange) {
+					options.onVaultWideChange(currentScope === "allTasks" || currentScope === "allFiles");
+				}
+				renderScopeChips();
+				if (isDropdownOpen) {
+					loadProperties();
+					renderDropdown();
+				}
+			});
+		}
+	}
+	renderScopeChips();
 
 	// Dropdown container - appended to body to escape modal overflow
 	const dropdown = document.body.createDiv({ cls: "tn-pp-dropdown" });
@@ -181,20 +224,48 @@ export function createPropertyPicker(options: PropertyPickerOptions): {
 	// ── Data loading ──────────────────────────────────
 
 	function loadProperties() {
-		if (isVaultWide) {
-			// Always scan all task files when vault-wide is checked
-			const paths = getAllTaskFilePaths(plugin);
-			catalogEntries = buildPropertyCatalog(plugin, paths, excludeKeys);
-			discoveredProps = [];
-		} else if (currentFilePath) {
-			discoveredProps = discoverCustomProperties(plugin, currentFilePath, excludeKeys);
-			catalogEntries = [];
-		} else if (itemPaths?.length) {
-			catalogEntries = buildPropertyCatalog(plugin, itemPaths, excludeKeys);
-			discoveredProps = [];
-		} else {
-			discoveredProps = [];
-			catalogEntries = [];
+		switch (currentScope) {
+			case "currentNote":
+				if (currentFilePath) {
+					discoveredProps = discoverCustomProperties(plugin, currentFilePath, excludeKeys);
+					catalogEntries = [];
+				} else {
+					// Shouldn't happen (chip hidden when no currentFilePath), but fall back gracefully
+					catalogEntries = buildPropertyCatalog(plugin, getAllTaskFilePaths(plugin), excludeKeys);
+					discoveredProps = [];
+				}
+				break;
+			case "viewItems":
+				if (itemPaths?.length) {
+					catalogEntries = buildPropertyCatalog(plugin, itemPaths, excludeKeys);
+					discoveredProps = [];
+				} else {
+					catalogEntries = buildPropertyCatalog(plugin, getAllTaskFilePaths(plugin), excludeKeys);
+					discoveredProps = [];
+				}
+				break;
+			case "allTasks":
+				catalogEntries = buildPropertyCatalog(plugin, getAllTaskFilePaths(plugin), excludeKeys);
+				discoveredProps = [];
+				break;
+			case "allFiles":
+				catalogEntries = buildPropertyCatalog(plugin, getAllMarkdownFilePaths(plugin), excludeKeys);
+				discoveredProps = [];
+				break;
+		}
+	}
+
+	/** Scope-aware empty state message. */
+	function scopeEmptyMessage(): string {
+		switch (currentScope) {
+			case "currentNote":
+				return "No additional properties found in this note";
+			case "viewItems":
+				return "No additional properties found in view items";
+			case "allTasks":
+				return "No additional properties found across task files";
+			case "allFiles":
+				return "No additional properties found across vault files";
 		}
 	}
 
@@ -205,12 +276,11 @@ export function createPropertyPicker(options: PropertyPickerOptions): {
 
 		const query = searchQuery.toLowerCase();
 
-		// Use catalog view when we have catalog data (vault-wide or itemPaths),
-		// single-file view when we have discovered props from currentFilePath
-		if (catalogEntries.length > 0 || (isVaultWide || (!currentFilePath && !itemPaths?.length))) {
-			renderCatalogView(query);
-		} else {
+		// Use single-file view for "This note" scope, catalog view for all other scopes
+		if (currentScope === "currentNote" && discoveredProps.length > 0) {
 			renderSingleFileView(query);
+		} else {
+			renderCatalogView(query);
 		}
 
 		// Add new property option at bottom
@@ -229,7 +299,7 @@ export function createPropertyPicker(options: PropertyPickerOptions): {
 			const emptyMsg = dropdown.createDiv({ cls: "tn-pp-empty" });
 			emptyMsg.textContent = query
 				? "No matching properties"
-				: "No custom properties found";
+				: scopeEmptyMessage();
 			return;
 		}
 
@@ -252,7 +322,7 @@ export function createPropertyPicker(options: PropertyPickerOptions): {
 			const emptyMsg = dropdown.createDiv({ cls: "tn-pp-empty" });
 			emptyMsg.textContent = query
 				? "No matching properties"
-				: "No custom properties found across task files";
+				: scopeEmptyMessage();
 			return;
 		}
 
@@ -975,14 +1045,7 @@ export function createPropertyPicker(options: PropertyPickerOptions): {
 		}
 	});
 
-	toggleCheckbox.addEventListener("change", () => {
-		isVaultWide = toggleCheckbox.checked;
-		if (options.onVaultWideChange) options.onVaultWideChange(isVaultWide);
-		if (isDropdownOpen) {
-			loadProperties();
-			renderDropdown();
-		}
-	});
+	// (Scope chip click handlers are set up in renderScopeChips() above)
 
 	// Close dropdown when clicking outside.
 	// window/document listeners don't receive events inside Obsidian modals,
@@ -1013,9 +1076,13 @@ export function createPropertyPicker(options: PropertyPickerOptions): {
 		}, 200);
 	});
 
-	// Prevent blur-close when interacting with dropdown items
+	// Prevent blur-close when interacting with dropdown items or scope chips
 	let dropdownClickedRecently = false;
 	dropdown.addEventListener("mousedown", () => {
+		dropdownClickedRecently = true;
+		setTimeout(() => { dropdownClickedRecently = false; }, 300);
+	});
+	scopeChipsContainer.addEventListener("mousedown", () => {
 		dropdownClickedRecently = true;
 		setTimeout(() => { dropdownClickedRecently = false; }, 300);
 	});
