@@ -4,6 +4,12 @@ All notable changes to this TaskNotes fork will be documented in this file.
 
 This fork (`cybersader/tasknotes`) adds bulk tasking, notifications, and other enhancements to the upstream [TaskNotes](https://github.com/callumalpass/tasknotes) plugin.
 
+## [4.3.41] - 2026-02-19
+
+### Fixed
+- **View mappings now pre-populate Generate/Convert PropertyPicker**: Field mappings configured in "Base view settings" (e.g., `deadline` → Due date) now appear as active property rows with "Use as" badges when opening the Generate or Convert tabs. Previously, mappings were only passed to engines at execution time but not shown in the UI.
+- **View default properties pre-loaded into bulk workflows**: Default property values configured per-view in the .base YAML are now loaded into the Generate/Convert custom properties section, so users can see and adjust them before execution.
+
 ## [4.3.40] - 2026-02-18
 
 ### Added

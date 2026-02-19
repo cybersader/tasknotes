@@ -89,6 +89,7 @@ export class BulkTaskCreationModal extends Modal {
 	private customPropsPanel: HTMLElement | null = null; // Picker lives here (createPropertyPicker takes it over)
 	private activeListEl: HTMLElement | null = null; // Property rows — sibling of panel, safe from picker's container.empty()
 	private excludeKeysSet = new Set<string>(); // Shared mutable set — picker's refresh() reuses it
+	private bulkPreloadedFromView = false; // Whether view mappings+defaults have been loaded into bulk state
 
 	// View Settings state
 	private viewSettingsContainer: HTMLElement | null = null;
@@ -436,11 +437,16 @@ export class BulkTaskCreationModal extends Modal {
 			},
 		});
 
-		// Vault-wide toggle visible — user controls whether to search all tasks or just selected items
-
 		// Render active custom properties (if any were set before a re-render)
 		this.renderCustomPropsActiveList();
 
+		// Pre-load view field mappings + defaults into bulk state (once).
+		// Copies modalOptions.viewFieldMapping → bulkFieldOverrides and loads
+		// default property values from .base YAML → bulkCustomProperties.
+		// After async loading completes, refreshes the picker and active list.
+		if (!this.bulkPreloadedFromView) {
+			this.preloadBulkFromViewSettings();
+		}
 	}
 
 	/**
@@ -737,6 +743,68 @@ export class BulkTaskCreationModal extends Modal {
 	private refreshPropertyPicker() {
 		this.syncExcludeKeys();
 		this.propertyPickerInstance?.refresh();
+	}
+
+	/**
+	 * Pre-populate bulkFieldOverrides and bulkCustomProperties from the view's
+	 * field mapping and default properties (ADR-011). Called once before the
+	 * Generate/Convert PropertyPicker is first created so mapped properties
+	 * appear as active rows with "Use as" badges.
+	 *
+	 * Synchronously copies modalOptions.viewFieldMapping into bulkFieldOverrides,
+	 * then async-loads view defaults from the .base YAML into bulkCustomProperties.
+	 */
+	private async preloadBulkFromViewSettings() {
+		if (this.bulkPreloadedFromView) return;
+		this.bulkPreloadedFromView = true;
+
+		// 1. Copy view field mapping into bulk overrides
+		if (this.modalOptions.viewFieldMapping) {
+			for (const [fieldKey, propName] of Object.entries(this.modalOptions.viewFieldMapping)) {
+				if (propName && !this.bulkFieldOverrides[fieldKey]) {
+					this.bulkFieldOverrides[fieldKey] = propName;
+				}
+			}
+		}
+
+		// 2. Load view default properties from .base YAML
+		if (this.baseFilePath) {
+			const file = this.app.vault.getAbstractFileByPath(this.baseFilePath);
+			if (file instanceof TFile) {
+				const viewIndex = this.modalOptions.viewIndex ?? 0;
+				try {
+					const defaults = await this.plugin.baseIdentityService?.getViewDefaults(file, viewIndex);
+					if (defaults) {
+						for (const [key, value] of Object.entries(defaults)) {
+							if (!this.bulkCustomProperties[key]) {
+								this.bulkCustomProperties[key] = {
+									type: this.inferPropertyType(value),
+									value,
+								};
+							}
+						}
+					}
+				} catch {
+					// Defaults are optional — silently continue
+				}
+			}
+		}
+
+		// 3. Ensure mapped properties have entries in bulkCustomProperties
+		//    so they appear as active rows (even without a default value)
+		for (const [fieldKey, propName] of Object.entries(this.bulkFieldOverrides)) {
+			if (propName && !this.bulkCustomProperties[propName]) {
+				const expectedType = OVERRIDABLE_FIELD_TYPES[fieldKey as OverridableField] || "text";
+				this.bulkCustomProperties[propName] = {
+					type: expectedType as PropertyType,
+					value: "",
+				};
+			}
+		}
+
+		// 4. Refresh the PropertyPicker and active list to reflect new state
+		this.refreshPropertyPicker();
+		this.renderCustomPropsActiveList();
 	}
 
 	/**
