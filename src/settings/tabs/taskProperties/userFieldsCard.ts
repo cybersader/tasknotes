@@ -314,7 +314,7 @@ function renderUserFieldsList(
 			// Update the card header secondary text directly without re-rendering
 			const card = container.querySelector(`[data-card-id="${field.id}"]`);
 			if (card) {
-				const secondaryText = card.querySelector(".tasknotes-settings__card-header-secondary");
+				const secondaryText = card.querySelector(".tasknotes-settings__card-secondary-text");
 				if (secondaryText) {
 					secondaryText.textContent = field.key ||
 						translate("settings.taskProperties.customUserFields.defaultNames.noKey");

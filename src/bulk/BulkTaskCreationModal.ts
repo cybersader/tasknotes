@@ -2433,6 +2433,11 @@ export class BulkTaskCreationModal extends Modal {
 			await this.saveViewFieldMapping();
 			await this.saveViewDefaults();
 			await this.saveViewNotificationConfig();
+			// Reset bulk preload guard + state so viewSettings changes propagate
+			// to Generate/Convert tabs without requiring modal close/reopen
+			this.bulkPreloadedFromView = false;
+			this.bulkCustomProperties = {};
+			this.bulkFieldOverrides = {};
 			await this.preloadBulkFromViewSettings();
 			// Brief "Saved!" feedback on the button
 			if (this.actionButton) {

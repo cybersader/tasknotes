@@ -9,6 +9,7 @@ import {
 import { FolderSuggest } from "../components/FolderSuggest";
 import { TranslationKey } from "../../i18n";
 import { showConfirmationModal } from "../../modals/ConfirmationModal";
+import { migrateTag, migratePropertyValue, migratePropertyName } from "../../utils/settingsMigration";
 
 /**
  * Renders the General tab - foundational settings for task identification and storage
@@ -149,9 +150,31 @@ export function renderGeneralTab(
 						name: translate("settings.general.taskIdentification.taskTag.name"),
 						desc: translate("settings.general.taskIdentification.taskTag.description"),
 						placeholder: "task",
+						commitOnBlur: true,
 						getValue: () => plugin.settings.taskTag,
 						setValue: async (value: string) => {
-							plugin.settings.taskTag = value;
+							const newVal = value.trim();
+							const oldVal = plugin.settings.taskTag;
+							if (newVal === oldVal || !oldVal) {
+								plugin.settings.taskTag = newVal;
+								save();
+								return;
+							}
+
+							const result = await migrateTag({
+								app: plugin.app,
+								plugin,
+								oldTag: oldVal,
+								newTag: newVal,
+								description: "task notes",
+							});
+
+							if (result === "cancelled") {
+								const inputEl = setting.controlEl.querySelector("input");
+								if (inputEl) (inputEl as HTMLInputElement).value = oldVal;
+								return;
+							}
+							plugin.settings.taskTag = newVal;
 							save();
 						},
 						ariaLabel: "Task identification tag",
@@ -175,9 +198,31 @@ export function renderGeneralTab(
 						name: translate("settings.general.taskIdentification.taskProperty.name"),
 						desc: translate("settings.general.taskIdentification.taskProperty.description"),
 						placeholder: "category",
+						commitOnBlur: true,
 						getValue: () => plugin.settings.taskPropertyName,
 						setValue: async (value: string) => {
-							plugin.settings.taskPropertyName = value;
+							const newVal = value.trim();
+							const oldVal = plugin.settings.taskPropertyName;
+							if (newVal === oldVal || !oldVal) {
+								plugin.settings.taskPropertyName = newVal;
+								save();
+								return;
+							}
+
+							const result = await migratePropertyName({
+								app: plugin.app,
+								plugin,
+								oldPropertyName: oldVal,
+								newPropertyName: newVal,
+								description: "task notes",
+							});
+
+							if (result === "cancelled") {
+								const inputEl = setting.controlEl.querySelector("input");
+								if (inputEl) (inputEl as HTMLInputElement).value = oldVal;
+								return;
+							}
+							plugin.settings.taskPropertyName = newVal;
 							save();
 						},
 					})
@@ -188,9 +233,39 @@ export function renderGeneralTab(
 						name: translate("settings.general.taskIdentification.taskPropertyValue.name"),
 						desc: translate("settings.general.taskIdentification.taskPropertyValue.description"),
 						placeholder: "task",
+						commitOnBlur: true,
 						getValue: () => plugin.settings.taskPropertyValue,
 						setValue: async (value: string) => {
-							plugin.settings.taskPropertyValue = value;
+							const newVal = value.trim();
+							const oldVal = plugin.settings.taskPropertyValue;
+							if (newVal === oldVal || !oldVal) {
+								plugin.settings.taskPropertyValue = newVal;
+								save();
+								return;
+							}
+
+							const propName = plugin.settings.taskPropertyName;
+							if (!propName) {
+								plugin.settings.taskPropertyValue = newVal;
+								save();
+								return;
+							}
+
+							const result = await migratePropertyValue({
+								app: plugin.app,
+								plugin,
+								propertyName: propName,
+								oldValue: oldVal,
+								newValue: newVal,
+								description: "task notes",
+							});
+
+							if (result === "cancelled") {
+								const inputEl = setting.controlEl.querySelector("input");
+								if (inputEl) (inputEl as HTMLInputElement).value = oldVal;
+								return;
+							}
+							plugin.settings.taskPropertyValue = newVal;
 							save();
 						},
 					})

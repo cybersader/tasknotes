@@ -17,6 +17,7 @@ import {
 	CardRow,
 } from "../components/CardComponent";
 import { initializeFieldConfig } from "../../utils/fieldConfigDefaults";
+import { migratePropertyName } from "../../utils/settingsMigration";
 
 // Import property card modules
 import {
@@ -291,7 +292,7 @@ function renderNoteUuidPropertyCard(
 		// Update header badge and secondary text
 		const card = container.querySelector('[data-card-id="property-noteUuid"]');
 		if (card) {
-			const secondaryText = card.querySelector(".tasknotes-settings__card-header-secondary");
+			const secondaryText = card.querySelector(".tasknotes-settings__card-secondary-text");
 			if (secondaryText) {
 				secondaryText.textContent = cleaned || "(disabled)";
 			}
@@ -350,31 +351,22 @@ function renderTypePropertyCard(
 
 	// Property name input
 	const propertyNameInput = createCardInput("text", "tnType", propName);
-	propertyNameInput.addEventListener("change", () => {
+	propertyNameInput.addEventListener("change", async () => {
 		const cleaned = propertyNameInput.value.trim() || "tnType";
 		const oldPropName = plugin.settings.identityTypePropertyName || "tnType";
 
 		if (cleaned !== oldPropName) {
-			// Count notes using the OLD property name
-			const personValue = plugin.settings.personTypeValue || "tn-person";
-			const groupValue = plugin.settings.groupTypeValue || "tn-group";
-			let personCount = 0;
-			let groupCount = 0;
-			for (const file of plugin.app.vault.getMarkdownFiles()) {
-				const fm = plugin.app.metadataCache.getFileCache(file)?.frontmatter;
-				if (!fm || !fm[oldPropName]) continue;
-				if (fm[oldPropName] === personValue) personCount++;
-				if (fm[oldPropName] === groupValue) groupCount++;
-			}
+			const result = await migratePropertyName({
+				app: plugin.app,
+				plugin,
+				oldPropertyName: oldPropName,
+				newPropertyName: cleaned,
+				description: "person and group notes",
+			});
 
-			if (personCount > 0 || groupCount > 0) {
-				const parts: string[] = [];
-				if (personCount > 0) parts.push(`${personCount} person note${personCount === 1 ? "" : "s"}`);
-				if (groupCount > 0) parts.push(`${groupCount} group note${groupCount === 1 ? "" : "s"}`);
-				new Notice(
-					`Warning: ${parts.join(" and ")} currently use "${oldPropName}" and won't be recognized with the new name "${cleaned}". You'll need to update their frontmatter manually.`,
-					8000
-				);
+			if (result === "cancelled") {
+				propertyNameInput.value = oldPropName;
+				return;
 			}
 		}
 
@@ -383,7 +375,7 @@ function renderTypePropertyCard(
 		// Update header secondary text
 		const card = container.querySelector('[data-card-id="property-type"]');
 		if (card) {
-			const secondaryText = card.querySelector(".tasknotes-settings__card-header-secondary");
+			const secondaryText = card.querySelector(".tasknotes-settings__card-secondary-text");
 			if (secondaryText) {
 				secondaryText.textContent = cleaned;
 			}
@@ -509,8 +501,27 @@ function renderCreatorFieldCard(
 		fieldKey
 	);
 
-	propertyKeyInput.addEventListener("change", () => {
+	propertyKeyInput.addEventListener("change", async () => {
 		const newKey = propertyKeyInput.value.trim() || "creator";
+		const oldKey = plugin.settings.creatorFieldName || "creator";
+
+		if (newKey !== oldKey) {
+			const taskFolder = plugin.settings.tasksFolder || "";
+			const result = await migratePropertyName({
+				app: plugin.app,
+				plugin,
+				oldPropertyName: oldKey,
+				newPropertyName: newKey,
+				fileFilter: taskFolder ? (f) => f.path.startsWith(taskFolder) : undefined,
+				description: "task notes",
+			});
+
+			if (result === "cancelled") {
+				propertyKeyInput.value = oldKey;
+				return;
+			}
+		}
+
 		plugin.settings.creatorFieldName = newKey;
 
 		// Also update the UserMappedField key if it exists
@@ -521,7 +532,7 @@ function renderCreatorFieldCard(
 		// Update header secondary text
 		const card = container.querySelector('[data-card-id="property-creator"]');
 		if (card) {
-			const secondaryText = card.querySelector(".tasknotes-settings__card-header-secondary");
+			const secondaryText = card.querySelector(".tasknotes-settings__card-secondary-text");
 			if (secondaryText) {
 				secondaryText.textContent = newKey;
 			}
@@ -654,8 +665,27 @@ function renderAssigneeFieldCard(
 		fieldKey
 	);
 
-	propertyKeyInput.addEventListener("change", () => {
+	propertyKeyInput.addEventListener("change", async () => {
 		const newKey = propertyKeyInput.value.trim() || "assignee";
+		const oldKey = plugin.settings.assigneeFieldName || "assignee";
+
+		if (newKey !== oldKey) {
+			const taskFolder = plugin.settings.tasksFolder || "";
+			const result = await migratePropertyName({
+				app: plugin.app,
+				plugin,
+				oldPropertyName: oldKey,
+				newPropertyName: newKey,
+				fileFilter: taskFolder ? (f) => f.path.startsWith(taskFolder) : undefined,
+				description: "task notes",
+			});
+
+			if (result === "cancelled") {
+				propertyKeyInput.value = oldKey;
+				return;
+			}
+		}
+
 		plugin.settings.assigneeFieldName = newKey;
 
 		// Also update the UserMappedField key if it exists
@@ -666,7 +696,7 @@ function renderAssigneeFieldCard(
 		// Update header secondary text
 		const card = container.querySelector('[data-card-id="property-assignees"]');
 		if (card) {
-			const secondaryText = card.querySelector(".tasknotes-settings__card-header-secondary");
+			const secondaryText = card.querySelector(".tasknotes-settings__card-secondary-text");
 			if (secondaryText) {
 				secondaryText.textContent = newKey;
 			}

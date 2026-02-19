@@ -10,6 +10,7 @@ import { createPersonGroupPicker } from "../../ui/PersonGroupPicker";
 import type { TranslationKey } from "../../i18n";
 import type { UserMappedField, DeviceUserMapping, LeadTime } from "../../types/settings";
 import { getColorFromName } from "../../ui/PersonAvatar";
+import { migratePropertyValue } from "../../utils/settingsMigration";
 
 /**
  * Helper to update a person note's frontmatter from settings UI.
@@ -310,11 +311,32 @@ function renderPersonNotesSourceSection(
 					.addText((text) => {
 						text
 							.setPlaceholder("tn-person")
-							.setValue(plugin.settings.personTypeValue)
-							.onChange(async (value) => {
-								plugin.settings.personTypeValue = value.trim() || "tn-person";
-								save();
+							.setValue(plugin.settings.personTypeValue);
+						// Use native "change" event (fires on blur) instead of onChange (fires per keystroke)
+						text.inputEl.addEventListener("change", async () => {
+							const newVal = text.inputEl.value.trim() || "tn-person";
+							const oldVal = plugin.settings.personTypeValue;
+							if (newVal === oldVal) return;
+
+							const propName = plugin.settings.identityTypePropertyName || "tnType";
+							const folder = plugin.settings.personNotesFolder;
+							const result = await migratePropertyValue({
+								app: plugin.app,
+								plugin,
+								propertyName: propName,
+								oldValue: oldVal,
+								newValue: newVal,
+								fileFilter: folder ? (f) => f.path.startsWith(folder) : undefined,
+								description: "person notes",
 							});
+
+							if (result === "cancelled") {
+								text.setValue(oldVal);
+								return;
+							}
+							plugin.settings.personTypeValue = newVal;
+							save();
+						});
 					});
 			});
 		}
@@ -414,11 +436,32 @@ function renderGroupNotesSection(
 					.addText((text) => {
 						text
 							.setPlaceholder("tn-group")
-							.setValue(plugin.settings.groupTypeValue)
-							.onChange(async (value) => {
-								plugin.settings.groupTypeValue = value.trim() || "tn-group";
-								save();
+							.setValue(plugin.settings.groupTypeValue);
+						// Use native "change" event (fires on blur) instead of onChange (fires per keystroke)
+						text.inputEl.addEventListener("change", async () => {
+							const newVal = text.inputEl.value.trim() || "tn-group";
+							const oldVal = plugin.settings.groupTypeValue;
+							if (newVal === oldVal) return;
+
+							const propName = plugin.settings.identityTypePropertyName || "tnType";
+							const folder = plugin.settings.groupNotesFolder || plugin.settings.personNotesFolder;
+							const result = await migratePropertyValue({
+								app: plugin.app,
+								plugin,
+								propertyName: propName,
+								oldValue: oldVal,
+								newValue: newVal,
+								fileFilter: folder ? (f) => f.path.startsWith(folder) : undefined,
+								description: "group notes",
 							});
+
+							if (result === "cancelled") {
+								text.setValue(oldVal);
+								return;
+							}
+							plugin.settings.groupTypeValue = newVal;
+							save();
+						});
 					});
 			});
 

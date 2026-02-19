@@ -2261,6 +2261,7 @@ export const en: TranslationTree = {
 		openKanbanView: "Open kanban board",
 		openPomodoroStats: "Open pomodoro statistics",
 		openStatisticsView: "Open task & project statistics",
+		openUpcomingView: "Open upcoming view",
 		createNewTask: "Create new task",
 		convertCurrentNoteToTask: {
 			name: "Convert current note to task",
@@ -2291,6 +2292,8 @@ export const en: TranslationTree = {
 		// Notification commands
 		showNotificationToast: "Show notification toast",
 		syncBaseNotifications: "Sync base notifications",
+		// Migration commands
+		migrateFrontmatter: "Migrate frontmatter properties",
 	},
 	modals: {
 		deviceCode: {

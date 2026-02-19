@@ -46,6 +46,7 @@ import { TaskCreationModal } from "./modals/TaskCreationModal";
 import { TaskEditModal } from "./modals/TaskEditModal";
 import { openTaskSelector } from "./modals/TaskSelectorWithCreateModal";
 import { TimeEntryEditorModal } from "./modals/TimeEntryEditorModal";
+import { MigrationModal } from "./modals/MigrationModal";
 import { PomodoroService } from "./services/PomodoroService";
 import { formatTime, getActiveTimeEntry } from "./utils/helpers";
 import { convertUTCToLocalCalendarDate, getCurrentTimestamp } from "./utils/dateUtils";
@@ -1848,7 +1849,7 @@ export default class TaskNotesPlugin extends Plugin {
 			},
 			{
 				id: "open-upcoming-view",
-				nameKey: "commands.openUpcomingView" as TranslationKey,
+				nameKey: "commands.openUpcomingView",
 				callback: async () => {
 					await this.openBasesFileForCommand('open-upcoming-view');
 				},
@@ -2071,6 +2072,14 @@ export default class TaskNotesPlugin extends Plugin {
 				callback: async () => {
 					const result = await this.baseNotificationSyncService.manualSync();
 					new Notice(`Base notifications synced: ${result.created} created, ${result.updated} updated, ${result.completed} completed`);
+				},
+			},
+			// Frontmatter migration command
+			{
+				id: "migrate-frontmatter",
+				nameKey: "commands.migrateFrontmatter" as TranslationKey,
+				callback: () => {
+					new MigrationModal(this.app, this).open();
 				},
 			},
 		];
