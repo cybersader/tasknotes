@@ -236,9 +236,32 @@ export abstract class BasesViewBase extends Component {
 	}
 
 	/**
+	 * Check if TaskNotes UI should be shown for this view by reading the .base YAML directly.
+	 * Defaults to true if the .base file can't be read or showTaskNotesUI is not set.
+	 */
+	private async shouldShowUI(): Promise<boolean> {
+		const baseFile = this.findBaseFile();
+		if (!baseFile) return true;
+		try {
+			const content = await this.plugin.app.vault.read(baseFile);
+			const parsed = parseYaml(content);
+			if (!parsed?.views || !Array.isArray(parsed.views)) return true;
+			const myType = (this as any).type as string;
+			const viewConfig = parsed.views.find((v: any) => v?.type === myType);
+			return viewConfig?.showTaskNotesUI !== false;
+		} catch {
+			return true;
+		}
+	}
+
+	/**
 	 * Inject the custom "New Task" button into the Bases toolbar.
 	 */
-	private injectNewTaskButton(): void {
+	private async injectNewTaskButton(): Promise<void> {
+		// Check if TaskNotes UI is disabled for this view
+		const showUI = await this.shouldShowUI();
+		if (!showUI) return;
+
 		// Find the Bases view container
 		const basesViewEl = this.containerEl.closest(".bases-view");
 		if (!basesViewEl) {
@@ -265,6 +288,10 @@ export abstract class BasesViewBase extends Component {
 			this.plugin.debugLog.log("BasesViewBase", "No .bases-toolbar found in parent");
 			return;
 		}
+
+		// Remove any universal-injected buttons (BasesToolbarInjector may have placed
+		// them before BasesViewBase took over this toolbar)
+		toolbarEl.querySelectorAll(".tn-universal-injected").forEach(btn => btn.remove());
 
 		// Check if we already added the button (reuse existing)
 		if (toolbarEl.querySelector(".tn-bases-new-task-btn")) return;
@@ -323,9 +350,13 @@ export abstract class BasesViewBase extends Component {
 	/**
 	 * Inject the "Bulk tasking" button into the Bases toolbar.
 	 */
-	private injectBulkCreationButton(): void {
+	private async injectBulkCreationButton(): Promise<void> {
 		// Respect settings toggle
 		if (!this.plugin.settings.enableBulkActionsButton) return;
+
+		// Check if TaskNotes UI is disabled for this view
+		const showUI = await this.shouldShowUI();
+		if (!showUI) return;
 
 		// Find the Bases view container
 		const basesViewEl = this.containerEl.closest(".bases-view");
@@ -421,6 +452,7 @@ export abstract class BasesViewBase extends Component {
 				viewFieldMapping: mappingCtx?.viewFieldMapping,
 				sourceBaseId: mappingCtx?.baseId,
 				sourceViewId: mappingCtx?.viewId,
+				viewIndex: mappingCtx?.viewIndex,
 			}, baseFilePath);
 
 			modal.open();
@@ -1190,6 +1222,7 @@ export abstract class BasesViewBase extends Component {
 		viewFieldMapping?: import("../identity/BaseIdentityService").ViewFieldMapping;
 		baseId?: string;
 		viewId?: string;
+		viewIndex?: number;
 	} | null> {
 		const baseFile = this.findBaseFile();
 		if (!baseFile) return null;
@@ -1202,9 +1235,10 @@ export abstract class BasesViewBase extends Component {
 			// Find the view that matches this view's type
 			// Subclasses define `type` (e.g., "tasknotesTaskList")
 			const myType = (this as any).type as string;
-			const matchingView = parsed.views.find(
+			const viewIndex = parsed.views.findIndex(
 				(v: any) => v?.type === myType
 			);
+			const matchingView = viewIndex >= 0 ? parsed.views[viewIndex] : null;
 
 			if (!matchingView) return null;
 
@@ -1212,6 +1246,7 @@ export abstract class BasesViewBase extends Component {
 				viewFieldMapping: matchingView.tnFieldMapping || undefined,
 				baseId: parsed.tnBaseId || undefined,
 				viewId: matchingView.tnViewId || undefined,
+				viewIndex,
 			};
 		} catch {
 			return null;

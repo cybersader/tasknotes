@@ -5,7 +5,7 @@
  *   - Convert: Add task metadata to existing notes in-place
  */
 
-import { App, Modal, Notice, Setting, setIcon, setTooltip } from "obsidian";
+import { App, Modal, Notice, Setting, TFile, setIcon, setTooltip } from "obsidian";
 import TaskNotesPlugin from "../main";
 import { BasesDataItem } from "../bases/helpers";
 import { BulkTaskEngine, BulkCreationOptions, BulkCreationResult } from "./bulk-task-engine";
@@ -28,7 +28,7 @@ import {
 } from "../utils/fieldOverrideUtils";
 
 
-type BulkMode = "generate" | "convert";
+type BulkMode = "generate" | "convert" | "viewSettings";
 
 export interface BulkTaskCreationModalOptions {
 	/** Called when tasks are created or notes are converted successfully */
@@ -39,6 +39,10 @@ export interface BulkTaskCreationModalOptions {
 	sourceBaseId?: string;
 	/** Source view ID for provenance tracking (ADR-011). */
 	sourceViewId?: string;
+	/** Index of the active view in the .base file's views array */
+	viewIndex?: number;
+	/** If true, open directly to View Settings tab */
+	openToViewSettings?: boolean;
 }
 
 /**
@@ -86,6 +90,17 @@ export class BulkTaskCreationModal extends Modal {
 	private activeListEl: HTMLElement | null = null; // Property rows — sibling of panel, safe from picker's container.empty()
 	private excludeKeysSet = new Set<string>(); // Shared mutable set — picker's refresh() reuses it
 
+	// View Settings state
+	private viewSettingsContainer: HTMLElement | null = null;
+	private notifyEnabled = false;
+	private notifyOn: "any" | "new_items" | "count_threshold" = "any";
+	private notifyThreshold = 1;
+	private viewSettingsLoaded = false;
+	private viewDefaultProperties: Record<string, { type: PropertyType; value: any }> = {};
+	private viewFieldMapping: Record<string, string> = {};
+	private viewPropertiesPickerInstance: { refresh: () => void; destroy: () => void } | null = null;
+	private viewPropertiesActiveListEl: HTMLElement | null = null;
+
 	// UI element references
 	private topSectionsWrapper: HTMLElement | null = null;
 	private bodyContainer: HTMLElement | null = null;
@@ -98,6 +113,7 @@ export class BulkTaskCreationModal extends Modal {
 	private actionButton: HTMLButtonElement | null = null;
 	private progressBar: HTMLElement | null = null;
 	private progressBarInner: HTMLElement | null = null;
+	private summarySpan: HTMLElement | null = null;
 
 	// Action bar icon references (for visual state updates)
 	private dueIcon: HTMLElement | null = null;
@@ -122,7 +138,7 @@ export class BulkTaskCreationModal extends Modal {
 		this.baseFilePath = baseFilePath;
 		this.engine = new BulkTaskEngine(plugin);
 		this.convertEngine = new BulkConvertEngine(plugin);
-		this.mode = plugin.settings.defaultBulkMode || "generate";
+		this.mode = options.openToViewSettings ? "viewSettings" : (plugin.settings.defaultBulkMode || "generate");
 	}
 
 	onOpen() {
@@ -167,8 +183,13 @@ export class BulkTaskCreationModal extends Modal {
 		// Sticky footer with status, progress, and buttons
 		this.renderFooter(contentEl);
 
-		// Initial pre-check
-		this.runPreCheck();
+		// If opened in viewSettings mode, switch to that immediately
+		if (this.mode === "viewSettings") {
+			this.onModeChanged();
+		} else {
+			// Initial pre-check (only for generate/convert modes)
+			this.runPreCheck();
+		}
 
 		// Discover groups asynchronously and rebuild options when done
 		this.discoverGroupsAsync();
@@ -204,7 +225,7 @@ export class BulkTaskCreationModal extends Modal {
 		});
 
 		// Summary
-		header.createSpan({
+		this.summarySpan = header.createSpan({
 			cls: "tn-bulk-modal__summary",
 			text: `${this.items.length} item${this.items.length !== 1 ? "s" : ""}`,
 		});
@@ -241,6 +262,20 @@ export class BulkTaskCreationModal extends Modal {
 				this.updateTabStyles(tabsContainer);
 			}
 		});
+
+		// View Settings tab — icon before text
+		const settingsTab = tabsContainer.createEl("button", {
+			cls: `tn-bulk-modal__tab ${this.mode === "viewSettings" ? "tn-bulk-modal__tab--active" : ""}`,
+		});
+		setIcon(settingsTab.createSpan({ cls: "tn-bulk-modal__tab-icon" }), "settings");
+		settingsTab.appendText("Base view settings");
+		settingsTab.addEventListener("click", () => {
+			if (this.mode !== "viewSettings") {
+				this.mode = "viewSettings";
+				this.onModeChanged();
+				this.updateTabStyles(tabsContainer);
+			}
+		});
 	}
 
 	/**
@@ -248,12 +283,9 @@ export class BulkTaskCreationModal extends Modal {
 	 */
 	private updateTabStyles(tabsContainer: HTMLElement) {
 		const tabs = tabsContainer.querySelectorAll(".tn-bulk-modal__tab");
+		const modes: BulkMode[] = ["generate", "convert", "viewSettings"];
 		tabs.forEach((tab, index) => {
-			if ((index === 0 && this.mode === "generate") || (index === 1 && this.mode === "convert")) {
-				tab.addClass("tn-bulk-modal__tab--active");
-			} else {
-				tab.removeClass("tn-bulk-modal__tab--active");
-			}
+			tab.toggleClass("tn-bulk-modal__tab--active", modes[index] === this.mode);
 		});
 	}
 
@@ -1026,6 +1058,743 @@ export class BulkTaskCreationModal extends Modal {
 		}
 	}
 
+	/**
+	 * Show or create the View Settings body.
+	 * Lazily loads notification config from .base YAML on first open.
+	 */
+	private async showViewSettingsBody() {
+		if (!this.bodyContainer) return;
+
+		// Create container on first use
+		if (!this.viewSettingsContainer) {
+			this.viewSettingsContainer = this.bodyContainer.createDiv({ cls: "tn-bulk-modal__view-settings" });
+		}
+		this.viewSettingsContainer.style.display = "";
+
+		// Load config from YAML on first open
+		if (!this.viewSettingsLoaded) {
+			await this.loadViewNotificationConfig();
+			await this.loadViewFieldMapping();
+			await this.loadViewDefaults();
+			this.viewSettingsLoaded = true;
+		}
+
+		// Re-render the settings UI
+		this.viewSettingsContainer.empty();
+		this.renderViewSettingsBody(this.viewSettingsContainer);
+	}
+
+	/**
+	 * Load notification config from the .base file's per-view YAML.
+	 */
+	private async loadViewNotificationConfig() {
+		if (!this.baseFilePath) return;
+
+		const file = this.app.vault.getAbstractFileByPath(this.baseFilePath);
+		if (!(file instanceof TFile)) return;
+
+		const viewIndex = this.modalOptions.viewIndex ?? 0;
+		try {
+			const config = await this.plugin.baseIdentityService?.getViewNotificationConfig(
+				file,
+				viewIndex
+			);
+			if (config) {
+				this.notifyEnabled = config.notify;
+				this.notifyOn = config.notifyOn as "any" | "new_items" | "count_threshold";
+				this.notifyThreshold = config.notifyThreshold;
+			}
+		} catch (error) {
+			this.plugin.debugLog?.warn("BulkTaskCreationModal", "Failed to load notification config", error);
+		}
+	}
+
+	/**
+	 * Save notification config to the .base file's per-view YAML.
+	 */
+	private async saveViewNotificationConfig() {
+		if (!this.baseFilePath) return;
+
+		const file = this.app.vault.getAbstractFileByPath(this.baseFilePath);
+		if (!(file instanceof TFile)) return;
+
+		const viewIndex = this.modalOptions.viewIndex ?? 0;
+		try {
+			await this.plugin.baseIdentityService?.setViewNotificationConfig(
+				file,
+				viewIndex,
+				{
+					notify: this.notifyEnabled,
+					notifyOn: this.notifyOn,
+					notifyThreshold: this.notifyThreshold,
+				}
+			);
+			// BasesQueryWatcher picks up .base file changes via metadata cache events
+		} catch (error) {
+			this.plugin.debugLog?.warn("BulkTaskCreationModal", "Failed to save notification config", error);
+		}
+	}
+
+	/**
+	 * Load per-view field mapping from the .base file's YAML.
+	 * Must be called BEFORE loadViewDefaults() so mapping entries can be merged.
+	 */
+	private async loadViewFieldMapping() {
+		if (!this.baseFilePath) return;
+
+		const file = this.app.vault.getAbstractFileByPath(this.baseFilePath);
+		if (!(file instanceof TFile)) return;
+
+		const viewIndex = this.modalOptions.viewIndex ?? 0;
+		try {
+			const mapping = await this.plugin.baseIdentityService?.getViewFieldMapping(
+				file,
+				viewIndex
+			);
+			if (mapping) {
+				this.viewFieldMapping = {};
+				for (const [key, value] of Object.entries(mapping)) {
+					if (value) this.viewFieldMapping[key] = value;
+				}
+			}
+		} catch (error) {
+			this.plugin.debugLog?.warn("BulkTaskCreationModal", "Failed to load view field mapping", error);
+		}
+	}
+
+	/**
+	 * Save per-view field mapping to the .base file's YAML.
+	 */
+	private async saveViewFieldMapping() {
+		if (!this.baseFilePath) return;
+
+		const file = this.app.vault.getAbstractFileByPath(this.baseFilePath);
+		if (!(file instanceof TFile)) return;
+
+		const viewIndex = this.modalOptions.viewIndex ?? 0;
+		try {
+			const mapping: import("../identity/BaseIdentityService").ViewFieldMapping = {};
+			for (const [key, value] of Object.entries(this.viewFieldMapping)) {
+				(mapping as any)[key] = value;
+			}
+			await this.plugin.baseIdentityService?.setViewFieldMapping(
+				file,
+				viewIndex,
+				mapping
+			);
+			// Update modal options so Generate/Convert tabs use updated mapping
+			this.modalOptions.viewFieldMapping = mapping;
+		} catch (error) {
+			this.plugin.debugLog?.warn("BulkTaskCreationModal", "Failed to save view field mapping", error);
+		}
+	}
+
+	/**
+	 * Load per-view defaults from the .base file's YAML.
+	 * Populates viewDefaultProperties with type inference.
+	 * Also includes mapped properties (from viewFieldMapping) that have no default value.
+	 */
+	private async loadViewDefaults() {
+		if (!this.baseFilePath) return;
+
+		const file = this.app.vault.getAbstractFileByPath(this.baseFilePath);
+		if (!(file instanceof TFile)) return;
+
+		const viewIndex = this.modalOptions.viewIndex ?? 0;
+		try {
+			const defaults = await this.plugin.baseIdentityService?.getViewDefaults(
+				file,
+				viewIndex
+			);
+			if (defaults) {
+				for (const [key, value] of Object.entries(defaults)) {
+					this.viewDefaultProperties[key] = {
+						type: this.inferPropertyType(value),
+						value,
+					};
+				}
+			}
+			// Include mapped properties that don't already have a default entry
+			for (const [, propName] of Object.entries(this.viewFieldMapping)) {
+				if (propName && !this.viewDefaultProperties[propName]) {
+					const expectedField = Object.entries(this.viewFieldMapping).find(([, v]) => v === propName)?.[0];
+					const expectedType = expectedField ? (OVERRIDABLE_FIELD_TYPES[expectedField as OverridableField] || "text") : "text";
+					this.viewDefaultProperties[propName] = {
+						type: expectedType as PropertyType,
+						value: "",
+					};
+				}
+			}
+		} catch (error) {
+			this.plugin.debugLog?.warn("BulkTaskCreationModal", "Failed to load view defaults", error);
+		}
+	}
+
+	/**
+	 * Infer PropertyType from a raw YAML value.
+	 */
+	private inferPropertyType(value: any): PropertyType {
+		if (typeof value === "boolean") return "boolean";
+		if (typeof value === "number") return "number";
+		if (Array.isArray(value)) return "list";
+		if (value instanceof Date) return "date";
+		if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) return "date";
+		return "text";
+	}
+
+	/**
+	 * Save per-view defaults to the .base file's YAML.
+	 * Flattens viewDefaultProperties to { key: value } for storage.
+	 */
+	private async saveViewDefaults() {
+		if (!this.baseFilePath) return;
+
+		const file = this.app.vault.getAbstractFileByPath(this.baseFilePath);
+		if (!(file instanceof TFile)) return;
+
+		const viewIndex = this.modalOptions.viewIndex ?? 0;
+		try {
+			const flat: Record<string, any> = {};
+			for (const [key, entry] of Object.entries(this.viewDefaultProperties)) {
+				// Only save entries with non-empty values
+				if (entry.value !== "" && entry.value !== undefined && entry.value !== null) {
+					flat[key] = entry.value;
+				}
+			}
+			await this.plugin.baseIdentityService?.setViewDefaults(
+				file,
+				viewIndex,
+				flat
+			);
+		} catch (error) {
+			this.plugin.debugLog?.warn("BulkTaskCreationModal", "Failed to save view defaults", error);
+		}
+	}
+
+	/** Find which core field (if any) a view property is mapped to. */
+	private findViewMappingForProperty(propertyKey: string): OverridableField | null {
+		for (const [fieldKey, propName] of Object.entries(this.viewFieldMapping)) {
+			if (propName === propertyKey) {
+				return fieldKey as OverridableField;
+			}
+		}
+		return null;
+	}
+
+	/** Clear any view mapping that points to a given property key. */
+	private clearViewMappingForProperty(propertyKey: string): void {
+		for (const [fieldKey, propName] of Object.entries(this.viewFieldMapping)) {
+			if (propName === propertyKey) {
+				delete this.viewFieldMapping[fieldKey];
+			}
+		}
+	}
+
+	/**
+	 * Render the unified Default Properties & Anchors section for View Settings.
+	 * Same visual pattern as the Generate/Convert "PROPERTIES & ANCHORS" section.
+	 */
+	private renderViewPropertiesSection(container: HTMLElement) {
+		const section = container.createDiv({ cls: "tn-bulk-modal__section" });
+		const header = section.createDiv({ cls: "tn-bulk-modal__section-header" });
+		header.createSpan({ cls: "tn-bulk-modal__section-label", text: "DEFAULT PROPERTIES & ANCHORS" });
+
+		const helpIcon = header.createSpan({ cls: "tn-bulk-modal__help" });
+		setIcon(helpIcon, "help-circle");
+		setTooltip(helpIcon, "These properties and values are automatically applied to every task created from this view (Generate, Convert, or New Task button). Use 'Map to' to assign custom properties to standard task fields like Due date or Assignee.");
+
+		section.createDiv({
+			cls: "tn-bulk-modal__section-subtitle",
+			text: "Properties pre-populated on tasks created from this view. Use \u2018Map to\u2019 to assign custom properties to standard task fields (e.g., Due date, Scheduled date, Assignee).",
+		});
+
+		// PropertyPicker for adding new properties
+		if (this.viewPropertiesPickerInstance) {
+			this.viewPropertiesPickerInstance.destroy();
+			this.viewPropertiesPickerInstance = null;
+		}
+
+		const pickerContainer = section.createDiv({ cls: "tn-bulk-modal__custom-props-panel" });
+
+		// Active property rows — sibling of picker, safe from picker's container.empty()
+		this.viewPropertiesActiveListEl = section.createDiv({ cls: "tn-bulk-modal__custom-props-active" });
+
+		this.viewPropertiesPickerInstance = createPropertyPicker({
+			container: pickerContainer,
+			plugin: this.plugin,
+			itemPaths: this.items.map(i => i.path).filter((p): p is string => !!p),
+			excludeKeys: new Set(Object.keys(this.viewDefaultProperties)),
+			useAsOptions: Object.entries(OVERRIDABLE_FIELD_LABELS).map(([key, label]) => ({
+				key,
+				label,
+				requiresType: (OVERRIDABLE_FIELD_TYPES[key as OverridableField] || "text") as PropertyType,
+			})),
+			claimedMappings: this.viewFieldMapping,
+			onSelect: (key: string, type: PropertyType, value?: any, useAs?: string) => {
+				if (useAs) {
+					this.clearViewMappingForProperty(key);
+					this.viewFieldMapping[useAs] = key;
+					this.saveViewFieldMapping();
+				}
+				this.viewDefaultProperties[key] = { type, value: value ?? "" };
+				this.saveViewDefaults();
+				this.renderViewPropertiesActiveList();
+				this.viewPropertiesPickerInstance?.refresh();
+			},
+		});
+
+		// Render active properties (if any were loaded from YAML)
+		this.renderViewPropertiesActiveList();
+	}
+
+	/**
+	 * Render the active view properties list with expandable mapping rows.
+	 * Follows the same pattern as renderCustomPropsActiveList() for Generate/Convert.
+	 */
+	private renderViewPropertiesActiveList() {
+		if (!this.viewPropertiesActiveListEl) return;
+		this.viewPropertiesActiveListEl.empty();
+
+		const keys = Object.keys(this.viewDefaultProperties);
+		if (keys.length === 0) return;
+
+		for (const key of keys) {
+			const entry = this.viewDefaultProperties[key];
+			const displayName = keyToDisplayName(key);
+
+			const row = this.viewPropertiesActiveListEl.createDiv({ cls: "tn-prop-row" });
+			const currentMapping = this.findViewMappingForProperty(key);
+			if (currentMapping) {
+				row.classList.add("tn-prop-row--expanded");
+			}
+
+			// ── Header row ──
+			const rowHeader = row.createDiv({ cls: "tn-prop-row__header" });
+
+			// Expand toggle
+			{
+				const toggle = rowHeader.createDiv({ cls: "tn-prop-row__expand-toggle" });
+				const svgNS = "http://www.w3.org/2000/svg";
+				const chevronSvg = document.createElementNS(svgNS, "svg");
+				chevronSvg.setAttribute("width", "12");
+				chevronSvg.setAttribute("height", "12");
+				chevronSvg.setAttribute("viewBox", "0 0 24 24");
+				chevronSvg.setAttribute("fill", "none");
+				chevronSvg.setAttribute("stroke", "currentColor");
+				chevronSvg.setAttribute("stroke-width", "2");
+				chevronSvg.setAttribute("stroke-linecap", "round");
+				chevronSvg.setAttribute("stroke-linejoin", "round");
+				const path = document.createElementNS(svgNS, "path");
+				path.setAttribute("d", "M9 18l6-6-6-6");
+				chevronSvg.appendChild(path);
+				toggle.appendChild(chevronSvg);
+				toggle.addEventListener("click", () => {
+					row.classList.toggle("tn-prop-row--expanded");
+				});
+			}
+
+			// Property key label
+			rowHeader.createDiv({ cls: "tn-prop-row__key", text: displayName });
+
+			// Type badge
+			rowHeader.createDiv({ cls: "tn-prop-row__type-badge", text: entry.type });
+
+			// Value input
+			const valueContainer = rowHeader.createDiv({ cls: "tn-prop-row__value" });
+			this.renderViewPropValueInput(valueContainer, key, entry);
+
+			// Mapping badge
+			if (currentMapping) {
+				const badge = rowHeader.createDiv({ cls: "tn-prop-row__mapping-badge" });
+				const pinSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+				pinSvg.setAttribute("width", "10");
+				pinSvg.setAttribute("height", "10");
+				pinSvg.setAttribute("viewBox", "0 0 24 24");
+				pinSvg.setAttribute("fill", "none");
+				pinSvg.setAttribute("stroke", "currentColor");
+				pinSvg.setAttribute("stroke-width", "2");
+				const pinPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+				pinPath.setAttribute("d", "M12 17v5M9 2h6l-1 7h4l-8 8 2-7H8l1-8z");
+				pinSvg.appendChild(pinPath);
+				badge.appendChild(pinSvg);
+				badge.createSpan({ text: OVERRIDABLE_FIELD_LABELS[currentMapping] });
+			}
+
+			// Remove button
+			const removeBtn = rowHeader.createDiv({ cls: "tn-prop-row__remove" });
+			const removeSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+			removeSvg.setAttribute("width", "14");
+			removeSvg.setAttribute("height", "14");
+			removeSvg.setAttribute("viewBox", "0 0 24 24");
+			removeSvg.setAttribute("fill", "none");
+			removeSvg.setAttribute("stroke", "currentColor");
+			removeSvg.setAttribute("stroke-width", "2");
+			const removePath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+			removePath.setAttribute("d", "M18 6L6 18M6 6l12 12");
+			removeSvg.appendChild(removePath);
+			removeBtn.appendChild(removeSvg);
+			removeBtn.title = "Remove default";
+			removeBtn.addEventListener("click", () => {
+				this.clearViewMappingForProperty(key);
+				this.saveViewFieldMapping();
+				delete this.viewDefaultProperties[key];
+				this.saveViewDefaults();
+				this.renderViewPropertiesActiveList();
+				this.viewPropertiesPickerInstance?.refresh();
+			});
+
+			// ── Mapping panel ──
+			{
+				const panel = row.createDiv({ cls: "tn-prop-row__mapping-panel" });
+				const mappingRow = panel.createDiv({ cls: "tn-prop-row__mapping-row" });
+				mappingRow.createDiv({ cls: "tn-prop-row__mapping-label", text: "Map to:" });
+
+				const select = mappingRow.createEl("select", { cls: "tn-prop-row__mapping-dropdown" });
+
+				const mappingHelp = mappingRow.createSpan({ cls: "tn-prop-row__mapping-help" });
+				setIcon(mappingHelp, "help-circle");
+				setTooltip(mappingHelp, "Map this property to a standard task field. Saved to the .base file for this view.");
+
+				const noneOpt = select.createEl("option", { value: "", text: "None (custom only)" });
+				if (!currentMapping) noneOpt.selected = true;
+
+				for (const [fieldKey, label] of Object.entries(OVERRIDABLE_FIELD_LABELS)) {
+					const opt = select.createEl("option", { value: fieldKey, text: label });
+					if (currentMapping === fieldKey) opt.selected = true;
+
+					const existingProp = this.viewFieldMapping[fieldKey];
+					if (existingProp && existingProp !== key) {
+						opt.disabled = true;
+						opt.text = `${label} (used by ${existingProp})`;
+					}
+				}
+
+				select.addEventListener("change", () => {
+					const newField = select.value;
+					this.clearViewMappingForProperty(key);
+					if (newField) {
+						this.viewFieldMapping[newField] = key;
+					}
+					this.saveViewFieldMapping();
+					this.renderViewPropertiesActiveList();
+				});
+
+				// ── Type mismatch note ──
+				const expectedType = currentMapping ? (OVERRIDABLE_FIELD_TYPES[currentMapping as OverridableField] || "text") : null;
+				if (currentMapping && expectedType && entry.type !== expectedType) {
+					const mismatch = panel.createDiv({ cls: "tn-prop-row__type-mismatch" });
+					mismatch.createSpan({ cls: "tn-prop-row__type-mismatch-icon", text: "\u26A0" });
+					mismatch.createSpan({
+						cls: "tn-prop-row__type-mismatch-text",
+						text: `Property type is '${entry.type}', but '${OVERRIDABLE_FIELD_LABELS[currentMapping as OverridableField]}' expects '${expectedType}'.`,
+					});
+					const convertAction = mismatch.createEl("a", {
+						cls: "tn-prop-row__type-mismatch-action",
+						text: `Convert to ${expectedType}`,
+					});
+					convertAction.addEventListener("click", (e) => {
+						e.preventDefault();
+						entry.type = expectedType as PropertyType;
+						this.renderViewPropertiesActiveList();
+					});
+				}
+			}
+		}
+	}
+
+	/**
+	 * Render a type-appropriate value input for a view default property.
+	 * Same switch/case pattern as renderCustomPropValueInput but saves to viewDefaultProperties.
+	 */
+	private renderViewPropValueInput(
+		container: HTMLElement,
+		key: string,
+		entry: { type: PropertyType; value: any }
+	) {
+		switch (entry.type) {
+			case "date": {
+				const input = container.createEl("input", {
+					cls: "tn-bulk-modal__custom-prop-input",
+					attr: { type: "date" },
+				});
+				const rawValue = entry.value;
+				input.value = rawValue instanceof Date ? rawValue.toISOString().slice(0, 10) : (rawValue || "");
+				input.addEventListener("change", () => {
+					this.viewDefaultProperties[key].value = input.value;
+					this.saveViewDefaults();
+				});
+				break;
+			}
+			case "number": {
+				const input = container.createEl("input", {
+					cls: "tn-bulk-modal__custom-prop-input",
+					attr: { type: "number" },
+				});
+				input.value = String(entry.value ?? 0);
+				input.addEventListener("change", () => {
+					this.viewDefaultProperties[key].value = parseFloat(input.value) || 0;
+					this.saveViewDefaults();
+				});
+				break;
+			}
+			case "boolean": {
+				const toggle = container.createEl("input", {
+					attr: { type: "checkbox" },
+					cls: "tn-bulk-modal__custom-prop-checkbox",
+				});
+				toggle.checked = !!entry.value;
+				toggle.addEventListener("change", () => {
+					this.viewDefaultProperties[key].value = toggle.checked;
+					this.saveViewDefaults();
+				});
+				break;
+			}
+			default: {
+				const input = container.createEl("input", {
+					cls: "tn-bulk-modal__custom-prop-input",
+					attr: {
+						type: "text",
+						placeholder: entry.type === "list" ? "comma-separated" : "value",
+					},
+				});
+				input.value = Array.isArray(entry.value) ? entry.value.join(", ") : (entry.value || "");
+				input.addEventListener("change", () => {
+					if (entry.type === "list") {
+						this.viewDefaultProperties[key].value = input.value.split(",").map(s => s.trim()).filter(Boolean);
+					} else {
+						this.viewDefaultProperties[key].value = input.value;
+					}
+					this.saveViewDefaults();
+				});
+				break;
+			}
+		}
+	}
+
+	/**
+	 * Render the View Settings body with notification config controls.
+	 */
+	private renderViewSettingsBody(container: HTMLElement) {
+		// No base file warning
+		if (!this.baseFilePath) {
+			const warning = container.createDiv({ cls: "tn-bulk-modal__section" });
+			warning.createEl("p", {
+				text: "No base file associated with this view. View settings are not available.",
+				cls: "tn-bulk-modal__section-summary",
+			});
+			return;
+		}
+
+		// ── Default Properties & Anchors (unified section) ──
+		this.renderViewPropertiesSection(container);
+
+		// ── Notifications section ──
+		const notifSection = container.createDiv({ cls: "tn-bulk-modal__section" });
+		const notifHeader = notifSection.createDiv({ cls: "tn-bulk-modal__section-header" });
+		notifHeader.createSpan({ cls: "tn-bulk-modal__section-label", text: "NOTIFICATIONS" });
+
+		const helpIcon = notifHeader.createSpan({ cls: "tn-bulk-modal__help" });
+		setIcon(helpIcon, "help-circle");
+		setTooltip(helpIcon, "Configure when this view triggers notifications. Changes are saved to the .base file automatically.");
+
+		notifSection.createDiv({
+			cls: "tn-bulk-modal__section-subtitle",
+			text: "Get notified when items match this view\u2019s filters",
+		});
+
+		const notifOptions = notifSection.createDiv({ cls: "tn-bulk-modal__options" });
+
+		// Enable notifications toggle
+		new Setting(notifOptions)
+			.setName("Enable notifications")
+			.setDesc("Notify when items match this view's filters")
+			.addToggle((toggle) =>
+				toggle.setValue(this.notifyEnabled).onChange(async (value) => {
+					this.notifyEnabled = value;
+					await this.saveViewNotificationConfig();
+					// Re-render to show/hide dependent controls
+					if (this.viewSettingsContainer) {
+						this.viewSettingsContainer.empty();
+						this.renderViewSettingsBody(this.viewSettingsContainer);
+					}
+				})
+			);
+
+		// Only show mode/threshold when notifications are enabled
+		if (this.notifyEnabled) {
+			// Notify mode dropdown
+			new Setting(notifOptions)
+				.setName("Notify when")
+				.setDesc("Choose what triggers a notification")
+				.addDropdown((dropdown) =>
+					dropdown
+						.addOption("any", "Any results match")
+						.addOption("new_items", "New items appear")
+						.addOption("count_threshold", "Count exceeds threshold")
+						.setValue(this.notifyOn)
+						.onChange(async (value) => {
+							this.notifyOn = value as "any" | "new_items" | "count_threshold";
+							await this.saveViewNotificationConfig();
+							// Re-render to show/hide threshold
+							if (this.viewSettingsContainer) {
+								this.viewSettingsContainer.empty();
+								this.renderViewSettingsBody(this.viewSettingsContainer);
+							}
+						})
+				);
+
+			// Threshold slider (only for count_threshold mode)
+			if (this.notifyOn === "count_threshold") {
+				new Setting(notifOptions)
+					.setName("Threshold count")
+					.setDesc(`Notify when results exceed ${this.notifyThreshold} items`)
+					.addSlider((slider) =>
+						slider
+							.setLimits(1, 100, 1)
+							.setValue(this.notifyThreshold)
+							.setDynamicTooltip()
+							.onChange(async (value) => {
+								this.notifyThreshold = value;
+								// Update description dynamically
+								const descEl = slider.sliderEl.closest(".setting-item")?.querySelector(".setting-item-description");
+								if (descEl) descEl.textContent = `Notify when results exceed ${value} items`;
+								await this.saveViewNotificationConfig();
+							})
+					);
+			}
+		}
+
+		// ── Info callout ──
+		const infoSection = container.createDiv({ cls: "tn-bulk-modal__section tn-bulk-modal__view-settings-info" });
+		const infoEl = infoSection.createDiv({ cls: "tn-bulk-modal__info-callout" });
+		setIcon(infoEl.createSpan({ cls: "tn-bulk-modal__info-icon" }), "info");
+		infoEl.createSpan({
+			text: "Layout and display options (columns, grouping, sorting) are managed by Obsidian\u2019s built-in view controls. ",
+		});
+		const configLink = infoEl.createEl("a", {
+			cls: "tn-bulk-modal__config-link",
+			text: "Open Configure view panel",
+		});
+		setIcon(configLink.createSpan({ cls: "tn-bulk-modal__config-link-arrow" }), "arrow-up-right");
+		configLink.addEventListener("click", (e) => {
+			e.preventDefault();
+			this.openNativeConfigureViewPanel();
+		});
+	}
+
+	/**
+	 * Close this modal and open the native "Configure view" panel
+	 * for the Bases view that launched it.
+	 *
+	 * Flow: close modal → wait for DOM cleanup → open views popup → navigate to configure sub-panel.
+	 * Uses polling instead of fixed timeouts for robustness.
+	 */
+	private openNativeConfigureViewPanel(): void {
+		// Find the workspace leaf showing this .base file BEFORE closing the modal
+		let targetLeafEl: HTMLElement | null = null;
+
+		if (this.baseFilePath) {
+			this.app.workspace.iterateAllLeaves((leaf) => {
+				const state = leaf.getViewState()?.state;
+				if (state?.file === this.baseFilePath) {
+					targetLeafEl = (leaf as any).containerEl as HTMLElement;
+				}
+			});
+		}
+
+		// Close the modal first
+		this.close();
+
+		// Poll until modal containers are gone from DOM, then proceed
+		const pollInterval = 50;
+		const maxWait = 2000;
+		let elapsed = 0;
+
+		const waitForModalClose = () => {
+			if (document.querySelector(".modal-container") && elapsed < maxWait) {
+				elapsed += pollInterval;
+				setTimeout(waitForModalClose, pollInterval);
+				return;
+			}
+			this.openConfigureViewAfterModalClose(targetLeafEl);
+		};
+
+		// Start polling on next frame to let close() take effect
+		requestAnimationFrame(waitForModalClose);
+	}
+
+	/**
+	 * After the BulkTaskCreationModal is fully closed, open the Configure view popup.
+	 */
+	private openConfigureViewAfterModalClose(targetLeafEl: HTMLElement | null): void {
+		if (!targetLeafEl) {
+			new Notice("Could not find the Bases view. Open the view and use the toolbar to configure it.");
+			return;
+		}
+
+		// Check if the configure view popup is already open (user may have left it open)
+		const existingPopup = document.querySelector(
+			".menu.bases-toolbar-views-menu"
+		);
+		if (existingPopup) {
+			// Popup is open — check if already on configure view sub-panel
+			if (existingPopup.querySelector(".view-config-menu")) {
+				// Already showing the configure view panel — nothing to do
+				return;
+			}
+			// Popup is on the views list — click the chevron icon to navigate to configure view
+			const chevron = existingPopup.querySelector(
+				".bases-toolbar-menu-item.is-selected .bases-toolbar-menu-item-icon"
+			) as HTMLElement | null;
+			if (chevron) {
+				chevron.click();
+			}
+			return;
+		}
+
+		// Popup is closed — click the views menu button to open it
+		const viewsMenuBtn = targetLeafEl.querySelector(
+			".bases-toolbar-views-menu .text-icon-button"
+		) as HTMLElement | null;
+
+		if (!viewsMenuBtn) {
+			new Notice("Configure view panel is not available for this view type. Use the toolbar controls instead.");
+			return;
+		}
+
+		viewsMenuBtn.click();
+
+		// Poll for the popup to appear, then click the selected view item
+		const pollInterval = 50;
+		const maxWait = 2000;
+		let elapsed = 0;
+
+		const waitForPopup = () => {
+			const popup = document.querySelector(".menu.bases-toolbar-views-menu");
+			if (popup) {
+				// Popup appeared — check if it went straight to configure view
+				if (popup.querySelector(".view-config-menu")) {
+					return; // Already on configure view
+				}
+				// On views list — click the chevron icon to navigate to configure view
+				const chevron = popup.querySelector(
+					".bases-toolbar-menu-item.is-selected .bases-toolbar-menu-item-icon"
+				) as HTMLElement | null;
+				if (chevron) {
+					chevron.click();
+					return;
+				}
+			}
+			// Keep polling if popup hasn't appeared yet
+			elapsed += pollInterval;
+			if (elapsed < maxWait) {
+				setTimeout(waitForPopup, pollInterval);
+			}
+		};
+
+		setTimeout(waitForPopup, pollInterval);
+	}
+
 	onClose() {
 		// Clean up PersonGroupPicker
 		this.assigneePicker?.destroy();
@@ -1037,6 +1806,12 @@ export class BulkTaskCreationModal extends Modal {
 			this.propertyPickerInstance = null;
 		}
 
+		// Clean up view properties PropertyPicker
+		if (this.viewPropertiesPickerInstance) {
+			this.viewPropertiesPickerInstance.destroy();
+			this.viewPropertiesPickerInstance = null;
+		}
+
 		const { contentEl } = this;
 		contentEl.empty();
 	}
@@ -1045,6 +1820,7 @@ export class BulkTaskCreationModal extends Modal {
 	 * Get action button text for the current mode.
 	 */
 	private getActionButtonText(): string {
+		if (this.mode === "viewSettings") return "Done";
 		return this.mode === "generate" ? "Generate tasks" : "Convert to tasks";
 	}
 
@@ -1052,28 +1828,68 @@ export class BulkTaskCreationModal extends Modal {
 	 * Handle mode change: update UI, rebuild sections, and re-run pre-check.
 	 */
 	private onModeChanged() {
-		// Update action button text
-		if (this.actionButton) {
-			this.actionButton.textContent = this.getActionButtonText();
-			this.actionButton.disabled = false;
+		const isViewSettings = this.mode === "viewSettings";
+
+		// Toggle visibility of bulk-tasking sections vs view settings
+		if (this.topSectionsWrapper) {
+			this.topSectionsWrapper.style.display = isViewSettings ? "none" : "";
 		}
-
-		// Rebuild action bar and assignee section for new mode
-		this.rebuildActionBarAndAssignees();
-
-		// Rebuild options for new mode
-		this.rebuildOptions();
-
-		// Show/hide compatibility section (Convert mode only)
+		if (this.itemsContainer?.closest(".tn-bulk-modal__section")) {
+			(this.itemsContainer.closest(".tn-bulk-modal__section") as HTMLElement).style.display = isViewSettings ? "none" : "";
+		}
+		if (this.itemsListContainer?.closest(".tn-bulk-modal__section")) {
+			// Items section is the parent of itemsContainer — already handled above
+		}
+		if (this.optionsContainer) {
+			this.optionsContainer.style.display = isViewSettings ? "none" : "";
+		}
 		if (this.compatContainer) {
-			this.compatContainer.style.display = this.mode === "convert" ? "block" : "none";
+			this.compatContainer.style.display = (!isViewSettings && this.mode === "convert") ? "block" : "none";
 			if (this.mode !== "convert") {
 				this.compatContainer.empty();
 			}
 		}
 
-		// Re-run pre-check
-		this.runPreCheck();
+		// Hide footer status, progress, and header summary in viewSettings mode
+		if (this.statusContainer) {
+			this.statusContainer.style.display = isViewSettings ? "none" : "";
+		}
+		if (this.progressBar) {
+			this.progressBar.style.display = isViewSettings ? "none" : "";
+		}
+		if (this.summarySpan) {
+			this.summarySpan.style.display = isViewSettings ? "none" : "";
+		}
+
+		// Update action button
+		if (this.actionButton) {
+			if (isViewSettings) {
+				this.actionButton.textContent = "Done";
+				this.actionButton.disabled = false;
+			} else {
+				this.actionButton.textContent = this.getActionButtonText();
+				this.actionButton.disabled = false;
+			}
+		}
+
+		if (isViewSettings) {
+			// Show view settings
+			this.showViewSettingsBody();
+		} else {
+			// Hide view settings container
+			if (this.viewSettingsContainer) {
+				this.viewSettingsContainer.style.display = "none";
+			}
+
+			// Rebuild action bar and assignee section for new mode
+			this.rebuildActionBarAndAssignees();
+
+			// Rebuild options for new mode
+			this.rebuildOptions();
+
+			// Re-run pre-check
+			this.runPreCheck();
+		}
 	}
 
 	/**
@@ -1536,6 +2352,10 @@ export class BulkTaskCreationModal extends Modal {
 	 * Dispatch execution based on current mode.
 	 */
 	private async executeAction() {
+		if (this.mode === "viewSettings") {
+			this.close();
+			return;
+		}
 		if (this.mode === "generate") {
 			await this.executeGeneration();
 		} else {

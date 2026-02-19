@@ -18,6 +18,10 @@ interface MonitoredBase {
 	lastResultCount: number;
 	/** Paths of items in results (for relevance checking) */
 	cachedPaths: Set<string>;
+	/** When to fire notifications: any match, new items only, or count threshold */
+	notifyOn: "any" | "count_threshold" | "new_items";
+	/** Threshold count for count_threshold mode */
+	notifyThreshold: number;
 }
 
 /**
@@ -172,6 +176,8 @@ export class BasesQueryWatcher {
 					snoozedUntil: existing?.snoozedUntil || 0,
 					lastResultCount: existing?.lastResultCount || 0,
 					cachedPaths: existing?.cachedPaths || new Set(),
+					notifyOn: config.notifyOn || "any",
+					notifyThreshold: config.notifyThreshold ?? 1,
 				});
 
 				// Registered base for monitoring
@@ -235,11 +241,25 @@ export class BasesQueryWatcher {
 				// Base parsed successfully
 			}
 
+			// Extract notifyOn/notifyThreshold — check per-view first, then top-level
+			let notifyOn: "any" | "count_threshold" | "new_items" = parsed?.notifyOn || "any";
+			let notifyThreshold = parsed?.notifyThreshold ?? 1;
+
+			if (Array.isArray(parsed?.views)) {
+				for (const view of parsed.views) {
+					if (view?.notify === true) {
+						if (view.notifyOn) notifyOn = view.notifyOn;
+						if (view.notifyThreshold != null) notifyThreshold = view.notifyThreshold;
+						break;
+					}
+				}
+			}
+
 			return {
 				name: parsed?.name,
 				notify: hasNotify,
-				notifyOn: parsed?.notifyOn || "any",
-				notifyThreshold: parsed?.notifyThreshold || 1,
+				notifyOn,
+				notifyThreshold,
 				source: source,
 				filters: filters,
 			};
@@ -373,16 +393,40 @@ export class BasesQueryWatcher {
 
 			try {
 				const results = await this.evaluateBaseQuery(basePath);
-				if (results && results.length > 0) {
-					// Update cached paths for future relevance checks
-					monitored.cachedPaths = new Set(results.map((r) => r.path));
-					monitored.lastResultCount = results.length;
-
-					// Show notification
-					this.showNotification(monitored, results);
-				} else {
+				if (!results || results.length === 0) {
 					monitored.cachedPaths.clear();
 					monitored.lastResultCount = 0;
+					continue;
+				}
+
+				// Apply notifyOn filtering
+				const currentPaths = new Set(results.map((r) => r.path));
+				let shouldNotify = false;
+
+				switch (monitored.notifyOn) {
+					case "any":
+						shouldNotify = true;
+						break;
+					case "new_items": {
+						// Only notify if paths exist that weren't in previous evaluation
+						for (const path of currentPaths) {
+							if (!monitored.cachedPaths.has(path)) {
+								shouldNotify = true;
+								break;
+							}
+						}
+						break;
+					}
+					case "count_threshold":
+						shouldNotify = results.length > monitored.notifyThreshold;
+						break;
+				}
+
+				monitored.cachedPaths = currentPaths;
+				monitored.lastResultCount = results.length;
+
+				if (shouldNotify) {
+					this.showNotification(monitored, results);
 				}
 			} catch (error) {
 				this.plugin.debugLog.error("BasesQueryWatcher", `Error evaluating ${basePath}`, error);
@@ -727,6 +771,28 @@ export class BasesQueryWatcher {
 	}
 
 	/**
+	 * Check whether a base should fire notifications given a result count.
+	 * Used by VaultWideNotificationService for aggregation filtering.
+	 */
+	shouldNotifyForBase(basePath: string, resultCount: number): boolean {
+		const monitored = this.monitoredBases.get(basePath);
+		if (!monitored) return resultCount > 0;
+
+		switch (monitored.notifyOn) {
+			case "any":
+				return resultCount > 0;
+			case "count_threshold":
+				return resultCount > monitored.notifyThreshold;
+			case "new_items":
+				// New-item detection happens in evaluatePendingBases.
+				// For aggregation, return true if there are results.
+				return resultCount > 0;
+			default:
+				return resultCount > 0;
+		}
+	}
+
+	/**
 	 * Called by BasesViewBase when a view with `notify: true` has data.
 	 * This is the primary notification path - uses Bases' own query evaluation.
 	 */
@@ -746,6 +812,8 @@ export class BasesQueryWatcher {
 				snoozedUntil: 0,
 				lastResultCount: 0,
 				cachedPaths: new Set(),
+				notifyOn: "any",
+				notifyThreshold: 1,
 			};
 			this.monitoredBases.set(basePath, monitored);
 		}
@@ -789,6 +857,8 @@ export class BasesQueryWatcher {
 				snoozedUntil: 0,
 				lastResultCount: 0,
 				cachedPaths: new Set(),
+				notifyOn: "any",
+				notifyThreshold: 1,
 			});
 			this.plugin.debugLog.log("BasesQueryWatcher", `View self-registered: ${filePath} (total monitored: ${this.monitoredBases.size})`);
 		}

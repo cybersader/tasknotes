@@ -8,6 +8,12 @@ import { buildMiniCalendarViewFactory } from "./MiniCalendarView";
 import { buildUpcomingViewFactory } from "./UpcomingView";
 import { registerBasesView, unregisterBasesView } from "./api";
 
+// NOTE: Notification controls (notify, notifyOn, notifyThreshold) and showTaskNotesUI
+// are now managed by BasesToolbarInjector's injected TaskNotes section in the Configure
+// view panel. This provides a consistent branded UI across ALL view types (native + TN).
+// BasesQueryWatcher reads notification config directly from YAML.
+// BasesViewBase reads showTaskNotesUI directly from YAML via shouldShowTaskNotesUI().
+
 /**
  * Register TaskNotes views with Bases plugin
  * Requires Obsidian 1.10.1+ (public Bases API with groupBy support)
@@ -39,12 +45,6 @@ export async function registerBasesTaskList(plugin: TaskNotesPlugin): Promise<vo
 						type: "toggle",
 						key: "enableSearch",
 						displayName: "Enable search box",
-						default: false,
-					},
-					{
-						type: "toggle",
-						key: "notify",
-						displayName: "Enable notifications",
 						default: false,
 					},
 				],
@@ -114,12 +114,6 @@ export async function registerBasesTaskList(plugin: TaskNotesPlugin): Promise<vo
 						displayName: "Column Order (Advanced)",
 						placeholder: "Auto-managed when dragging columns",
 						default: "{}",
-					},
-					{
-						type: "toggle",
-						key: "notify",
-						displayName: "Enable notifications",
-						default: false,
 					},
 				],
 			});
@@ -492,14 +486,6 @@ export async function registerBasesTaskList(plugin: TaskNotesPlugin): Promise<vo
 							}
 						}
 
-						// Add notification toggle
-						options.push({
-							type: "toggle",
-							key: "notify",
-							displayName: "Enable notifications",
-							default: false,
-						});
-
 						return options;
 					},
 				});
@@ -531,12 +517,6 @@ export async function registerBasesTaskList(plugin: TaskNotesPlugin): Promise<vo
 							// Show text properties (note, formula, file)
 							return prop.startsWith("note.") || prop.startsWith("formula.") || prop.startsWith("file.");
 						},
-					},
-					{
-						type: "toggle",
-						key: "notify",
-						displayName: "Enable notifications",
-						default: false,
 					},
 				],
 			});

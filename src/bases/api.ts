@@ -94,7 +94,7 @@ export interface MultitextOption {
 export interface GroupOption {
 	type: "group";
 	displayName: string;
-	options: ViewOption[];
+	items: ViewOption[];
 }
 
 /**

@@ -276,6 +276,65 @@ export class BaseIdentityService {
 		await this.writeBaseFile(file, parsed);
 	}
 
+	// ── Notification config operations ──────────────────────────────
+
+	/**
+	 * Read notification config for a specific view index.
+	 * Returns current notify/notifyOn/notifyThreshold values.
+	 */
+	async getViewNotificationConfig(
+		file: TFile,
+		viewIndex: number
+	): Promise<{ notify: boolean; notifyOn: string; notifyThreshold: number }> {
+		const parsed = await this.readBaseFile(file);
+		const view = parsed?.views?.[viewIndex];
+		return {
+			notify: view?.notify === true,
+			notifyOn: view?.notifyOn || "any",
+			notifyThreshold: view?.notifyThreshold ?? 1,
+		};
+	}
+
+	/**
+	 * Set notification config for a specific view.
+	 * Writes notify, notifyOn, and notifyThreshold to the view's YAML.
+	 */
+	async setViewNotificationConfig(
+		file: TFile,
+		viewIndex: number,
+		config: { notify?: boolean; notifyOn?: string; notifyThreshold?: number }
+	): Promise<void> {
+		const parsed = await this.readBaseFile(file);
+		if (!parsed) {
+			throw new Error(`Failed to parse .base file: ${file.path}`);
+		}
+
+		if (!parsed.views?.[viewIndex]) {
+			throw new Error(
+				`View index ${viewIndex} not found in ${file.path}`
+			);
+		}
+
+		const view = parsed.views[viewIndex];
+		if (config.notify !== undefined) view.notify = config.notify;
+		if (config.notifyOn !== undefined) view.notifyOn = config.notifyOn;
+		if (config.notifyThreshold !== undefined) view.notifyThreshold = config.notifyThreshold;
+
+		// Clean up: remove notifyOn/notifyThreshold if notify is false
+		if (view.notify === false) {
+			delete view.notifyOn;
+			delete view.notifyThreshold;
+		}
+
+		await this.writeBaseFile(file, parsed);
+
+		this.plugin.debugLog.log(
+			"BaseIdentityService",
+			`Updated notification config for ${file.path} view[${viewIndex}]:`,
+			config
+		);
+	}
+
 	// ── Lookup operations ───────────────────────────────────────────
 
 	/**

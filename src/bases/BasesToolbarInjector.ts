@@ -1,5 +1,5 @@
 /* eslint-disable no-console */
-import { Notice, setIcon, WorkspaceLeaf, TFile, parseYaml } from "obsidian";
+import { Notice, setIcon, WorkspaceLeaf, TFile, parseYaml, stringifyYaml } from "obsidian";
 import TaskNotesPlugin from "../main";
 import { BulkTaskCreationModal } from "../bulk/BulkTaskCreationModal";
 import type { ViewFieldMapping } from "../identity/BaseIdentityService";
@@ -22,6 +22,7 @@ export class BasesToolbarInjector {
 	private layoutChangeRef: any = null;
 	private scanDebounceTimer: number | null = null;
 	private periodicCheckInterval: number | null = null;
+	private scanInProgress = false;
 
 	// Debounce higher than BasesViewBase's 150ms setTimeout to avoid timing races.
 	// BasesViewBase injects at 100ms (new task) and 150ms (bulk). By 500ms both have
@@ -51,36 +52,49 @@ export class BasesToolbarInjector {
 		// We watch for:
 		// 1. New .bases-toolbar elements being added (initial render)
 		// 2. Children removed from .bases-toolbar (BasesViewBase cleanup on view switch)
+		// 3. .view-config-menu appearing (Configure view panel opened)
 		this.observer = new MutationObserver((mutations) => {
-			let hasRelevantMutation = false;
+			let hasToolbarMutation = false;
+			let hasConfigPanelMutation = false;
 			for (const mutation of mutations) {
-				// Check for new toolbar elements being added
+				// Check for new toolbar elements or configure panels being added
 				for (const node of mutation.addedNodes) {
 					if (node instanceof HTMLElement) {
 						if (
 							node.classList?.contains("bases-toolbar") ||
 							node.querySelector?.(".bases-toolbar")
 						) {
-							hasRelevantMutation = true;
-							break;
+							hasToolbarMutation = true;
+						}
+						if (
+							node.classList?.contains("view-config-menu") ||
+							node.querySelector?.(".view-config-menu")
+						) {
+							hasConfigPanelMutation = true;
 						}
 					}
 				}
-				if (hasRelevantMutation) break;
+				if (hasToolbarMutation && hasConfigPanelMutation) break;
 
 				// Check for buttons removed from a toolbar (view type switch cleanup)
-				if (mutation.removedNodes.length > 0 && mutation.target instanceof HTMLElement) {
+				if (!hasToolbarMutation && mutation.removedNodes.length > 0 && mutation.target instanceof HTMLElement) {
 					if (
 						mutation.target.classList?.contains("bases-toolbar") ||
 						mutation.target.closest?.(".bases-toolbar")
 					) {
-						hasRelevantMutation = true;
-						break;
+						hasToolbarMutation = true;
 					}
 				}
 			}
-			if (hasRelevantMutation) {
+			if (hasToolbarMutation) {
 				this.debouncedScan();
+				// Also check for Configure panels after a delay — view type switches
+				// may reuse an existing .view-config-menu without triggering addedNodes
+				setTimeout(() => this.injectIntoConfigurePanels(), 200);
+			}
+			if (hasConfigPanelMutation) {
+				// Inject immediately — panel is visible now, no debounce needed
+				this.injectIntoConfigurePanels();
 			}
 		});
 
@@ -94,6 +108,7 @@ export class BasesToolbarInjector {
 		// Lightweight — just querySelectorAll + a few class checks, runs every 2s.
 		this.periodicCheckInterval = window.setInterval(() => {
 			this.scanAndInject();
+			this.injectIntoConfigurePanels();
 		}, BasesToolbarInjector.PERIODIC_CHECK_MS);
 
 		// Initial scan for any already-rendered toolbars
@@ -153,32 +168,84 @@ export class BasesToolbarInjector {
 	 * Bases can reuse toolbar elements across view type switches, so cached state
 	 * goes stale. With 500ms debounce and typically 1-2 toolbars, this is fine.
 	 */
-	private scanAndInject(): void {
+	private async scanAndInject(): Promise<void> {
 		if (!this.plugin.settings.enableUniversalBasesButtons) return;
+		if (this.scanInProgress) return;
+		this.scanInProgress = true;
 
-		const toolbars = document.querySelectorAll(".bases-toolbar");
-		for (const toolbar of toolbars) {
-			const parentEl = toolbar.closest(".bases-view")?.parentElement;
-			const isTNView = parentEl?.classList.contains("tasknotes-view-active") ?? false;
+		try {
+			const toolbars = document.querySelectorAll(".bases-toolbar");
+			for (const toolbar of toolbars) {
+				// toolbar and .bases-view are siblings under the same parent (.bases-page)
+				// so use toolbar.parentElement directly (not toolbar.closest(".bases-view")?.parentElement)
+				const parentEl = toolbar.parentElement;
+				const isTNView = parentEl?.classList.contains("tasknotes-view-active") ?? false;
 
-			// CLEANUP: If BasesViewBase has claimed this view, remove any universal buttons
-			if (isTNView) {
-				this.cleanupUniversalButtonsFrom(toolbar as HTMLElement);
-				continue;
+				// CLEANUP: If BasesViewBase has claimed this view, remove any universal buttons
+				if (isTNView) {
+					this.cleanupUniversalButtonsFrom(toolbar as HTMLElement);
+					continue;
+				}
+
+				// Skip if BasesViewBase-injected buttons exist (non-universal — TN view owns this toolbar)
+				const tnBtn = toolbar.querySelector(".tn-bases-new-task-btn:not(.tn-universal-injected)");
+				if (tnBtn) {
+					continue;
+				}
+
+				// Check if user disabled TaskNotes controls for this view
+				const showUI = await this.shouldShowTaskNotesUI(toolbar as HTMLElement);
+
+				// If already injected, remove if disabled; otherwise skip
+				if (toolbar.querySelector(".tn-universal-injected")) {
+					if (!showUI) {
+						this.cleanupUniversalButtonsFrom(toolbar as HTMLElement);
+					}
+					continue;
+				}
+
+				if (!showUI) continue;
+
+				this.injectButtons(toolbar as HTMLElement);
 			}
+		} finally {
+			this.scanInProgress = false;
+		}
+	}
 
-			// Skip if BasesViewBase-injected buttons exist (non-universal — TN view owns this toolbar)
-			const tnBtn = toolbar.querySelector(".tn-bases-new-task-btn:not(.tn-universal-injected)");
-			if (tnBtn) {
-				continue;
+	/**
+	 * Check if TaskNotes controls should be shown for the view associated with a toolbar.
+	 * Reads the `showTaskNotesUI` per-view config from the .base YAML.
+	 * Defaults to true (show) if not configured or if the .base file can't be read.
+	 */
+	private async shouldShowTaskNotesUI(toolbarEl: HTMLElement): Promise<boolean> {
+		const leaf = this.findLeafFromToolbar(toolbarEl);
+		if (!leaf) return true;
+
+		const baseFilePath = leaf.getViewState()?.state?.file as string;
+		if (!baseFilePath) return true;
+
+		const baseFile = this.plugin.app.vault.getAbstractFileByPath(baseFilePath);
+		if (!(baseFile instanceof TFile)) return true;
+
+		try {
+			const content = await this.plugin.app.vault.read(baseFile);
+			const parsed = parseYaml(content);
+			if (!parsed?.views || !Array.isArray(parsed.views)) return true;
+
+			// Find the active view by matching type from leaf state
+			const viewState = leaf.getViewState()?.state;
+			const activeViewType = viewState?.type as string | undefined;
+
+			let viewConfig: any = null;
+			if (activeViewType) {
+				viewConfig = parsed.views.find((v: any) => v?.type === activeViewType);
 			}
+			if (!viewConfig) viewConfig = parsed.views[0];
 
-			// Skip if we already injected universal buttons on this toolbar
-			if (toolbar.querySelector(".tn-universal-injected")) {
-				continue;
-			}
-
-			this.injectButtons(toolbar as HTMLElement);
+			return viewConfig?.showTaskNotesUI !== false;
+		} catch {
+			return true;
 		}
 	}
 
@@ -303,6 +370,7 @@ export class BasesToolbarInjector {
 					viewFieldMapping: mappingCtx?.viewFieldMapping,
 					sourceBaseId: mappingCtx?.baseId,
 					sourceViewId: mappingCtx?.viewId,
+					viewIndex: mappingCtx?.viewIndex,
 				},
 				baseFilePath
 			);
@@ -367,6 +435,7 @@ export class BasesToolbarInjector {
 		viewFieldMapping?: ViewFieldMapping;
 		baseId?: string;
 		viewId?: string;
+		viewIndex?: number;
 	} | null> {
 		if (!baseFilePath) return null;
 
@@ -384,21 +453,23 @@ export class BasesToolbarInjector {
 			const activeViewType = viewState?.type as string | undefined;
 
 			// Try to match by type; if no type in state, use the first view with tnFieldMapping
-			let matchingView: any = null;
+			let viewIndex = -1;
 			if (activeViewType) {
-				matchingView = parsed.views.find((v: any) => v?.type === activeViewType);
+				viewIndex = parsed.views.findIndex((v: any) => v?.type === activeViewType);
 			}
-			if (!matchingView) {
+			if (viewIndex < 0) {
 				// Fallback: first view that has tnFieldMapping configured
-				matchingView = parsed.views.find((v: any) => v?.tnFieldMapping);
+				viewIndex = parsed.views.findIndex((v: any) => v?.tnFieldMapping);
 			}
 
+			const matchingView = viewIndex >= 0 ? parsed.views[viewIndex] : null;
 			if (!matchingView) return null;
 
 			return {
 				viewFieldMapping: matchingView.tnFieldMapping || undefined,
 				baseId: parsed.tnBaseId || undefined,
 				viewId: matchingView.tnViewId || undefined,
+				viewIndex,
 			};
 		} catch {
 			return null;
@@ -564,5 +635,417 @@ export class BasesToolbarInjector {
 		});
 
 		return matchedLeaf;
+	}
+
+	// ── Configure View Panel Injection ─────────────────────────────
+
+	/**
+	 * Find all open Configure view panels and inject TaskNotes controls
+	 * if not already injected.
+	 */
+	private async injectIntoConfigurePanels(): Promise<void> {
+		if (!this.plugin.settings.enableUniversalBasesButtons) return;
+
+		const panels = document.querySelectorAll(".view-config-menu");
+		for (const panel of panels) {
+			// Remove stale sections (e.g., from a previous view type before Layout dropdown change)
+			const existing = panel.querySelectorAll(".tn-configure-panel-injected");
+			if (existing.length > 1) {
+				// Multiple sections = stale duplicates; remove all and re-inject
+				existing.forEach(el => el.remove());
+			} else if (existing.length === 1) {
+				continue; // Already injected, skip
+			}
+			await this.injectConfigurePanelSection(panel as HTMLElement);
+		}
+	}
+
+	/**
+	 * Inject a branded TaskNotes section into a Configure view panel.
+	 * Consistent across ALL view types (native + TN-registered):
+	 * show toggle, notification toggle + "Notify when" dropdown +
+	 * threshold slider, and "Default properties & anchors" link.
+	 */
+	private async injectConfigurePanelSection(panel: HTMLElement): Promise<void> {
+		// Synchronous dedup: if already injected (possibly by a concurrent call), skip
+		if (panel.querySelector(".tn-configure-panel-injected")) return;
+
+		// Claim immediately with an empty marker to prevent races from concurrent async calls
+		const section = document.createElement("div");
+		section.className = "tn-configure-panel-injected";
+		panel.appendChild(section);
+
+		// Find the toolbar with the active views menu to identify the leaf
+		const activeMenuBtn = document.querySelector(
+			".bases-toolbar .bases-toolbar-views-menu .has-active-menu"
+		) as HTMLElement | null;
+		const toolbar = activeMenuBtn?.closest(".bases-toolbar") as HTMLElement | null;
+		if (!toolbar) {
+			section.remove(); // Clean up marker on failure
+			return;
+		}
+
+		const leaf = this.findLeafFromToolbar(toolbar);
+		const baseFilePath = leaf ? (leaf.getViewState()?.state?.file as string) : undefined;
+
+		// Resolve view index + mapping context
+		const mappingCtx = await this.resolveViewMappingFromLeaf(leaf, baseFilePath);
+		const viewIndex = mappingCtx?.viewIndex ?? 0;
+
+		// Read current state from .base YAML (single read for all fields)
+		let notifyEnabled = false;
+		let notifyOn = "any";
+		let notifyThreshold = 1;
+		let showControlsEnabled = true;
+		let baseFile: TFile | null = null;
+
+		if (baseFilePath) {
+			const f = this.plugin.app.vault.getAbstractFileByPath(baseFilePath);
+			if (f instanceof TFile) {
+				baseFile = f;
+				try {
+					const config = await this.plugin.baseIdentityService.getViewNotificationConfig(f, viewIndex);
+					notifyEnabled = config.notify;
+					notifyOn = config.notifyOn;
+					notifyThreshold = config.notifyThreshold;
+				} catch {
+					// Ignore read errors — defaults above
+				}
+				try {
+					const content = await this.plugin.app.vault.read(f);
+					const parsed = parseYaml(content);
+					const viewConfig = parsed?.views?.[viewIndex];
+					if (viewConfig?.showTaskNotesUI === false) showControlsEnabled = false;
+				} catch {
+					// Ignore — defaults above
+				}
+			}
+		}
+
+		// ── Build section content ──
+
+		// Section heading with TaskNotes icon
+		const heading = document.createElement("div");
+		heading.className = "tn-configure-panel-heading";
+		setIcon(heading.createSpan(), "tasknotes-simple");
+		heading.appendText("TaskNotes");
+		section.appendChild(heading);
+
+		// "Show toolbar buttons" toggle row
+		this.buildShowToolbarRow(section, showControlsEnabled, baseFile, baseFilePath, viewIndex, toolbar);
+
+		// "Notify on matches" toggle row (with conditional sub-controls)
+		this.buildNotifyToggleRow(section, notifyEnabled, notifyOn, notifyThreshold, baseFile, baseFilePath, viewIndex, panel);
+
+		// "Default properties & anchors" link
+		this.buildPropertiesLinkRow(section, panel, activeMenuBtn, toolbar, mappingCtx, baseFilePath);
+
+		this.plugin.debugLog.log(
+			"BasesToolbarInjector",
+			`Injected TaskNotes section into Configure view panel for ${baseFilePath || "unknown"}`
+		);
+	}
+
+	// ── Configure panel helper methods ──────────────────────────────
+
+	/**
+	 * Build "Show toolbar buttons" toggle row with "Global setting" link.
+	 */
+	private buildShowToolbarRow(
+		section: HTMLElement,
+		showControlsEnabled: boolean,
+		baseFile: TFile | null,
+		baseFilePath: string | undefined,
+		viewIndex: number,
+		toolbar: HTMLElement,
+	): void {
+		const row = document.createElement("div");
+		row.className = "tn-configure-panel-row";
+
+		const label = document.createElement("div");
+		label.className = "tn-configure-panel-row-label";
+		label.createSpan({ text: "Show toolbar buttons" });
+
+		const hint = label.createEl("a", {
+			cls: "tn-configure-panel-hint",
+			text: "Global setting",
+		});
+		hint.addEventListener("click", (e) => {
+			e.preventDefault();
+			e.stopPropagation();
+			const popupMenu = document.querySelector(".menu.bases-toolbar-views-menu") as HTMLElement | null;
+			if (popupMenu) popupMenu.remove();
+			(this.plugin.app as any).setting?.open?.();
+			(this.plugin.app as any).setting?.openTabById?.(this.plugin.manifest.id);
+			setTimeout(() => {
+				const featuresBtn = document.querySelector("#tab-button-features") as HTMLElement | null;
+				if (featuresBtn) {
+					featuresBtn.click();
+					setTimeout(() => {
+						const tabContent = document.querySelector("#settings-tab-features");
+						const headings = tabContent?.querySelectorAll(".setting-item-heading .setting-item-name");
+						if (headings) {
+							for (const h of headings) {
+								if (h.textContent?.includes("Bases views")) {
+									h.closest(".setting-item")?.scrollIntoView({ behavior: "smooth", block: "center" });
+									break;
+								}
+							}
+						}
+					}, 200);
+				}
+			}, 200);
+		});
+		row.appendChild(label);
+
+		const toggle = document.createElement("div");
+		toggle.className = `checkbox-container${showControlsEnabled ? " is-enabled" : ""}`;
+		toggle.tabIndex = 0;
+		toggle.addEventListener("click", async () => {
+			const newValue = !toggle.classList.contains("is-enabled");
+			toggle.classList.toggle("is-enabled", newValue);
+			if (baseFile) {
+				try {
+					const content = await this.plugin.app.vault.read(baseFile);
+					const parsed = parseYaml(content);
+					if (parsed?.views?.[viewIndex]) {
+						if (newValue) {
+							delete parsed.views[viewIndex].showTaskNotesUI;
+						} else {
+							parsed.views[viewIndex].showTaskNotesUI = false;
+						}
+						await this.plugin.app.vault.modify(baseFile, stringifyYaml(parsed));
+					}
+					if (toolbar) {
+						if (newValue) {
+							if (!toolbar.querySelector(".tn-universal-injected")) {
+								this.injectButtons(toolbar);
+							}
+						} else {
+							this.cleanupUniversalButtonsFrom(toolbar);
+						}
+					}
+					this.plugin.debugLog.log(
+						"BasesToolbarInjector",
+						`Toggled showTaskNotesUI ${newValue ? "on" : "off"} for ${baseFilePath} view[${viewIndex}]`
+					);
+				} catch (error) {
+					console.error("[TaskNotes] Failed to save showTaskNotesUI:", error);
+					toggle.classList.toggle("is-enabled", !newValue);
+				}
+			}
+		});
+		row.appendChild(toggle);
+		section.appendChild(row);
+	}
+
+	/**
+	 * Build notification toggle row, plus conditional "Notify when" dropdown
+	 * and "Threshold count" slider.
+	 */
+	private buildNotifyToggleRow(
+		section: HTMLElement,
+		notifyEnabled: boolean,
+		notifyOn: string,
+		notifyThreshold: number,
+		baseFile: TFile | null,
+		baseFilePath: string | undefined,
+		viewIndex: number,
+		panel: HTMLElement,
+	): void {
+		const row = document.createElement("div");
+		row.className = "tn-configure-panel-row";
+
+		const label = document.createElement("div");
+		label.className = "tn-configure-panel-row-label";
+		label.textContent = "Notify on matches";
+		row.appendChild(label);
+
+		const toggle = document.createElement("div");
+		toggle.className = `checkbox-container${notifyEnabled ? " is-enabled" : ""}`;
+		toggle.tabIndex = 0;
+		toggle.addEventListener("click", async () => {
+			const newValue = !toggle.classList.contains("is-enabled");
+			toggle.classList.toggle("is-enabled", newValue);
+			if (baseFile) {
+				try {
+					await this.plugin.baseIdentityService.setViewNotificationConfig(
+						baseFile, viewIndex, { notify: newValue }
+					);
+					// Re-inject to show/hide dropdown + slider
+					const parentPanel = section.closest(".view-config-menu");
+					if (parentPanel) {
+						section.remove();
+						await this.injectConfigurePanelSection(parentPanel as HTMLElement);
+					}
+				} catch (error) {
+					console.error("[TaskNotes] Failed to save notification config:", error);
+					toggle.classList.toggle("is-enabled", !newValue);
+				}
+			}
+		});
+		row.appendChild(toggle);
+		section.appendChild(row);
+
+		// Conditional sub-controls (only when notifications are enabled)
+		if (notifyEnabled) {
+			this.buildNotifyWhenRow(section, notifyOn, baseFile, viewIndex, panel);
+			if (notifyOn === "count_threshold") {
+				this.buildThresholdRow(section, notifyThreshold, baseFile, viewIndex);
+			}
+		}
+	}
+
+	/**
+	 * Build "Notify when" dropdown row.
+	 */
+	private buildNotifyWhenRow(
+		section: HTMLElement,
+		currentValue: string,
+		baseFile: TFile | null,
+		viewIndex: number,
+		panel: HTMLElement,
+	): void {
+		const row = document.createElement("div");
+		row.className = "tn-configure-panel-row";
+
+		const label = document.createElement("div");
+		label.className = "tn-configure-panel-row-label";
+		label.textContent = "Notify when";
+		row.appendChild(label);
+
+		const select = document.createElement("select");
+		select.className = "tn-configure-panel-dropdown dropdown";
+		const options = [
+			{ value: "any", text: "Any results match" },
+			{ value: "new_items", text: "New items appear" },
+			{ value: "count_threshold", text: "Count exceeds threshold" },
+		];
+		for (const opt of options) {
+			const optEl = document.createElement("option");
+			optEl.value = opt.value;
+			optEl.textContent = opt.text;
+			if (opt.value === currentValue) optEl.selected = true;
+			select.appendChild(optEl);
+		}
+		select.addEventListener("change", async () => {
+			if (baseFile) {
+				try {
+					await this.plugin.baseIdentityService.setViewNotificationConfig(
+						baseFile, viewIndex, { notifyOn: select.value }
+					);
+					// Re-inject to show/hide threshold slider
+					const parentPanel = section.closest(".view-config-menu");
+					if (parentPanel) {
+						section.remove();
+						await this.injectConfigurePanelSection(parentPanel as HTMLElement);
+					}
+				} catch (error) {
+					console.error("[TaskNotes] Failed to save notifyOn:", error);
+				}
+			}
+		});
+		row.appendChild(select);
+		section.appendChild(row);
+	}
+
+	/**
+	 * Build "Threshold count" slider row.
+	 */
+	private buildThresholdRow(
+		section: HTMLElement,
+		currentValue: number,
+		baseFile: TFile | null,
+		viewIndex: number,
+	): void {
+		const row = document.createElement("div");
+		row.className = "tn-configure-panel-row";
+
+		const label = document.createElement("div");
+		label.className = "tn-configure-panel-row-label";
+		label.textContent = `Threshold: ${currentValue}`;
+		row.appendChild(label);
+
+		const slider = document.createElement("input");
+		slider.type = "range";
+		slider.className = "tn-configure-panel-slider";
+		slider.min = "1";
+		slider.max = "100";
+		slider.step = "1";
+		slider.value = String(currentValue);
+		slider.addEventListener("input", () => {
+			label.textContent = `Threshold: ${slider.value}`;
+		});
+		slider.addEventListener("change", async () => {
+			if (baseFile) {
+				try {
+					await this.plugin.baseIdentityService.setViewNotificationConfig(
+						baseFile, viewIndex, { notifyThreshold: Number(slider.value) }
+					);
+				} catch (error) {
+					console.error("[TaskNotes] Failed to save notifyThreshold:", error);
+				}
+			}
+		});
+		row.appendChild(slider);
+		section.appendChild(row);
+	}
+
+	/**
+	 * Build "Default properties & anchors" clickable row that opens the full settings modal.
+	 */
+	private buildPropertiesLinkRow(
+		section: HTMLElement,
+		panel: HTMLElement,
+		activeMenuBtn: HTMLElement | null,
+		toolbar: HTMLElement,
+		mappingCtx: { viewFieldMapping?: ViewFieldMapping; baseId?: string; viewId?: string; viewIndex?: number } | null,
+		baseFilePath: string | undefined,
+	): void {
+		const row = document.createElement("div");
+		row.className = "tn-configure-panel-row tn-configure-panel-settings-row";
+		row.tabIndex = 0;
+
+		const label = document.createElement("div");
+		label.className = "tn-configure-panel-row-label";
+		label.textContent = "Default properties & anchors";
+		row.appendChild(label);
+
+		const arrow = document.createElement("div");
+		arrow.className = "tn-configure-panel-settings-arrow";
+		setIcon(arrow, "arrow-right");
+		row.appendChild(arrow);
+
+		row.addEventListener("click", async () => {
+			// Close the popup menu
+			const menu = panel.closest(".menu");
+			const closeBtn = menu?.querySelector(".modal-close-button") as HTMLElement | null;
+			if (closeBtn) {
+				closeBtn.click();
+			} else {
+				activeMenuBtn?.click();
+			}
+
+			// Short delay for menu close, then open BulkTaskCreationModal to view settings
+			setTimeout(async () => {
+				const items = toolbar ? this.extractItemsFromToolbarContext(toolbar) : [];
+				const modal = new BulkTaskCreationModal(
+					this.plugin.app,
+					this.plugin,
+					items,
+					{
+						onTasksCreated: () => {},
+						viewFieldMapping: mappingCtx?.viewFieldMapping,
+						sourceBaseId: mappingCtx?.baseId,
+						sourceViewId: mappingCtx?.viewId,
+						viewIndex: mappingCtx?.viewIndex,
+						openToViewSettings: true,
+					},
+					baseFilePath
+				);
+				modal.open();
+			}, 100);
+		});
+		section.appendChild(row);
 	}
 }

@@ -21,6 +21,8 @@ interface ExtendedNotificationItem extends NotificationItem {
 interface BaseFileConfig {
 	name?: string;
 	notify?: boolean;
+	notifyOn?: "any" | "count_threshold" | "new_items";
+	notifyThreshold?: number;
 	source?: string;
 }
 
@@ -201,6 +203,11 @@ export class VaultWideNotificationService {
 
 				if (matchCount === 0) continue;
 
+				// Apply notifyOn filtering
+				if (!this.plugin.basesQueryWatcher?.shouldNotifyForBase(file.path, matchCount)) {
+					continue;
+				}
+
 				// Determine the most urgent time category from all matched items
 				let mostUrgentCategory: TimeCategory = "later";
 				for (const result of queryResults) {
@@ -254,6 +261,11 @@ export class VaultWideNotificationService {
 				// Evaluate the query using BasesViewBase infrastructure
 				const queryResults = await this.evaluateBaseQuery(file);
 				if (!queryResults || queryResults.length === 0) continue;
+
+				// Apply notifyOn filtering
+				if (!this.plugin.basesQueryWatcher?.shouldNotifyForBase(file.path, queryResults.length)) {
+					continue;
+				}
 
 				// Convert to aggregated items
 				for (const result of queryResults) {
@@ -319,9 +331,25 @@ export class VaultWideNotificationService {
 				hasNotify = parsed.views.some((v: any) => v?.notify === true);
 			}
 
+			// Extract notifyOn/notifyThreshold — check per-view first, then top-level
+			let notifyOn: "any" | "count_threshold" | "new_items" = parsed?.notifyOn || "any";
+			let notifyThreshold = parsed?.notifyThreshold ?? 1;
+
+			if (Array.isArray(parsed?.views)) {
+				for (const view of parsed.views) {
+					if (view?.notify === true) {
+						if (view.notifyOn) notifyOn = view.notifyOn;
+						if (view.notifyThreshold != null) notifyThreshold = view.notifyThreshold;
+						break;
+					}
+				}
+			}
+
 			return {
 				name: parsed?.name,
 				notify: hasNotify,
+				notifyOn,
+				notifyThreshold,
 				source: parsed?.source,
 			};
 		} catch {

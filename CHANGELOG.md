@@ -4,6 +4,18 @@ All notable changes to this TaskNotes fork will be documented in this file.
 
 This fork (`cybersader/tasknotes`) adds bulk tasking, notifications, and other enhancements to the upstream [TaskNotes](https://github.com/callumalpass/tasknotes) plugin.
 
+## [4.3.40] - 2026-02-18
+
+### Added
+- **Consolidated Configure view panel**: All view types (native Table/Board/Cards and TaskNotes Task List/Kanban/Calendar/etc.) now show an identical branded TaskNotes section in the Configure view panel with show toolbar toggle, notification toggle, "Notify when" dropdown, threshold slider, and "Default properties & anchors" link.
+- **"Notify when" dropdown for native views**: Native Bases views now have the full notification control set (any results match, new items appear, count exceeds threshold) that was previously only available on TaskNotes-registered views.
+
+### Fixed
+- **"Open Configure view panel" link**: Clicking the link in BulkTaskCreationModal now reliably closes the modal, opens the popup, and navigates directly to the Configure view sub-panel using polling-based waits and chevron click detection.
+- **"Show toolbar buttons" toggle**: Now provides immediate DOM feedback (buttons appear/disappear instantly) and correctly handles toolbars that were already injected.
+- **"Global setting" link**: Now navigates to the plugin's Features settings tab and scrolls to the "Bases views" heading.
+- **Duplicate TaskNotes sections**: Fixed race condition where switching view types in the Layout dropdown could produce duplicate branded sections in the Configure panel.
+
 ## [4.3.39] - 2026-02-18
 
 ### Fixed

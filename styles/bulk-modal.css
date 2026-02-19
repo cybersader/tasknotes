@@ -696,3 +696,178 @@
 .theme-dark .tn-bulk-modal__action-icon.has-value::after {
     border-color: var(--background-primary);
 }
+
+/* =====================================================================
+   VIEW SETTINGS TAB
+   ===================================================================== */
+
+.tn-bulk-modal__view-settings {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-4-3);
+}
+
+/* Tab icon (gear) inline with tab text */
+.tn-bulk-modal__tab-icon {
+    display: inline-flex;
+    align-items: center;
+    margin-right: var(--size-4-1);
+    vertical-align: middle;
+}
+
+.tn-bulk-modal__tab-icon svg {
+    width: 14px;
+    height: 14px;
+}
+
+/* Info callout at bottom of view settings */
+.tn-bulk-modal__info-callout {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--size-4-2);
+    padding: var(--size-4-3);
+    background: color-mix(in srgb, var(--interactive-accent) 8%, transparent);
+    border-left: 3px solid var(--interactive-accent);
+    border-radius: var(--radius-s);
+    font-size: var(--font-ui-small);
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
+.tn-bulk-modal__info-icon {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    color: var(--interactive-accent);
+    margin-top: 1px;
+}
+
+.tn-bulk-modal__info-icon svg {
+    width: 16px;
+    height: 16px;
+}
+
+.tn-bulk-modal__config-link {
+    cursor: pointer;
+    color: var(--text-accent);
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.tn-bulk-modal__config-link:hover {
+    text-decoration: underline;
+}
+
+.tn-bulk-modal__config-link-arrow {
+    display: inline-flex;
+    vertical-align: middle;
+    margin-left: 2px;
+}
+
+.tn-bulk-modal__config-link-arrow svg {
+    width: 12px;
+    height: 12px;
+}
+
+/* =====================================================================
+   SECTION SUBTITLES (used in Base View Settings tab)
+   ===================================================================== */
+
+.tn-bulk-modal__section-subtitle {
+    font-size: var(--font-ui-small);
+    color: var(--text-muted);
+    margin-bottom: var(--size-4-2);
+    line-height: 1.4;
+}
+
+/* =====================================================================
+   CONFIGURE VIEW PANEL INJECTION
+   Injected into Obsidian's native Configure view popup (.view-config-menu)
+   ===================================================================== */
+
+.tn-configure-panel-injected {
+    border-top: 1px solid var(--background-modifier-border);
+    margin-top: 4px;
+    padding-top: 4px;
+}
+
+.tn-configure-panel-heading {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    font-size: var(--font-ui-smaller);
+    font-weight: var(--font-semibold);
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.tn-configure-panel-heading svg {
+    width: 12px;
+    height: 12px;
+}
+
+.tn-configure-panel-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 8px;
+    font-size: var(--font-ui-small);
+    color: var(--text-normal);
+}
+
+.tn-configure-panel-row-label {
+    flex: 1;
+    min-width: 0;
+}
+
+.tn-configure-panel-hint {
+    display: block;
+    font-size: var(--font-ui-smaller);
+    color: var(--text-accent);
+    cursor: pointer;
+    opacity: 0.8;
+}
+
+.tn-configure-panel-hint:hover {
+    text-decoration: underline;
+    opacity: 1;
+}
+
+.tn-configure-panel-settings-row {
+    cursor: pointer;
+    border-radius: var(--radius-s);
+}
+
+.tn-configure-panel-settings-row:hover {
+    background: var(--background-modifier-hover);
+}
+
+.tn-configure-panel-settings-arrow {
+    display: flex;
+    align-items: center;
+    color: var(--text-muted);
+}
+
+.tn-configure-panel-settings-arrow svg {
+    width: 16px;
+    height: 16px;
+}
+
+/* Dropdown in configure panel */
+.tn-configure-panel-dropdown {
+    max-width: 160px;
+    font-size: var(--font-ui-smaller);
+    padding: 2px 4px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    background: var(--background-primary);
+    color: var(--text-normal);
+}
+
+/* Slider in configure panel */
+.tn-configure-panel-slider {
+    width: 100px;
+    accent-color: var(--interactive-accent);
+}
