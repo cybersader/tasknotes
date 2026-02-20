@@ -417,8 +417,12 @@ export abstract class TaskModal extends Modal {
 	// User-defined fields (dynamic based on settings)
 	protected userFields: Record<string, any> = {};
 
-	// Assignee picker instance (for cleanup)
-	protected assigneePicker: { getSelection: () => string[]; setSelection: (paths: string[]) => void; closeDropdown: () => void; destroy: () => void } | null = null;
+	// Assignee/Creator picker instances keyed by field key (for cleanup + per-field async updates)
+	protected assigneePickers: Map<string, { getSelection: () => string[]; setSelection: (paths: string[]) => void; closeDropdown: () => void; destroy: () => void }> = new Map();
+
+	// Track whether PersonGroupPicker was rendered for creator/assignee (for fallback rendering)
+	protected creatorPickerRendered = false;
+	protected assigneePickerRendered = false;
 
 	// Dependency fields
 	protected blockedByItems: DependencyItem[] = [];
@@ -826,6 +830,10 @@ export abstract class TaskModal extends Modal {
 	}
 
 	protected createAdditionalFields(container: HTMLElement): void {
+		// Reset picker tracking flags for this render pass
+		this.creatorPickerRendered = false;
+		this.assigneePickerRendered = false;
+
 		// Use field configuration (always initialized via migration in main.ts)
 		const config = this.plugin.settings.modalFieldsConfig;
 		if (!config) {
@@ -835,6 +843,10 @@ export abstract class TaskModal extends Modal {
 			return;
 		}
 		this.createFieldsFromConfig(container, config);
+
+		// Fallback: render Creator/Assignee PersonGroupPicker if no user field matched.
+		// Synchronous render with persons, async group discovery via discoverGroupsForPicker.
+		this.renderFallbackPersonPickers(container);
 	}
 
 	protected createFieldsFromConfig(container: HTMLElement, config: any): void {
@@ -1128,6 +1140,14 @@ export abstract class TaskModal extends Modal {
 	 * Render the assignee field using PersonGroupPicker instead of plain text input.
 	 */
 	protected createAssigneePickerField(container: HTMLElement, userField: any): void {
+		// Track that we rendered a PersonGroupPicker for this field type
+		const creatorField = (this.plugin.settings.creatorFieldName || "creator").toLowerCase().trim();
+		if (userField.key?.toLowerCase().trim() === creatorField) {
+			this.creatorPickerRendered = true;
+		} else {
+			this.assigneePickerRendered = true;
+		}
+
 		const setting = new Setting(container).setName(userField.displayName);
 
 		// Create a container for the picker inside the setting control area
@@ -1143,7 +1163,8 @@ export abstract class TaskModal extends Modal {
 		const persons: PersonNoteInfo[] = this.plugin.personNoteService?.discoverPersons() || [];
 
 		// Create picker with persons immediately, add groups async
-		this.assigneePicker = createPersonGroupPicker({
+		const fieldKey = userField.key;
+		const picker = createPersonGroupPicker({
 			container: pickerContainer,
 			persons,
 			groups: [],
@@ -1154,11 +1175,11 @@ export abstract class TaskModal extends Modal {
 				// Convert paths to shortest wikilinks for storage
 				const wikilinks = this.pathsToShortestWikilinks(selectedPaths);
 				if (wikilinks.length === 0) {
-					this.userFields[userField.key] = null;
+					this.userFields[fieldKey] = null;
 				} else if (wikilinks.length === 1) {
-					this.userFields[userField.key] = wikilinks[0];
+					this.userFields[fieldKey] = wikilinks[0];
 				} else {
-					this.userFields[userField.key] = wikilinks;
+					this.userFields[fieldKey] = wikilinks;
 				}
 				this.updateIconStates();
 			},
@@ -1178,25 +1199,27 @@ export abstract class TaskModal extends Modal {
 				}
 			},
 		});
+		this.assigneePickers.set(fieldKey, picker);
 
-		// Discover groups async, then update picker
-		this.discoverGroupsForPicker(persons);
+		// Discover groups async, then update this specific picker
+		this.discoverGroupsForPicker(fieldKey, persons);
 	}
 
 	/**
-	 * Async group discovery for the assignee picker.
+	 * Async group discovery for a specific assignee/creator picker (keyed by field key).
 	 */
-	private async discoverGroupsForPicker(persons: PersonNoteInfo[]): Promise<void> {
+	private async discoverGroupsForPicker(fieldKey: string, persons: PersonNoteInfo[]): Promise<void> {
 		if (!this.plugin.groupRegistry) return;
 		try {
 			const groups = await this.plugin.groupRegistry.discoverGroups();
-			if (groups.length > 0 && this.assigneePicker) {
-				// Recreate the picker with groups included
-				const currentSelection = this.assigneePicker.getSelection();
-				const pickerContainer = this.containerEl.querySelector(".tn-task-modal-assignee");
+			const picker = this.assigneePickers.get(fieldKey);
+			if (groups.length > 0 && picker) {
+				// Recreate the picker with groups included, using data-field-key for targeted lookup
+				const currentSelection = picker.getSelection();
+				const pickerContainer = this.containerEl.querySelector(`.tn-task-modal-assignee[data-field-key="${fieldKey}"]`);
 				if (pickerContainer) {
-					this.assigneePicker.destroy();
-					this.assigneePicker = createPersonGroupPicker({
+					picker.destroy();
+					const newPicker = createPersonGroupPicker({
 						container: pickerContainer as HTMLElement,
 						persons,
 						groups,
@@ -1204,26 +1227,98 @@ export abstract class TaskModal extends Modal {
 						placeholder: "Search people or groups...",
 						initialSelection: currentSelection,
 						onChange: (selectedPaths) => {
-							const gAssignee = this.plugin.settings.assigneeFieldName || "assignee";
-							const tPath = this.getCurrentTaskPath();
-							const tFm = tPath ? this.plugin.app.metadataCache.getCache(tPath)?.frontmatter : null;
-							const assigneeFieldName = resolveFieldName("assignee", readFieldOverrides(tFm), gAssignee);
 							const wikilinks = this.pathsToShortestWikilinks(selectedPaths);
 							if (wikilinks.length === 0) {
-								this.userFields[assigneeFieldName] = null;
+								this.userFields[fieldKey] = null;
 							} else if (wikilinks.length === 1) {
-								this.userFields[assigneeFieldName] = wikilinks[0];
+								this.userFields[fieldKey] = wikilinks[0];
 							} else {
-								this.userFields[assigneeFieldName] = wikilinks;
+								this.userFields[fieldKey] = wikilinks;
 							}
 							this.updateIconStates();
 						},
 					});
+					this.assigneePickers.set(fieldKey, newPicker);
 				}
 			}
 		} catch (error) {
-			console.error("Failed to discover groups for assignee picker:", error);
+			console.error("Failed to discover groups for picker:", fieldKey, error);
 		}
+	}
+
+	/**
+	 * Render fallback PersonGroupPickers for Creator/Assignee when no user field matched.
+	 * Creates pickers immediately with persons only, then adds groups async.
+	 * Stores pickers in this.assigneePickers for consistent cleanup.
+	 */
+	private renderFallbackPersonPickers(container: HTMLElement): void {
+		const creatorKey = this.plugin.settings.creatorFieldName || "creator";
+		const assigneeKey = this.plugin.settings.assigneeFieldName || "assignee";
+
+		const fallbacks: { key: string; displayName: string }[] = [];
+		if (!this.creatorPickerRendered && creatorKey) {
+			fallbacks.push({ key: creatorKey, displayName: "Creator" });
+		}
+		if (!this.assigneePickerRendered && assigneeKey) {
+			fallbacks.push({ key: assigneeKey, displayName: "Assignees" });
+		}
+		if (fallbacks.length === 0) return;
+
+		// Discover persons synchronously
+		const persons: PersonNoteInfo[] = this.plugin.personNoteService?.discoverPersons() || [];
+
+		for (let i = 0; i < fallbacks.length; i++) {
+			const fb = fallbacks[i];
+			const setting = new Setting(container).setName(fb.displayName);
+			// First fallback: remove border-top since the field group's <hr> already provides separation
+			if (i === 0) {
+				setting.settingEl.style.borderTop = "none";
+			}
+			const pickerContainer = setting.controlEl.createDiv({ cls: "tn-task-modal-assignee" });
+			pickerContainer.dataset.fieldKey = fb.key;
+
+			const currentValue = this.userFields[fb.key];
+			const initialSelection = this.parseAssigneesToPaths(currentValue);
+
+			const picker = createPersonGroupPicker({
+				container: pickerContainer,
+				persons,
+				groups: [],
+				multiSelect: true,
+				placeholder: "Search people or groups...",
+				initialSelection,
+				onChange: (selectedPaths) => {
+					const wikilinks = this.pathsToShortestWikilinks(selectedPaths);
+					if (wikilinks.length === 0) {
+						this.userFields[fb.key] = null;
+					} else if (wikilinks.length === 1) {
+						this.userFields[fb.key] = wikilinks[0];
+					} else {
+						this.userFields[fb.key] = wikilinks;
+					}
+					this.updateIconStates();
+				},
+				onConfigureClick: () => {
+					this.close();
+					const settingInstance = (this.plugin.app as any).setting;
+					if (settingInstance) {
+						settingInstance.open();
+						settingInstance.openTabById(this.plugin.manifest.id);
+						setTimeout(() => {
+							const btn = settingInstance.containerEl?.querySelector('[data-tab-id="shared-vault"]') as HTMLElement;
+							if (btn) btn.click();
+						}, 200);
+					}
+				},
+			});
+			this.assigneePickers.set(fb.key, picker);
+
+			// Discover groups async, then update this specific picker
+			this.discoverGroupsForPicker(fb.key, persons);
+		}
+
+		// Trailing separator to visually separate from Properties & Anchors section
+		container.createEl("hr", { cls: "task-modal__section-separator" });
 	}
 
 	/**
@@ -2278,11 +2373,11 @@ export abstract class TaskModal extends Modal {
 			this.detailsMarkdownEditor = null;
 		}
 
-		// Clean up assignee picker
-		if (this.assigneePicker) {
-			this.assigneePicker.destroy();
-			this.assigneePicker = null;
+		// Clean up all assignee/creator pickers
+		for (const picker of this.assigneePickers.values()) {
+			picker.destroy();
 		}
+		this.assigneePickers.clear();
 
 		super.onClose();
 	}

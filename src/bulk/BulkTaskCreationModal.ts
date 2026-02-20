@@ -24,6 +24,8 @@ import {
 	FIELD_OVERRIDE_PROPS,
 	OVERRIDABLE_FIELD_LABELS,
 	OVERRIDABLE_FIELD_TYPES,
+	OVERRIDABLE_FIELD_EDITORS,
+	OVERRIDABLE_FIELD_PICKER_TITLES,
 	type OverridableField,
 } from "../utils/fieldOverrideUtils";
 
@@ -410,7 +412,7 @@ export class BulkTaskCreationModal extends Modal {
 
 		const helpIcon = header.createSpan({ cls: "tn-bulk-modal__help" });
 		setIcon(helpIcon, "help-circle");
-		setTooltip(helpIcon, "Add extra frontmatter fields (e.g., review_date, client, effort_hours) to every item in this batch. Search existing properties used across your task files, or create new ones. These are written as YAML frontmatter on each file.");
+		setTooltip(helpIcon, "Add extra frontmatter to every item in this batch, or use \u2018Map to\u2019 to assign custom properties to standard task fields (e.g., Due date, Assignee). Search existing properties or create new ones.");
 
 		// PropertyPicker container — createPropertyPicker takes this over entirely
 		// (it calls container.empty() + container.addClass("tn-property-picker"))
@@ -468,8 +470,6 @@ export class BulkTaskCreationModal extends Modal {
 
 		for (const key of keys) {
 			const entry = this.bulkCustomProperties[key];
-			const displayName = key.replace(/_/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, c => c.toUpperCase());
-
 			const row = this.activeListEl!.createDiv({ cls: "tn-prop-row" });
 			const currentMapping = this.findBulkMappingForProperty(key);
 			if (currentMapping) {
@@ -501,8 +501,8 @@ export class BulkTaskCreationModal extends Modal {
 				});
 			}
 
-			// Property key label
-			header.createDiv({ cls: "tn-prop-row__key", text: displayName });
+			// Property key label (raw key, matching PropertyPicker display)
+			header.createDiv({ cls: "tn-prop-row__key", text: key });
 
 			// Type badge
 			header.createDiv({ cls: "tn-prop-row__type-badge", text: entry.type });
@@ -628,67 +628,248 @@ export class BulkTaskCreationModal extends Modal {
 	}
 
 	/**
+	 * Shared "Click to set..." pattern for property value inputs.
+	 * Shows a clickable placeholder that reveals the actual input on click,
+	 * matching Create/Edit modal UX. If a value already exists, shows it as text.
+	 */
+	private renderClickToSetInput(
+		container: HTMLElement,
+		entry: { type: PropertyType; value: any },
+		callbacks: { getValue: () => any; setValue: (val: any) => void }
+	) {
+		const rawValue = entry.value;
+		const hasValue = rawValue !== null && rawValue !== undefined && rawValue !== "" &&
+			!(Array.isArray(rawValue) && rawValue.length === 0);
+
+		// Format display text for current value
+		const formatValue = (val: any): string => {
+			if (val instanceof Date) return val.toISOString().slice(0, 10);
+			if (Array.isArray(val)) return val.join(", ");
+			return String(val ?? "");
+		};
+
+		const display = container.createDiv({ cls: "tn-prop-row__value-display" });
+		display.style.cssText = "cursor: pointer; display: flex; align-items: center; gap: 4px;";
+
+		const valueText = hasValue ? formatValue(rawValue) : "Click to set...";
+		const span = display.createSpan({
+			text: valueText,
+			cls: hasValue ? "tn-prop-row__value-set" : "tn-prop-row__value-placeholder",
+		});
+		if (!hasValue) span.style.color = "var(--text-faint)";
+
+		// On click, replace display with the actual input
+		display.addEventListener("click", () => {
+			display.style.display = "none";
+
+			let inputType: string;
+			let placeholder: string;
+			switch (entry.type) {
+				case "date": inputType = "date"; placeholder = ""; break;
+				case "number": inputType = "number"; placeholder = "0"; break;
+				case "list": inputType = "text"; placeholder = "Comma-separated values"; break;
+				default: inputType = "text"; placeholder = "Value"; break;
+			}
+
+			const input = container.createEl("input", {
+				cls: "tn-bulk-modal__custom-prop-input",
+				attr: { type: inputType, placeholder },
+			});
+
+			// Set initial value
+			const current = callbacks.getValue();
+			if (entry.type === "date" && current instanceof Date) {
+				input.value = current.toISOString().slice(0, 10);
+			} else if (Array.isArray(current)) {
+				input.value = current.join(", ");
+			} else {
+				input.value = current != null ? String(current) : "";
+			}
+
+			// Commit on change (blur/enter for text, native change for date/number)
+			const commitValue = () => {
+				const val = input.value;
+				if (entry.type === "number") {
+					callbacks.setValue(parseFloat(val) || 0);
+				} else if (entry.type === "list") {
+					callbacks.setValue(val.split(",").map((s: string) => s.trim()).filter(Boolean));
+				} else {
+					callbacks.setValue(val);
+				}
+				// Update display text and swap back
+				const newVal = callbacks.getValue();
+				const newHasValue = newVal !== null && newVal !== undefined && newVal !== "" &&
+					!(Array.isArray(newVal) && newVal.length === 0);
+				span.textContent = newHasValue ? formatValue(newVal) : "Click to set...";
+				span.className = newHasValue ? "tn-prop-row__value-set" : "tn-prop-row__value-placeholder";
+				span.style.color = newHasValue ? "" : "var(--text-faint)";
+				input.remove();
+				display.style.display = "";
+			};
+
+			input.addEventListener("change", commitValue);
+			input.addEventListener("blur", () => {
+				// Small delay to let change fire first
+				setTimeout(() => {
+					if (input.parentElement) commitValue();
+				}, 100);
+			});
+
+			input.focus();
+		});
+	}
+
+	/**
 	 * Render a type-appropriate value input for a custom property.
+	 * Uses a "Click to set..." pattern: shows a clickable placeholder that reveals
+	 * the actual input on click, matching Create/Edit modal UX.
+	 * For mapped date properties, uses DateContextMenu (calendar popup) like Create/Edit modals.
 	 */
 	private renderCustomPropValueInput(
 		container: HTMLElement,
 		key: string,
 		entry: { type: PropertyType; value: any }
 	) {
-		switch (entry.type) {
-			case "date": {
-				const input = container.createEl("input", {
-					cls: "tn-bulk-modal__custom-prop-input",
-					attr: { type: "date" },
-				});
-				input.value = entry.value || "";
-				input.addEventListener("change", () => {
-					this.bulkCustomProperties[key].value = input.value;
-				});
-				break;
-			}
-			case "number": {
-				const input = container.createEl("input", {
-					cls: "tn-bulk-modal__custom-prop-input",
-					attr: { type: "number" },
-				});
-				input.value = String(entry.value ?? 0);
-				input.addEventListener("change", () => {
-					this.bulkCustomProperties[key].value = parseFloat(input.value) || 0;
-				});
-				break;
-			}
-			case "boolean": {
-				const toggle = container.createEl("input", {
-					attr: { type: "checkbox" },
-					cls: "tn-bulk-modal__custom-prop-checkbox",
-				});
-				toggle.checked = !!entry.value;
-				toggle.addEventListener("change", () => {
-					this.bulkCustomProperties[key].value = toggle.checked;
-				});
-				break;
-			}
-			default: {
-				// text, list
-				const input = container.createEl("input", {
-					cls: "tn-bulk-modal__custom-prop-input",
-					attr: {
-						type: "text",
-						placeholder: entry.type === "list" ? "comma-separated" : "value",
-					},
-				});
-				input.value = Array.isArray(entry.value) ? entry.value.join(", ") : (entry.value || "");
-				input.addEventListener("change", () => {
-					if (entry.type === "list") {
-						this.bulkCustomProperties[key].value = input.value.split(",").map(s => s.trim()).filter(Boolean);
-					} else {
-						this.bulkCustomProperties[key].value = input.value;
-					}
-				});
-				break;
+		// Boolean: always show checkbox inline (no click-to-set needed)
+		if (entry.type === "boolean") {
+			const toggle = container.createEl("input", {
+				attr: { type: "checkbox" },
+				cls: "tn-bulk-modal__custom-prop-checkbox",
+			});
+			toggle.checked = !!entry.value;
+			toggle.addEventListener("change", () => {
+				this.bulkCustomProperties[key].value = toggle.checked;
+			});
+			return;
+		}
+
+		// Check if this property is mapped to a standard field
+		const mapping = this.findBulkMappingForProperty(key);
+
+		if (mapping) {
+			// Mapped properties: use the centralized editor type config
+			const editorType = OVERRIDABLE_FIELD_EDITORS[mapping];
+			switch (editorType) {
+				case "date-picker":
+					this.renderDateClickToSet(
+						container, key, entry,
+						OVERRIDABLE_FIELD_PICKER_TITLES[mapping] || "Set date",
+						mapping
+					);
+					return;
+				case "assignee-picker":
+					this.renderAssigneeClickToSet(container);
+					return;
+				// Future editor types (e.g., "status-picker", "priority-picker") go here
+				default:
+					break; // Fall through to generic inline input
 			}
 		}
+
+		// Unmapped properties (or mapped fields with "inline" editor): generic "Click to set..."
+		this.renderClickToSetInput(container, entry, {
+			getValue: () => this.bulkCustomProperties[key]?.value,
+			setValue: (val: any) => { this.bulkCustomProperties[key].value = val; },
+		});
+	}
+
+	/**
+	 * Render a "Click to set..." display that opens DateContextMenu on click.
+	 * Matches Create/Edit modal behavior for date-mapped properties.
+	 * Syncs the selected value to the corresponding bulk action bar field.
+	 */
+	private renderDateClickToSet(
+		container: HTMLElement,
+		key: string,
+		entry: { type: PropertyType; value: any },
+		title: string,
+		mapping?: OverridableField
+	) {
+		const rawValue = entry.value;
+		const hasValue = rawValue !== null && rawValue !== undefined && rawValue !== "";
+
+		const formatDate = (val: any): string => {
+			if (val instanceof Date) return val.toISOString().slice(0, 10);
+			return String(val ?? "");
+		};
+
+		const display = container.createDiv({ cls: "tn-prop-row__value-display" });
+		display.style.cssText = "cursor: pointer; display: flex; align-items: center; gap: 4px;";
+
+		const valueText = hasValue ? formatDate(rawValue) : "Click to set...";
+		const span = display.createSpan({
+			text: valueText,
+			cls: hasValue ? "tn-prop-row__value-set" : "tn-prop-row__value-placeholder",
+		});
+		if (!hasValue) span.style.color = "var(--text-faint)";
+
+		display.addEventListener("click", () => {
+			const currentVal = this.bulkCustomProperties[key]?.value;
+			const menu = new DateContextMenu({
+				currentValue: currentVal instanceof Date ? currentVal.toISOString().slice(0, 10) : (currentVal || undefined),
+				title,
+				plugin: this.plugin,
+				app: this.app,
+				onSelect: (date: string | null) => {
+					const dateStr = date || "";
+					this.bulkCustomProperties[key].value = dateStr;
+
+					// Sync to the corresponding bulk action bar field
+					if (mapping === "due") {
+						this.dueDate = dateStr;
+					} else if (mapping === "scheduled") {
+						this.scheduledDate = dateStr;
+					}
+					this.updateActionIconStates();
+
+					const newHasValue = !!date;
+					span.textContent = newHasValue ? date! : "Click to set...";
+					span.className = newHasValue ? "tn-prop-row__value-set" : "tn-prop-row__value-placeholder";
+					span.style.color = newHasValue ? "" : "var(--text-faint)";
+				},
+			});
+			menu.showAtElement(display);
+		});
+	}
+
+	/**
+	 * Render a "Click to set..." display that scrolls to and flashes the ASSIGNEES section.
+	 * Matches Create/Edit modal behavior where clicking an assignee-mapped field focuses the picker.
+	 */
+	private renderAssigneeClickToSet(container: HTMLElement) {
+		const display = container.createDiv({ cls: "tn-prop-row__value-display" });
+		display.style.cssText = "cursor: pointer; display: flex; align-items: center; gap: 4px;";
+
+		const span = display.createSpan({
+			text: "Click to set...",
+			cls: "tn-prop-row__value-placeholder",
+		});
+		span.style.color = "var(--text-faint)";
+
+		display.addEventListener("click", () => {
+			// Find the ASSIGNEES section in the top sections wrapper
+			if (!this.topSectionsWrapper) return;
+			const sections = this.topSectionsWrapper.querySelectorAll(".tn-bulk-modal__section");
+			for (const section of sections) {
+				const label = section.querySelector(".tn-bulk-modal__section-label");
+				if (label && label.textContent === "ASSIGNEES") {
+					// Scroll into view
+					section.scrollIntoView({ behavior: "smooth", block: "center" });
+					// Flash highlight to draw attention
+					(section as HTMLElement).style.transition = "background-color 0.3s";
+					(section as HTMLElement).style.backgroundColor = "var(--background-modifier-hover)";
+					setTimeout(() => {
+						(section as HTMLElement).style.backgroundColor = "";
+					}, 800);
+					// Focus the search input if available
+					const searchInput = section.querySelector("input") as HTMLInputElement | null;
+					if (searchInput) {
+						setTimeout(() => searchInput.focus(), 300);
+					}
+					break;
+				}
+			}
+		});
 	}
 
 	/**
@@ -949,6 +1130,19 @@ export class BulkTaskCreationModal extends Modal {
 	// ============================================================
 
 	/**
+	 * Sync a bulk action bar value to any mapped custom property.
+	 * When the user sets Due date via the action bar icon, this updates
+	 * the corresponding mapped property (e.g., "deadline") and re-renders.
+	 */
+	private syncActionBarToMappedProperty(fieldKey: OverridableField, value: string) {
+		const mappedPropKey = this.bulkFieldOverrides[fieldKey];
+		if (mappedPropKey && this.bulkCustomProperties[mappedPropKey]) {
+			this.bulkCustomProperties[mappedPropKey].value = value;
+			this.renderCustomPropsActiveList();
+		}
+	}
+
+	/**
 	 * Open the due date picker.
 	 */
 	private openDueDatePicker() {
@@ -962,6 +1156,7 @@ export class BulkTaskCreationModal extends Modal {
 			onSelect: (date: string | null) => {
 				this.dueDate = date || "";
 				this.updateActionIconStates();
+				this.syncActionBarToMappedProperty("due", this.dueDate);
 			},
 		});
 		menu.showAtElement(this.dueIcon);
@@ -981,6 +1176,7 @@ export class BulkTaskCreationModal extends Modal {
 			onSelect: (date: string | null) => {
 				this.scheduledDate = date || "";
 				this.updateActionIconStates();
+				this.syncActionBarToMappedProperty("scheduled", this.scheduledDate);
 			},
 		});
 		menu.showAtElement(this.scheduledIcon);
@@ -1436,8 +1632,6 @@ export class BulkTaskCreationModal extends Modal {
 
 		for (const key of keys) {
 			const entry = this.viewDefaultProperties[key];
-			const displayName = keyToDisplayName(key);
-
 			const row = this.viewPropertiesActiveListEl.createDiv({ cls: "tn-prop-row" });
 			const currentMapping = this.findViewMappingForProperty(key);
 			if (currentMapping) {
@@ -1469,15 +1663,26 @@ export class BulkTaskCreationModal extends Modal {
 				});
 			}
 
-			// Property key label
-			rowHeader.createDiv({ cls: "tn-prop-row__key", text: displayName });
+			// Property key label (raw key, matching PropertyPicker display)
+			rowHeader.createDiv({ cls: "tn-prop-row__key", text: key });
 
 			// Type badge
 			rowHeader.createDiv({ cls: "tn-prop-row__type-badge", text: entry.type });
 
-			// Value input
+			// Value input — only for unmapped properties (mapped properties get their value from the task field)
 			const valueContainer = rowHeader.createDiv({ cls: "tn-prop-row__value" });
-			this.renderViewPropValueInput(valueContainer, key, entry);
+			if (currentMapping) {
+				// Mapped properties: show read-only hint instead of editable input
+				valueContainer.createSpan({
+					text: "set via task field",
+					cls: "tn-prop-row__value-placeholder",
+				});
+				valueContainer.style.color = "var(--text-faint)";
+				valueContainer.style.fontStyle = "italic";
+				valueContainer.style.fontSize = "var(--font-smallest)";
+			} else {
+				this.renderViewPropValueInput(valueContainer, key, entry);
+			}
 
 			// Mapping badge
 			if (currentMapping) {
@@ -1580,7 +1785,8 @@ export class BulkTaskCreationModal extends Modal {
 
 	/**
 	 * Render a type-appropriate value input for a view default property.
-	 * Same switch/case pattern as renderCustomPropValueInput but saves to viewDefaultProperties.
+	 * Uses plain inline inputs (default values are a future feature;
+	 * "Click to set..." is only for Generate/Convert custom properties).
 	 */
 	private renderViewPropValueInput(
 		container: HTMLElement,

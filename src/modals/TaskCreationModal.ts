@@ -777,7 +777,7 @@ export class TaskCreationModal extends TaskModal {
 		sectionLabel.createSpan({ text: "Properties & anchors" });
 		const helpIcon = sectionLabel.createSpan({ cls: "tn-pp-help-icon" });
 		setIcon(helpIcon, "help-circle");
-		setTooltip(helpIcon, "Add extra frontmatter fields (e.g., review_date, client, effort_hours) to this task. Search existing properties from your vault, or create new ones. Use the scope chips to filter by source: this note, view items, all tasks, or all files.");
+		setTooltip(helpIcon, "Add extra frontmatter to this task, or use \u2018Map to\u2019 to assign custom properties to standard task fields (e.g., Due date, Assignee). Search existing properties or create new ones. Use scope chips to filter by source.");
 		sectionLabel.style.cssText = "color: var(--text-muted); font-size: var(--font-ui-smaller); display: flex; align-items: center; gap: 4px;";
 
 		// PropertyPicker search (above the fields list)
@@ -1591,7 +1591,9 @@ export class TaskCreationModal extends TaskModal {
 			this.detailsContainer.style.display = "none";
 			this.containerEl.removeClass("expanded");
 			// Close any PersonGroupPicker dropdowns that are body-level
-			this.assigneePicker?.closeDropdown();
+			for (const picker of this.assigneePickers.values()) {
+				picker.closeDropdown();
+			}
 		} else {
 			// Expand
 			this.expandModal();

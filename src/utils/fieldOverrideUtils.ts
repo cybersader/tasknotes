@@ -48,6 +48,36 @@ export const OVERRIDABLE_FIELD_TYPES: Record<OverridableField, string> = {
 };
 
 /**
+ * Editor type used when a mapped property's "Click to set..." is activated.
+ * Controls which rich editor opens in Generate/Convert property rows.
+ *
+ * To add a new overridable field:
+ * 1. Add entry to FIELD_OVERRIDE_PROPS (tracking prop name)
+ * 2. Add entry to OVERRIDABLE_FIELD_LABELS (display name)
+ * 3. Add entry to OVERRIDABLE_FIELD_TYPES (expected property type)
+ * 4. Add entry here (editor behavior)
+ * 5. Add entry to OVERRIDABLE_FIELD_PICKER_TITLES if using "date-picker"
+ * 6. Add a case in BulkTaskCreationModal.renderCustomPropValueInput() for new editor types
+ */
+export type FieldEditorType = "date-picker" | "assignee-picker" | "inline";
+
+export const OVERRIDABLE_FIELD_EDITORS: Record<OverridableField, FieldEditorType> = {
+	due: "date-picker",
+	scheduled: "date-picker",
+	completedDate: "date-picker",
+	dateCreated: "date-picker",
+	assignee: "assignee-picker",
+};
+
+/** Picker title for date-picker editor type fields. */
+export const OVERRIDABLE_FIELD_PICKER_TITLES: Partial<Record<OverridableField, string>> = {
+	due: "Set due date",
+	scheduled: "Set scheduled date",
+	completedDate: "Set completed date",
+	dateCreated: "Set created date",
+};
+
+/**
  * Read field overrides from a task's frontmatter.
  *
  * Scans for tracking properties (tnDueDateProp, etc.) and returns
