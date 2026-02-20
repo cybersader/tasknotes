@@ -1619,6 +1619,7 @@ export abstract class TaskModal extends Modal {
 		const menu = new RecurrenceContextMenu({
 			currentValue: this.recurrenceRule,
 			currentAnchor: this.recurrenceAnchor,
+			scheduledDate: this.scheduledDate,
 			onSelect: (value, anchor) => {
 				this.recurrenceRule = value || "";
 				if (anchor !== undefined) {
@@ -2411,15 +2412,14 @@ class ContextSuggest extends AbstractInputSuggest<ContextSuggestion> {
 		const currentValues = this.input.value.split(",").map((v: string) => v.trim());
 		const currentQuery = currentValues[currentValues.length - 1];
 
-		if (!currentQuery) return [];
-
 		const contexts = this.plugin.cacheManager.getAllContexts();
+		const alreadySelected = currentValues.slice(0, -1);
 		return contexts
 			.filter((context) => context && typeof context === "string")
 			.filter(
 				(context) =>
-					context.toLowerCase().includes(currentQuery.toLowerCase()) &&
-					!currentValues.slice(0, -1).includes(context)
+					!alreadySelected.includes(context) &&
+					(!currentQuery || context.toLowerCase().includes(currentQuery.toLowerCase()))
 			)
 			.slice(0, 10)
 			.map((context) => ({
@@ -2475,15 +2475,14 @@ class TagSuggest extends AbstractInputSuggest<TagSuggestion> {
 		const currentValues = this.input.value.split(",").map((v: string) => v.trim());
 		const currentQuery = currentValues[currentValues.length - 1];
 
-		if (!currentQuery) return [];
-
 		const tags = this.plugin.cacheManager.getAllTags();
+		const alreadySelected = currentValues.slice(0, -1);
 		return tags
 			.filter((tag) => tag && typeof tag === "string")
 			.filter(
 				(tag) =>
-					tag.toLowerCase().includes(currentQuery.toLowerCase()) &&
-					!currentValues.slice(0, -1).includes(tag)
+					!alreadySelected.includes(tag) &&
+					(!currentQuery || tag.toLowerCase().includes(currentQuery.toLowerCase()))
 			)
 			.slice(0, 10)
 			.map((tag) => ({

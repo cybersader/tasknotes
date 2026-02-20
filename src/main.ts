@@ -97,7 +97,6 @@ import { CURRENT_VERSION, RELEASE_NOTES_BUNDLE } from "./releaseNotes";
 import { OAuthService } from "./services/OAuthService";
 import { GoogleCalendarService } from "./services/GoogleCalendarService";
 import { MicrosoftCalendarService } from "./services/MicrosoftCalendarService";
-import { LicenseService } from "./services/LicenseService";
 import { CalendarProviderRegistry } from "./services/CalendarProvider";
 import { TaskCalendarSyncService } from "./services/TaskCalendarSyncService";
 import { DeviceIdentityManager } from "./identity/DeviceIdentityManager";
@@ -229,9 +228,6 @@ export default class TaskNotesPlugin extends Plugin {
 	// HTTP API service
 	apiService?: HTTPAPIService;
 
-	// License service for Lemon Squeezy validation
-	licenseService: LicenseService;
-
 	// OAuth service
 	oauthService: OAuthService;
 
@@ -259,6 +255,9 @@ export default class TaskNotesPlugin extends Plugin {
 	// Debug logging utility (writes to debug.log file when enabled)
 	debugLog: DebugLog;
 
+	// mdbase-spec generation service
+	mdbaseSpecService: import("./services/MdbaseSpecService").MdbaseSpecService;
+
 	// Bases filter converter for exporting saved views
 	basesFilterConverter: import("./services/BasesFilterConverter").BasesFilterConverter;
 
@@ -268,6 +267,7 @@ export default class TaskNotesPlugin extends Plugin {
 
 	// Event listener cleanup
 	private taskUpdateListenerForEditor: import("obsidian").EventRef | null = null;
+	private autoStopTimeTrackingListener: import("obsidian").EventRef | null = null;
 	private relationshipsReadingModeCleanup: (() => void) | null = null;
 	private taskCardReadingModeCleanup: (() => void) | null = null;
 
@@ -358,7 +358,7 @@ export default class TaskNotesPlugin extends Plugin {
 
 		// Initialize only essential services that are needed for app registration
 		this.fieldMapper = new FieldMapper(this.settings.fieldMapping);
-		this.statusManager = new StatusManager(this.settings.customStatuses);
+		this.statusManager = new StatusManager(this.settings.customStatuses, this.settings.defaultTaskStatus);
 		this.priorityManager = new PriorityManager(this.settings.customPriorities);
 
 		// Initialize performance optimization utilities (lightweight)
@@ -393,7 +393,7 @@ export default class TaskNotesPlugin extends Plugin {
 			this.priorityManager,
 			this
 		);
-		this.taskStatsService = new TaskStatsService(this.cacheManager);
+		this.taskStatsService = new TaskStatsService(this.cacheManager, this.statusManager);
 		this.viewStateManager = new ViewStateManager(this.app, this);
 		this.projectSubtasksService = new ProjectSubtasksService(this);
 		this.expandedProjectsService = new ExpandedProjectsService(this);
@@ -437,6 +437,10 @@ export default class TaskNotesPlugin extends Plugin {
 		// Initialize Bases filter converter for saved view export
 		const { BasesFilterConverter } = await import("./services/BasesFilterConverter");
 		this.basesFilterConverter = new BasesFilterConverter(this);
+
+		// Initialize mdbase-spec generation service
+		const { MdbaseSpecService } = await import("./services/MdbaseSpecService");
+		this.mdbaseSpecService = new MdbaseSpecService(this);
 
 		// Create ICS services early so views can register event listeners
 		// (initialization will be deferred to lazy loading)
@@ -492,11 +496,6 @@ export default class TaskNotesPlugin extends Plugin {
 
 		// Start migration check early (before views can be opened)
 		this.migrationPromise = this.performEarlyMigrationCheck();
-
-		// Initialize License service early (needed by OAuth service)
-		this.licenseService = new LicenseService(this);
-		// Load cached license validation data on startup
-		await this.licenseService.loadCacheFromData();
 
 		// Initialize OAuth and Calendar services early (before Bases registration)
 		// This ensures the calendar toggles appear in Bases calendar views
@@ -774,6 +773,22 @@ export default class TaskNotesPlugin extends Plugin {
 				this.taskCalendarSyncService = new TaskCalendarSyncService(
 					this,
 					this.googleCalendarService
+				);
+
+				// Clean up Google Calendar events when task files are deleted externally
+				this.registerEvent(
+					this.emitter.on("file-deleted", (data: { path: string; prevCache?: any }) => {
+						if (!this.taskCalendarSyncService?.isEnabled()) return;
+						const eventIdKey = this.fieldMapper.toUserField("googleCalendarEventId");
+						const eventId = data.prevCache?.frontmatter?.[eventIdKey];
+						if (eventId) {
+							this.taskCalendarSyncService
+								.deleteTaskFromCalendarByPath(data.path, eventId)
+								.catch((error) => {
+									console.warn("Failed to delete task from Google Calendar on file deletion:", error);
+								});
+						}
+					})
 				);
 
 				// Microsoft Calendar
@@ -1142,15 +1157,20 @@ export default class TaskNotesPlugin extends Plugin {
 	 * Set up time tracking event listeners based on settings
 	 */
 	private setupTimeTrackingEventListeners(): void {
+		// Clear existing listener to avoid duplicate handlers across settings reloads/changes
+		if (this.autoStopTimeTrackingListener) {
+			this.emitter.offref(this.autoStopTimeTrackingListener);
+			this.autoStopTimeTrackingListener = null;
+		}
+
 		// Only set up listener if auto-stop is enabled
 		if (this.settings.autoStopTimeTrackingOnComplete) {
-			const eventRef = this.emitter.on(
+			this.autoStopTimeTrackingListener = this.emitter.on(
 				EVENT_TASK_UPDATED,
 				async (data: TaskUpdateEventData) => {
 					await this.handleAutoStopTimeTracking(data);
 				}
 			);
-			this.registerEvent(eventRef);
 		}
 
 		// Update tracking of time tracking settings
@@ -1166,11 +1186,26 @@ export default class TaskNotesPlugin extends Plugin {
 			return;
 		}
 
-		// Check if status changed from non-completed to completed
+		// Check if task was just completed
+		let wasJustCompleted = false;
+
+		// For non-recurring tasks: check if status changed from non-completed to completed
 		const wasCompleted = this.statusManager.isCompletedStatus(originalTask.status);
 		const isNowCompleted = this.statusManager.isCompletedStatus(updatedTask.status);
-
 		if (!wasCompleted && isNowCompleted) {
+			wasJustCompleted = true;
+		}
+
+		// For recurring tasks: check if a new instance was completed (complete_instances grew)
+		if (updatedTask.recurrence) {
+			const originalInstances = originalTask.complete_instances || [];
+			const updatedInstances = updatedTask.complete_instances || [];
+			if (updatedInstances.length > originalInstances.length) {
+				wasJustCompleted = true;
+			}
+		}
+
+		if (wasJustCompleted) {
 			// Task was just marked as completed - check if it has active time tracking
 			const activeSession = this.getActiveTimeSession(updatedTask);
 			if (activeSession) {
@@ -1485,6 +1520,11 @@ export default class TaskNotesPlugin extends Plugin {
 			this.oauthService.destroy();
 		}
 
+		// Clean up task calendar sync service (before calendar services it depends on)
+		if (this.taskCalendarSyncService) {
+			this.taskCalendarSyncService.destroy();
+		}
+
 		// Clean up calendar services
 		if (this.googleCalendarService) {
 			this.googleCalendarService.destroy();
@@ -1559,6 +1599,12 @@ export default class TaskNotesPlugin extends Plugin {
 			this.emitter.offref(this.taskUpdateListenerForEditor);
 		}
 
+		// Clean up auto-stop time tracking listener
+		if (this.autoStopTimeTrackingListener) {
+			this.emitter.offref(this.autoStopTimeTrackingListener);
+			this.autoStopTimeTrackingListener = null;
+		}
+
 		// Clean up the event emitter (native Events class)
 		if (this.emitter && typeof this.emitter.off === "function") {
 			// Native Events cleanup happens automatically
@@ -1585,6 +1631,9 @@ export default class TaskNotesPlugin extends Plugin {
 		}
 		if (loadedData && typeof loadedData.apiAuthToken === "undefined") {
 			loadedData.apiAuthToken = "";
+		}
+		if (loadedData && typeof loadedData.enableMCP === "undefined") {
+			loadedData.enableMCP = false;
 		}
 
 		// Migration: Migrate statusSuggestionTrigger to nlpTriggers if needed
@@ -1705,14 +1754,10 @@ export default class TaskNotesPlugin extends Plugin {
 	}
 
 	async saveSettings() {
-		// Load existing plugin data to preserve non-settings data like pomodoroHistory
-		const data = (await this.loadData()) || {};
-		// Merge only settings properties, preserving non-settings data
-		const settingsKeys = Object.keys(DEFAULT_SETTINGS) as (keyof TaskNotesSettings)[];
-		for (const key of settingsKeys) {
-			data[key] = this.settings[key];
-		}
-		await this.saveData(data);
+		await this.saveSettingsDataOnly();
+
+		// Keep runtime webhook state aligned with settings edits while API is running.
+		this.apiService?.syncWebhookSettings?.();
 
 		// Check if cache-related settings have changed
 		const cacheSettingsChanged = this.haveCacheSettingsChanged();
@@ -1754,6 +1799,9 @@ export default class TaskNotesPlugin extends Plugin {
 			this.statusBarService.updateVisibility();
 		}
 
+		// Regenerate mdbase-spec files if the feature is enabled
+		this.mdbaseSpecService?.onSettingsChanged();
+
 		// Invalidate filter options cache so new settings (e.g., user fields) appear immediately
 		this.filterService?.refreshFilterOptions();
 
@@ -1764,8 +1812,24 @@ export default class TaskNotesPlugin extends Plugin {
 		this.emitter.trigger("settings-changed", this.settings);
 	}
 
+	/**
+	 * Persist settings to disk without triggering runtime side-effects.
+	 * Intended for background/internal updates (e.g., sync token writes).
+	 */
+	async saveSettingsDataOnly(): Promise<void> {
+		// Load existing plugin data to preserve non-settings data like pomodoroHistory
+		const data = (await this.loadData()) || {};
+		// Merge only settings properties, preserving non-settings data
+		const settingsKeys = Object.keys(DEFAULT_SETTINGS) as (keyof TaskNotesSettings)[];
+		for (const key of settingsKeys) {
+			data[key] = this.settings[key];
+		}
+		await this.saveData(data);
+	}
+
 	async onExternalSettingsChange(): Promise<void> {
 		await this.loadSettings();
+		this.apiService?.syncWebhookSettings?.();
 
 		// Update all services with new settings
 		this.fieldMapper?.updateMapping(this.settings.fieldMapping);
@@ -3209,9 +3273,15 @@ export default class TaskNotesPlugin extends Plugin {
 	openTimeEntryEditor(task: TaskInfo, onSave?: () => void): void {
 		const modal = new TimeEntryEditorModal(this.app, this, task, async (updatedEntries) => {
 			try {
+				const sanitizedEntries = updatedEntries.map((entry) => {
+					const sanitizedEntry = { ...entry };
+					delete sanitizedEntry.duration;
+					return sanitizedEntry;
+				});
+
 				// Save to file
 				await this.taskService.updateTask(task, {
-					timeEntries: updatedEntries,
+					timeEntries: sanitizedEntries,
 				});
 
 				// Signal immediate update before triggering data change

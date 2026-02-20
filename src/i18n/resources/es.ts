@@ -419,6 +419,7 @@ export const es: TranslationTree = {
 			header: "Novedades en TaskNotes {version}",
 			viewAllLink: "Ver todas las notas de versión en GitHub →",
 			starMessage: "Si TaskNotes te resulta útil, considera darle una estrella en GitHub",
+			baseFilesNotice: "> [!info] Acerca de los archivos `.base` predeterminados\n> Los cambios en las plantillas `.base` generadas por defecto no sobrescriben tus archivos `.base` existentes, por lo que tus personalizaciones se mantienen.\n> Si quieres las mejoras más recientes de las plantillas, regenera los archivos base en **Ajustes → TaskNotes → General → Crear archivos**.",
 		},
 	},
 	settings: {
@@ -574,6 +575,8 @@ export const es: TranslationTree = {
 			recurring: {
 				maintainOffsetName: "Mantener desplazamiento de fecha de vencimiento en tareas recurrentes",
 				maintainOffsetDesc: "Mantener el desplazamiento entre fecha de vencimiento y fecha programada cuando se completan tareas recurrentes",
+				resetCheckboxesName: "Restablecer casillas de verificación en recurrencia",
+				resetCheckboxesDesc: "Restablecer todas las casillas de verificación markdown en el cuerpo de la tarea cuando una tarea recurrente se completa y reprograma",
 			},
 			timeblocking: {
 				header: "Bloqueo de tiempo",
@@ -582,6 +585,8 @@ export const es: TranslationTree = {
 				enableDesc: "Habilitar funcionalidad de bloque de tiempo para programación ligera en notas diarias. Cuando está habilitado, la opción 'Timeblock' aparece en el menú contextual de arrastrar del calendario.",
 				showBlocksName: "Mostrar bloques de tiempo",
 				showBlocksDesc: "Mostrar bloques de tiempo de notas diarias por defecto",
+				defaultColorName: "Color predeterminado de bloque de tiempo",
+				defaultColorDesc: "El color predeterminado utilizado al crear nuevos bloques de tiempo",
 				usage: "Uso: Arrastra en el calendario para crear eventos. Selecciona 'Timeblock' del menú contextual (solo visible cuando el bloqueo de tiempo está habilitado). Arrastra para mover bloques de tiempo existentes. Ajusta los bordes para ajustar la duración.",
 			},
 			performance: {
@@ -1183,6 +1188,7 @@ export const es: TranslationTree = {
 					scheduled: "Fecha programada",
 					timeEstimate: "Estimación de tiempo",
 					totalTrackedTime: "Tiempo total rastreado",
+					checklistProgress: "Checklist Progress",
 					recurrence: "Recurrencia",
 					completedDate: "Fecha de finalización",
 					createdDate: "Fecha de creación",
@@ -1780,6 +1786,8 @@ export const es: TranslationTree = {
 					notATask: "El archivo actual no es una tarea",
 					noDateToSync: "La tarea no tiene fecha programada o de vencimiento para sincronizar",
 					syncFailed: "Error al sincronizar tarea a Google Calendar: {message}",
+					connectionExpired:
+						"Google Calendar connection expired. Please reconnect in Settings > Integrations.",
 					syncingTasks: "Sincronizando {total} tareas a Google Calendar...",
 					syncComplete:
 						"Sincronización completa: {synced} sincronizadas, {failed} fallidas, {skipped} omitidas",
@@ -1815,6 +1823,12 @@ export const es: TranslationTree = {
 					name: "Token de autenticación API",
 					description: "Token requerido para autenticación API (dejar vacío para sin autenticación)",
 					placeholder: "tu-token-secreto",
+				},
+				mcp: {
+					enable: {
+						name: "Enable MCP Server",
+						description: "Expose TaskNotes tools via Model Context Protocol at /mcp endpoint. Requires HTTP API to be enabled.",
+					},
 				},
 				endpoints: {
 					header: "Endpoints API disponibles",
@@ -2023,6 +2037,14 @@ export const es: TranslationTree = {
 				header: "Otras integraciones de plugins",
 				description: "Configurar integraciones con otros plugins de Obsidian.",
 			},
+			mdbaseSpec: {
+				header: "Definiciones de tipos mdbase",
+				learnMore: "Learn more about mdbase-spec",
+				enable: {
+					name: "Generate mdbase type definitions",
+					description: "Generate and maintain mdbase type files (mdbase.yaml and _types/task.md) at the vault root as your settings change.",
+				},
+			},
 			timeFormats: {
 				justNow: "Justo ahora",
 				minutesAgo: "hace {minutes} minuto{plural}",
@@ -2171,6 +2193,26 @@ export const es: TranslationTree = {
 			addAttachmentButton: "Agregar adjunto",
 			addAttachmentTooltip: "Seleccionar un archivo o nota usando búsqueda difusa",
 			createButton: "Crear bloque de tiempo",
+		},
+		calendarEventCreation: {
+			heading: "Crear evento de calendario",
+			dateTimeLabel: "Fecha y hora: ",
+			titleLabel: "Título",
+			titleDesc: "Título para el evento de calendario",
+			titlePlaceholder: "ej., Reunión de equipo",
+			calendarLabel: "Calendario",
+			calendarDesc: "En qué calendario crear el evento",
+			descriptionLabel: "Descripción",
+			descriptionDesc: "Descripción opcional para el evento",
+			descriptionPlaceholder: "Agregar detalles sobre este evento...",
+			locationLabel: "Ubicación",
+			locationDesc: "Ubicación opcional para el evento",
+			locationPlaceholder: "ej., Sala de conferencias A",
+			createButton: "Crear evento",
+			titleRequired: "El título del evento es obligatorio",
+			noCalendarSelected: "No se seleccionó ningún calendario",
+			success: "Evento de calendario \"{title}\" creado",
+			error: "No se pudo crear el evento de calendario: {message}",
 		},
 		icsNoteCreation: {
 			heading: "Crear desde evento ICS",
@@ -2607,6 +2649,7 @@ export const es: TranslationTree = {
 				addBlockingTitle: "Agregar tareas que esto bloquea",
 				removeBlockedBy: "Eliminar bloqueado-por…",
 				removeBlocking: "Eliminar bloqueando…",
+				unknownDependency: "Desconocido",
 				inputPlaceholder: "[[Nota de tarea]]",
 				notices: {
 					noEntries: "Por favor ingrese al menos una tarea",
@@ -2999,6 +3042,7 @@ export const es: TranslationTree = {
 				scheduledDate: "Fecha programada",
 				timeEstimate: "Estimación de tiempo",
 				totalTrackedTime: "Tiempo total rastreado",
+				checklistProgress: "Checklist Progress",
 				recurrence: "Recurrencia",
 				completedDate: "Fecha de finalización",
 				createdDate: "Fecha de creación",

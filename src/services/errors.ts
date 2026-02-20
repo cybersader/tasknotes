@@ -42,12 +42,29 @@ export class TokenExpiredError extends OAuthError {
 }
 
 /**
+ * OAuth token refresh failed with an irrecoverable error.
+ * This indicates the refresh token has been revoked, expired, or is otherwise invalid.
+ * The user needs to reconnect their account.
+ */
+export class TokenRefreshError extends OAuthError {
+	constructor(
+		provider: string,
+		public readonly oauthErrorCode?: string,
+		public readonly oauthErrorDescription?: string
+	) {
+		const message = `${provider} connection expired. Please reconnect in Settings > Integrations.`;
+		super(message, provider, 'TOKEN_REFRESH_FAILED');
+		this.name = 'TokenRefreshError';
+	}
+}
+
+/**
  * OAuth credentials not configured
  */
 export class OAuthNotConfiguredError extends OAuthError {
 	constructor(provider: string) {
 		super(
-			`${provider} OAuth is not configured. Please provide credentials or license key.`,
+			`${provider} OAuth is not configured. Please provide OAuth credentials in settings.`,
 			provider,
 			'NOT_CONFIGURED'
 		);
@@ -103,29 +120,6 @@ export class RateLimitError extends GoogleCalendarError {
 }
 
 /**
- * License validation errors
- */
-export class LicenseError extends TaskNotesServiceError {
-	constructor(message: string, code?: string) {
-		super(message, code);
-		this.name = 'LicenseError';
-	}
-}
-
-/**
- * Invalid or expired license
- */
-export class InvalidLicenseError extends LicenseError {
-	constructor(reason?: string) {
-		const message = reason
-			? `Invalid license: ${reason}`
-			: 'Invalid or expired license key.';
-		super(message, 'INVALID_LICENSE');
-		this.name = 'InvalidLicenseError';
-	}
-}
-
-/**
  * Network and connectivity errors
  */
 export class NetworkError extends TaskNotesServiceError {
@@ -169,14 +163,14 @@ export function isRetriableError(error: Error): boolean {
  * Helper to extract user-friendly error message
  */
 export function getUserFriendlyMessage(error: Error): string {
+	if (error instanceof TokenRefreshError) {
+		return `Your ${error.provider} connection has expired. Please reconnect in Settings > Integrations.`;
+	}
 	if (error instanceof TokenExpiredError) {
 		return `Your ${error.provider} connection has expired. Please reconnect in settings.`;
 	}
 	if (error instanceof OAuthNotConfiguredError) {
 		return `${error.provider} is not set up. Please configure it in settings.`;
-	}
-	if (error instanceof InvalidLicenseError) {
-		return 'Your license key is invalid or expired. Please check your license in settings.';
 	}
 	if (error instanceof RateLimitError) {
 		return 'Too many requests. Please wait a moment and try again.';

@@ -487,7 +487,7 @@ export interface TimeEntry {
 	startTime: string; // ISO timestamp
 	endTime?: string; // ISO timestamp, undefined if currently running
 	description?: string; // Optional description of what was worked on
-	duration?: number; // Duration in minutes (calculated or manually set)
+	duration?: number; // Legacy field; duration should be derived from start/end timestamps
 }
 
 // Reminder types
@@ -714,7 +714,7 @@ export interface PriorityConfig {
 	weight: number; // For sorting (higher = more important)
 }
 
-// Template configuration for quick setup
+// Template configuration presets
 export interface Template {
 	id: string;
 	name: string;

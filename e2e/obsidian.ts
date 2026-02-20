@@ -140,6 +140,80 @@ async function tryConnectExisting(remoteDebuggingPort: number): Promise<string |
   }
 }
 
+async function waitForCdpUrl(
+  remoteDebuggingPort: number,
+  obsidianProcess: ChildProcess,
+  timeoutMs: number
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let resolved = false;
+
+    const finish = (url: string) => {
+      if (resolved) {
+        return;
+      }
+      resolved = true;
+      clearTimeout(timeout);
+      clearInterval(pollTimer);
+      obsidianProcess.stdout?.off('data', onData);
+      obsidianProcess.stderr?.off('data', onData);
+      obsidianProcess.off('exit', onExit);
+      obsidianProcess.off('error', onError);
+      resolve(url);
+    };
+
+    const onData = (data: Buffer) => {
+      const output = data.toString();
+      const match = output.match(/DevTools listening on (ws:\/\/[^\s]+)/);
+      if (match) {
+        finish(match[1]);
+      }
+    };
+
+    const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
+      if (!resolved) {
+        clearTimeout(timeout);
+        clearInterval(pollTimer);
+        reject(new Error(`Obsidian exited before DevTools was ready (code=${code}, signal=${signal})`));
+      }
+    };
+
+    const onError = (err: Error) => {
+      if (!resolved) {
+        clearTimeout(timeout);
+        clearInterval(pollTimer);
+        reject(err);
+      }
+    };
+
+    const pollTimer = setInterval(async () => {
+      if (resolved) {
+        return;
+      }
+      const existing = await tryConnectExisting(remoteDebuggingPort);
+      if (existing) {
+        finish(existing);
+      }
+    }, 500);
+
+    const timeout = setTimeout(() => {
+      if (!resolved) {
+        clearInterval(pollTimer);
+        obsidianProcess.stdout?.off('data', onData);
+        obsidianProcess.stderr?.off('data', onData);
+        obsidianProcess.off('exit', onExit);
+        obsidianProcess.off('error', onError);
+        reject(new Error('Timeout waiting for DevTools'));
+      }
+    }, timeoutMs);
+
+    obsidianProcess.stdout?.on('data', onData);
+    obsidianProcess.stderr?.on('data', onData);
+    obsidianProcess.on('exit', onExit);
+    obsidianProcess.on('error', onError);
+  });
+}
+
 export async function launchObsidian(): Promise<ObsidianApp> {
   // Find Obsidian binary (cross-platform)
   const obsidianBinary = findObsidianBinary();
@@ -175,7 +249,7 @@ export async function launchObsidian(): Promise<ObsidianApp> {
     console.log('Found existing Obsidian instance, connecting...');
     cdpUrl = existingCdpUrl;
   } else {
-    // Launch Obsidian manually and connect via CDP
+    // Launch Obsidian manually and connect via CDP.
     const wsl = isWSL2();
     const platform = os.platform();
 
@@ -215,43 +289,8 @@ export async function launchObsidian(): Promise<ObsidianApp> {
       detached: false,
     });
 
-    // Wait for DevTools to be ready
-    // On Windows, the message might come on stdout or stderr
-    await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error(
-          'Timeout waiting for DevTools. If Obsidian is already running, please close it first.'
-        ));
-      }, 30000);
-
-      const handleOutput = (data: Buffer) => {
-        const output = data.toString();
-        console.log('[Obsidian output]', output.trim());
-        const match = output.match(/DevTools listening on (ws:\/\/[^\s]+)/);
-        if (match) {
-          cdpUrl = match[1];
-          clearTimeout(timeout);
-          resolve();
-        }
-      };
-
-      obsidianProcess!.stdout?.on('data', handleOutput);
-      obsidianProcess!.stderr?.on('data', handleOutput);
-
-      obsidianProcess!.on('error', (err) => {
-        clearTimeout(timeout);
-        reject(err);
-      });
-
-      obsidianProcess!.on('exit', (code) => {
-        if (!cdpUrl) {
-          clearTimeout(timeout);
-          reject(new Error(
-            `Obsidian exited with code ${code}. It may already be running - close it and try again.`
-          ));
-        }
-      });
-    });
+    // Use upstream's robust waitForCdpUrl helper (handles stdout/stderr, exit, timeouts)
+    cdpUrl = await waitForCdpUrl(remoteDebuggingPort, obsidianProcess, 60000);
   }
 
   console.log('Connecting to CDP:', cdpUrl);

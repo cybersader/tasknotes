@@ -1150,6 +1150,17 @@ export function renderFeaturesTab(
 					},
 				})
 			);
+			group.addSetting((setting) =>
+				configureToggleSetting(setting, {
+					name: translate("settings.features.recurring.resetCheckboxesName"),
+					desc: translate("settings.features.recurring.resetCheckboxesDesc"),
+					getValue: () => plugin.settings.resetCheckboxesOnRecurrence,
+					setValue: async (value: boolean) => {
+						plugin.settings.resetCheckboxesOnRecurrence = value;
+						save();
+					},
+				})
+			);
 		}
 	);
 
@@ -1186,6 +1197,20 @@ export function renderFeaturesTab(
 						},
 					})
 				);
+
+				group.addSetting((setting) => {
+					setting
+						.setName(translate("settings.features.timeblocking.defaultColorName"))
+						.setDesc(translate("settings.features.timeblocking.defaultColorDesc"))
+						.addText((text) => {
+							text.inputEl.type = "color";
+							text.setValue(plugin.settings.calendarViewSettings.defaultTimeblockColor);
+							text.onChange(async (value) => {
+								plugin.settings.calendarViewSettings.defaultTimeblockColor = value;
+								await save();
+							});
+						});
+				});
 
 				group.addSetting((setting) => {
 					setting.setDesc(translate("settings.features.timeblocking.usage"));

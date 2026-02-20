@@ -56,11 +56,14 @@ export function mapBasesPropertyToTaskCardProperty(
  * Transformations:
  * - timeEntries → totalTrackedTime (show computed total instead of raw array)
  * - blockedBy → blocked (show status pill instead of dependency list)
+ * - file.tasks/formula.checklistProgress → checklistProgress
  * - All other properties pass through unchanged
  */
 function applySpecialTransformations(propId: string): string {
 	if (propId === "timeEntries") return "totalTrackedTime";
 	if (propId === "blockedBy") return "blocked";
+	if (propId === "file.tasks") return "checklistProgress";
+	if (propId === "formula.checklistProgress") return "checklistProgress";
 	return propId;
 }
 
@@ -128,7 +131,7 @@ function createTaskInfoFromProperties(
 			basesItem.name ||
 			basesItem.path?.split("/").pop()?.replace(".md", "") ||
 			"Untitled",
-		status: props.status || "open",
+		status: props.status || plugin?.settings?.defaultTaskStatus || "open",
 		priority: props.priority || "normal",
 		path: basesItem.path || "",
 		archived: props.archived || false,

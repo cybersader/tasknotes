@@ -28,6 +28,7 @@ import {
 } from "./calendar-core";
 import { handleCalendarTaskClick } from "../utils/clickHandlers";
 import { TaskCreationModal } from "../modals/TaskCreationModal";
+import { CalendarEventCreationModal } from "../modals/CalendarEventCreationModal";
 import { ICSEventInfoModal } from "../modals/ICSEventInfoModal";
 import { Menu, TFile, setIcon, setTooltip } from "obsidian";
 import { format } from "date-fns";
@@ -1367,14 +1368,16 @@ export class CalendarView extends BasesViewBase {
 
 					entry.startTime = new Date(oldStartDate.getTime() + timeDiffMs).toISOString();
 					entry.endTime = new Date(oldEndDate.getTime() + timeDiffMs).toISOString();
+					delete entry.duration;
 
-					// Recalculate duration
-					entry.duration = Math.round(
-						(new Date(entry.endTime).getTime() - new Date(entry.startTime).getTime()) / 60000
-					);
+					const sanitizedEntries = updatedEntries.map((timeEntry) => {
+						const sanitizedEntry = { ...timeEntry };
+						delete sanitizedEntry.duration;
+						return sanitizedEntry;
+					});
 
 					await this.plugin.taskService.updateTask(taskInfo, {
-						timeEntries: updatedEntries,
+						timeEntries: sanitizedEntries,
 					});
 				}
 			} catch (error) {
@@ -1415,20 +1418,32 @@ export class CalendarView extends BasesViewBase {
 					// Calculate the time shift in milliseconds
 					const timeDiffMs = newStart.getTime() - oldStart.getTime();
 
-					// Update scheduled date
+					// Compute new date strings
+					let scheduledString: string | undefined;
+					let dueString: string | undefined;
+
 					if (taskInfo.scheduled) {
 						const oldScheduled = new Date(taskInfo.scheduled);
 						const newScheduled = new Date(oldScheduled.getTime() + timeDiffMs);
-						const scheduledString = format(newScheduled, "yyyy-MM-dd");
-						await this.plugin.taskService.updateProperty(taskInfo, "scheduled", scheduledString);
+						scheduledString = format(newScheduled, "yyyy-MM-dd");
 					}
 
-					// Update due date
 					if (taskInfo.due) {
 						const oldDue = new Date(taskInfo.due);
 						const newDue = new Date(oldDue.getTime() + timeDiffMs);
-						const dueString = format(newDue, "yyyy-MM-dd");
-						await this.plugin.taskService.updateProperty(taskInfo, "due", dueString);
+						dueString = format(newDue, "yyyy-MM-dd");
+					}
+
+					// Update both dates atomically in a single frontmatter write
+					const spanFile = this.plugin.app.vault.getAbstractFileByPath(taskInfo.path);
+					if (spanFile instanceof TFile) {
+						const scheduledField = this.plugin.fieldMapper.toUserField("scheduled");
+						const dueField = this.plugin.fieldMapper.toUserField("due");
+
+						await this.plugin.app.fileManager.processFrontMatter(spanFile, (frontmatter) => {
+							if (scheduledString) frontmatter[scheduledField] = scheduledString;
+							if (dueString) frontmatter[dueField] = dueString;
+						});
 					}
 				}
 			} catch (error) {
@@ -1473,14 +1488,16 @@ export class CalendarView extends BasesViewBase {
 					// Update start and end times
 					entry.startTime = newStart.toISOString();
 					entry.endTime = newEnd.toISOString();
+					delete entry.duration;
 
-					// Recalculate duration
-					entry.duration = Math.round(
-						(newEnd.getTime() - newStart.getTime()) / 60000
-					);
+					const sanitizedEntries = updatedEntries.map((timeEntry) => {
+						const sanitizedEntry = { ...timeEntry };
+						delete sanitizedEntry.duration;
+						return sanitizedEntry;
+					});
 
 					await this.plugin.taskService.updateTask(taskInfo, {
-						timeEntries: updatedEntries,
+						timeEntries: sanitizedEntries,
 					});
 				}
 			} catch (error) {
@@ -1668,6 +1685,38 @@ export class CalendarView extends BasesViewBase {
 					await handleTimeEntryCreation(info.start, info.end, info.allDay, this.plugin);
 				});
 		});
+
+		// Show "Create calendar event" if any external calendars are connected
+		const registry = this.plugin.calendarProviderRegistry;
+		if (registry) {
+			const hasWritableCalendars = registry.getAllProviders().some(
+				(p) => p.getAvailableCalendars().length > 0
+			);
+			if (hasWritableCalendars) {
+				menu.addSeparator();
+				menu.addItem((item) => {
+					item.setTitle("Create external calendar event")
+						.setIcon("calendar-plus")
+						.onClick(() => {
+							const modal = new CalendarEventCreationModal(
+								this.plugin.app,
+								this.plugin,
+								{
+									start: info.start,
+									end: info.end,
+									allDay: info.allDay,
+									onEventCreated: () => {
+										this.expectImmediateUpdate();
+										// Refresh provider data to show the new event
+										registry.refreshAll();
+									},
+								}
+							);
+							modal.open();
+						});
+				});
+			}
+		}
 
 		menu.showAtMouseEvent(info.jsEvent);
 

@@ -237,6 +237,7 @@ export interface TaskNotesSettings {
 	enableAPI: boolean;
 	apiPort: number;
 	apiAuthToken: string;
+	enableMCP: boolean;
 	// Webhook settings
 	webhooks: WebhookConfig[];
 	// User-defined field mappings (optional)
@@ -253,6 +254,7 @@ export interface TaskNotesSettings {
 	inlineVisibleProperties?: string[];
 	// Bases integration settings
 	enableBases: boolean;
+	enableMdbaseSpec: boolean;
 	autoCreateDefaultBasesFiles: boolean; // Auto-create missing default Base files on startup
 	enableBulkActionsButton: boolean; // Show the "Bulk tasking" button in Bases view toolbars (key kept for backward compat)
 	enableUniversalBasesButtons: boolean; // Show TaskNotes buttons on all Bases views (not just TaskNotes view types)
@@ -269,11 +271,10 @@ export interface TaskNotesSettings {
 	};
 	// Recurring task behavior
 	maintainDueDateOffsetInRecurring: boolean;
+	resetCheckboxesOnRecurrence: boolean; // Reset markdown checkboxes in task body when recurring task completes
 	// Frontmatter link format settings
 	useFrontmatterMarkdownLinks: boolean; // Use markdown links in frontmatter (requires obsidian-frontmatter-markdown-links plugin)
 	// OAuth Calendar Integration settings
-	oauthSetupMode: "quick" | "advanced"; // User's preferred setup mode
-	lemonSqueezyLicenseKey: string; // License key for using TaskNotes' built-in OAuth credentials
 	googleOAuthClientId: string;
 	googleOAuthClientSecret: string;
 	microsoftOAuthClientId: string;
@@ -578,6 +579,7 @@ export interface CalendarViewSettings {
 	// Timeblocking settings
 	enableTimeblocking: boolean;
 	defaultShowTimeblocks: boolean;
+	defaultTimeblockColor: string;
 	// Calendar behavior
 	nowIndicator: boolean;
 	selectMirror: boolean;

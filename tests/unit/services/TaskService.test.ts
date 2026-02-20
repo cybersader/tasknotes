@@ -37,7 +37,7 @@ jest.mock('../../../src/utils/helpers', () => ({
       default: return undefined;
     }
   }),
-  addDTSTARTToRecurrenceRule: jest.fn((rule: string) => rule),
+  addDTSTARTToRecurrenceRule: jest.fn((task: { recurrence?: string }) => task.recurrence ? `DTSTART:20250110T120000Z;${task.recurrence}` : null),
   updateDTSTARTInRecurrenceRule: jest.fn((rule: string) => rule),
   updateToNextScheduledOccurrence: jest.fn(),
   splitFrontmatterAndBody: jest.fn(() => ({ frontmatter: {}, body: '' }))
@@ -123,7 +123,7 @@ describe('TaskService', () => {
         scheduled: '2025-01-10',
         contexts: ['work', 'urgent'],
         timeEstimate: 120,
-        recurrence: 'FREQ=DAILY;INTERVAL=1'
+        recurrence: 'DTSTART:20250110T120000Z;FREQ=DAILY;INTERVAL=1'
       });
       // With default tag-based identification, task tag should be included
       expect(taskInfo.tags).toContain('task');
@@ -845,10 +845,17 @@ describe('TaskService', () => {
     let mockFile: TFile;
 
     beforeEach(() => {
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date('2025-01-01T12:00:00Z'));
+
       task = TaskFactory.createTask();
       mockFile = new TFile(task.path);
       mockPlugin.app.vault.getAbstractFileByPath.mockReturnValue(mockFile);
       mockPlugin.getActiveTimeSession.mockReturnValue(null);
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
     });
 
     it('should start time tracking for a task', async () => {
@@ -856,7 +863,7 @@ describe('TaskService', () => {
 
       expect(result.timeEntries).toHaveLength(1);
       expect(result.timeEntries![0]).toMatchObject({
-        startTime: '2025-01-01T12:00:00Z',
+        startTime: '2025-01-01T12:00:00.000Z',
         description: 'Work session'
       });
       expect(result.timeEntries![0].endTime).toBeUndefined();
@@ -893,6 +900,9 @@ describe('TaskService', () => {
     let activeSession: TimeEntry;
 
     beforeEach(() => {
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date('2025-01-01T12:00:00Z'));
+
       activeSession = {
         startTime: '2025-01-01T11:00:00Z',
         description: 'Active session'
@@ -907,12 +917,16 @@ describe('TaskService', () => {
       mockPlugin.getActiveTimeSession.mockReturnValue(activeSession);
     });
 
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
     it('should stop active time tracking', async () => {
       const result = await taskService.stopTimeTracking(task);
 
       expect(result.timeEntries![0]).toMatchObject({
         startTime: '2025-01-01T11:00:00Z',
-        endTime: '2025-01-01T12:00:00Z',
+        endTime: '2025-01-01T12:00:00.000Z',
         description: 'Active session'
       });
     });
@@ -985,6 +999,24 @@ describe('TaskService', () => {
 
       // Verify that processFrontMatter callback removes these fields
       expect(mockPlugin.app.fileManager.processFrontMatter).toHaveBeenCalled();
+    });
+
+    it('should remove projects when set to an empty array', async () => {
+      const taskWithProjects = TaskFactory.createTask({
+        projects: ['[[Project Alpha]]']
+      });
+      mockFile = new TFile(taskWithProjects.path);
+      mockPlugin.app.vault.getAbstractFileByPath.mockReturnValue(mockFile);
+
+      let capturedFrontmatter: any = {};
+      mockPlugin.app.fileManager.processFrontMatter.mockImplementation(async (_file, fn) => {
+        capturedFrontmatter = { projects: ['[[Project Alpha]]'] };
+        fn(capturedFrontmatter);
+      });
+
+      await taskService.updateTask(taskWithProjects, { projects: [] });
+
+      expect(capturedFrontmatter.projects).toBeUndefined();
     });
 
     it('should preserve tags when not being updated', async () => {

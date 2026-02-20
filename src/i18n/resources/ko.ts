@@ -415,6 +415,7 @@ export const ko: TranslationTree = {
 			header: "TaskNotes {version}의 새로운 기능",
 			viewAllLink: "GitHub에서 모든 릴리스 노트 보기 →",
 			starMessage: "TaskNotes가 유용하다면 GitHub에서 별표를 주세요",
+			baseFilesNotice: "> [!info] 기본 `.base` 파일 안내\n> 기본으로 생성되는 `.base` 템플릿이 변경되어도 기존 `.base` 파일은 덮어쓰지 않으므로 사용자 설정이 유지됩니다.\n> 최신 템플릿 개선 사항을 적용하려면 **설정 → TaskNotes → 일반 → 파일 생성**에서 베이스 파일을 다시 생성하세요.",
 		},
 	},
 	settings: {
@@ -570,6 +571,8 @@ export const ko: TranslationTree = {
 			recurring: {
 				maintainOffsetName: "반복 작업에서 마감일 오프셋 유지",
 				maintainOffsetDesc: "반복 작업 완료 시 마감일과 예정일 간의 오프셋 유지",
+				resetCheckboxesName: "반복 시 체크박스 초기화",
+				resetCheckboxesDesc: "반복 작업이 완료되고 다시 예약될 때 작업 본문의 모든 마크다운 체크박스를 초기화",
 			},
 			timeblocking: {
 				header: "타임블로킹",
@@ -578,6 +581,8 @@ export const ko: TranslationTree = {
 				enableDesc: "데일리 노트에서 가벼운 일정 관리를 위한 타임블로킹 기능 활성화. 활성화하면 캘린더 드래그 컨텍스트 메뉴에 '타임블록' 옵션이 나타납니다.",
 				showBlocksName: "타임블록 표시",
 				showBlocksDesc: "기본적으로 데일리 노트의 타임블록 표시",
+				defaultColorName: "기본 타임블록 색상",
+				defaultColorDesc: "새 타임블록 생성 시 사용되는 기본 색상",
 				usage: "사용법: 캘린더에서 드래그하여 이벤트를 만듭니다. 컨텍스트 메뉴에서 '타임블록'을 선택하세요 (타임블로킹이 활성화된 경우에만 표시됨). 드래그하여 기존 타임블록을 이동합니다. 가장자리를 드래그하여 기간을 조정합니다.",
 			},
 			performance: {
@@ -1145,6 +1150,7 @@ export const ko: TranslationTree = {
 					scheduled: "예정일",
 					timeEstimate: "시간 예상",
 					totalTrackedTime: "총 기록 시간",
+					checklistProgress: "Checklist Progress",
 					recurrence: "반복",
 					completedDate: "완료일",
 					createdDate: "생성일",
@@ -1730,6 +1736,8 @@ export const ko: TranslationTree = {
 					notATask: "현재 파일은 작업이 아닙니다",
 					noDateToSync: "동기화할 예정 날짜 또는 마감 날짜가 없습니다",
 					syncFailed: "Google 캘린더에 작업 동기화 실패: {message}",
+					connectionExpired:
+						"Google Calendar connection expired. Please reconnect in Settings > Integrations.",
 					syncingTasks: "{total}개의 작업을 Google 캘린더에 동기화 중...",
 					syncComplete:
 						"동기화 완료: {synced}개 동기화됨, {failed}개 실패, {skipped}개 건너뜀",
@@ -1765,6 +1773,12 @@ export const ko: TranslationTree = {
 					name: "API 인증 토큰",
 					description: "API 인증에 필요한 토큰 (인증 없이 사용하려면 비워두세요)",
 					placeholder: "your-secret-token",
+				},
+				mcp: {
+					enable: {
+						name: "Enable MCP Server",
+						description: "Expose TaskNotes tools via Model Context Protocol at /mcp endpoint. Requires HTTP API to be enabled.",
+					},
 				},
 				endpoints: {
 					header: "사용 가능한 API 엔드포인트",
@@ -1973,6 +1987,14 @@ export const ko: TranslationTree = {
 				header: "기타 플러그인 통합",
 				description: "다른 Obsidian 플러그인과의 통합을 설정합니다.",
 			},
+			mdbaseSpec: {
+				header: "mdbase 타입 정의",
+				learnMore: "Learn more about mdbase-spec",
+				enable: {
+					name: "Generate mdbase type definitions",
+					description: "Generate and maintain mdbase type files (mdbase.yaml and _types/task.md) at the vault root as your settings change.",
+				},
+			},
 			timeFormats: {
 				justNow: "방금",
 				minutesAgo: "{minutes}분 전",
@@ -2121,6 +2143,26 @@ export const ko: TranslationTree = {
 			addAttachmentButton: "첨부 파일 추가",
 			addAttachmentTooltip: "퍼지 검색을 사용하여 파일 또는 노트 선택",
 			createButton: "타임블록 만들기",
+		},
+		calendarEventCreation: {
+			heading: "캘린더 이벤트 만들기",
+			dateTimeLabel: "날짜 및 시간: ",
+			titleLabel: "제목",
+			titleDesc: "캘린더 이벤트 제목",
+			titlePlaceholder: "예: 팀 회의",
+			calendarLabel: "캘린더",
+			calendarDesc: "이벤트를 만들 캘린더",
+			descriptionLabel: "설명",
+			descriptionDesc: "이벤트에 대한 선택적 설명",
+			descriptionPlaceholder: "이벤트에 대한 세부정보 추가...",
+			locationLabel: "위치",
+			locationDesc: "이벤트의 선택적 위치",
+			locationPlaceholder: "예: 회의실 A",
+			createButton: "이벤트 만들기",
+			titleRequired: "이벤트 제목은 필수입니다",
+			noCalendarSelected: "캘린더가 선택되지 않았습니다",
+			success: "캘린더 이벤트 \"{title}\" 생성됨",
+			error: "캘린더 이벤트 생성 실패: {message}",
 		},
 		icsNoteCreation: {
 			heading: "ICS 이벤트에서 생성",
@@ -2557,6 +2599,7 @@ export const ko: TranslationTree = {
 				addBlockingTitle: "이 작업이 차단하는 작업 추가",
 				removeBlockedBy: "차단 원인 제거...",
 				removeBlocking: "차단 중 제거...",
+				unknownDependency: "알 수 없음",
 				inputPlaceholder: "[[작업 노트]]",
 				notices: {
 					noEntries: "최소 하나의 작업을 입력하세요",
@@ -2949,6 +2992,7 @@ export const ko: TranslationTree = {
 				scheduledDate: "예정일",
 				timeEstimate: "시간 예상",
 				totalTrackedTime: "총 기록 시간",
+				checklistProgress: "Checklist Progress",
 				recurrence: "반복",
 				completedDate: "완료일",
 				createdDate: "생성일",

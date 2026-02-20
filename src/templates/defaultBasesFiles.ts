@@ -37,6 +37,13 @@ function generateTaskFilterCondition(settings: TaskNotesSettings): string {
 
 		if (propertyValue) {
 			// Check property has specific value
+			// Boolean values must not be quoted — Obsidian stores checkbox/boolean
+			// frontmatter as actual booleans, so the Bases filter needs e.g.
+			// note.prop == true rather than note.prop == "true" (#1491)
+			const lower = propertyValue.toLowerCase();
+			if (lower === "true" || lower === "false") {
+				return `note.${propertyName} == ${lower}`;
+			}
 			return `note.${propertyName} == "${propertyValue}"`;
 		} else {
 			// Just check property exists (is not empty)
@@ -101,6 +108,10 @@ function mapPropertyToBasesProperty(property: string, plugin: TaskNotesPlugin): 
 		case "totalTrackedTime":
 			// totalTrackedTime is computed from timeEntries, use the timeEntries property
 			return fm.toUserField("timeEntries");
+		case "checklistProgress":
+			// checklistProgress is computed from markdown checklist items.
+			// Use file.tasks as the selectable Bases source property.
+			return "file.tasks";
 	}
 
 	// Try to map using FieldMapper
@@ -138,6 +149,7 @@ function generateOrderArray(plugin: TaskNotesPlugin): string[] {
 		"file.name", // title
 		mapPropertyToBasesProperty("recurrence", plugin),
 		mapPropertyToBasesProperty("complete_instances", plugin),
+		mapPropertyToBasesProperty("checklistProgress", plugin),
 	].filter((prop): prop is string => !!prop);
 
 	// Combine, removing duplicates while preserving order

@@ -417,6 +417,7 @@ export const en: TranslationTree = {
 			header: "What's new in TaskNotes {version}",
 			viewAllLink: "View all release notes on GitHub →",
 			starMessage: "If you find TaskNotes useful, please consider giving it a star on GitHub",
+			baseFilesNotice: "> [!info] About default `.base` files\n> Updates to default generated `.base` templates do not overwrite your existing `.base` files, so your customizations stay safe.\n> If you want the newest template improvements, regenerate base files in **Settings → TaskNotes → General → Create Default Files**.",
 		},
 	},
 	settings: {
@@ -582,6 +583,9 @@ export const en: TranslationTree = {
 				maintainOffsetName: "Maintain due date offset in recurring tasks",
 				maintainOffsetDesc:
 					"Keep the offset between due date and scheduled date when recurring tasks are completed",
+				resetCheckboxesName: "Reset checkboxes on recurrence",
+				resetCheckboxesDesc:
+					"Reset all markdown checkboxes in the task body when a recurring task is completed and rescheduled",
 			},
 			timeblocking: {
 				header: "Timeblocking",
@@ -592,6 +596,8 @@ export const en: TranslationTree = {
 					"Enable timeblocking feature for lightweight scheduling in daily notes. When enabled, 'Timeblock' option appears in the calendar drag context menu.",
 				showBlocksName: "Show timeblocks",
 				showBlocksDesc: "Display timeblocks from daily notes by default",
+				defaultColorName: "Default timeblock color",
+				defaultColorDesc: "The default color used when creating new timeblocks",
 				usage: "Usage: Drag on the calendar to create events. Select 'Timeblock' from the context menu (only visible when timeblocking is enabled). Drag to move existing timeblocks. Resize edges to adjust duration.",
 			},
 			performance: {
@@ -1210,6 +1216,7 @@ export const en: TranslationTree = {
 					scheduled: "Scheduled Date",
 					timeEstimate: "Time Estimate",
 					totalTrackedTime: "Total Tracked Time",
+					checklistProgress: "Checklist Progress",
 					recurrence: "Recurrence",
 					completedDate: "Completed Date",
 					createdDate: "Created Date",
@@ -1824,6 +1831,8 @@ export const en: TranslationTree = {
 					notATask: "Current file is not a task",
 					noDateToSync: "Task has no scheduled or due date to sync",
 					syncFailed: "Failed to sync task to Google Calendar: {message}",
+					connectionExpired:
+						"Google Calendar connection expired. Please reconnect in Settings > Integrations.",
 					syncingTasks: "Syncing {total} tasks to Google Calendar...",
 					syncComplete:
 						"Sync complete: {synced} synced, {failed} failed, {skipped} skipped",
@@ -1859,6 +1868,12 @@ export const en: TranslationTree = {
 					name: "API authentication token",
 					description: "Token required for API authentication (leave empty for no auth)",
 					placeholder: "your-secret-token",
+				},
+				mcp: {
+					enable: {
+						name: "Enable MCP Server",
+						description: "Expose TaskNotes tools via Model Context Protocol at /mcp endpoint. Requires HTTP API to be enabled.",
+					},
 				},
 				endpoints: {
 					header: "Available API Endpoints",
@@ -2075,6 +2090,14 @@ export const en: TranslationTree = {
 			otherIntegrations: {
 				header: "Other plugin integrations",
 				description: "Configure integrations with other Obsidian plugins.",
+			},
+			mdbaseSpec: {
+				header: "mdbase type definitions",
+				learnMore: "Learn more about mdbase-spec",
+				enable: {
+					name: "Generate mdbase type definitions",
+					description: "Generate and maintain mdbase type files (mdbase.yaml and _types/task.md) at the vault root as your settings change.",
+				},
 			},
 			timeFormats: {
 				justNow: "Just now",
@@ -2377,6 +2400,26 @@ export const en: TranslationTree = {
 			addAttachmentButton: "Add Attachment",
 			addAttachmentTooltip: "Select a file or note using fuzzy search",
 			createButton: "Create timeblock",
+		},
+		calendarEventCreation: {
+			heading: "Create calendar event",
+			dateTimeLabel: "Date & Time: ",
+			titleLabel: "Title",
+			titleDesc: "Title for the calendar event",
+			titlePlaceholder: "e.g., Team meeting",
+			calendarLabel: "Calendar",
+			calendarDesc: "Which calendar to create the event on",
+			descriptionLabel: "Description",
+			descriptionDesc: "Optional description for the event",
+			descriptionPlaceholder: "Add details about this event...",
+			locationLabel: "Location",
+			locationDesc: "Optional location for the event",
+			locationPlaceholder: "e.g., Conference Room A",
+			createButton: "Create event",
+			titleRequired: "Event title is required",
+			noCalendarSelected: "No calendar selected",
+			success: "Calendar event \"{title}\" created",
+			error: "Failed to create calendar event: {message}",
 		},
 		icsNoteCreation: {
 			heading: "Create from ICS Event",
@@ -2817,6 +2860,7 @@ export const en: TranslationTree = {
 				addBlockingTitle: "Add tasks this blocks",
 				removeBlockedBy: "Remove blocked-by…",
 				removeBlocking: "Remove blocking…",
+				unknownDependency: "Unknown",
 				inputPlaceholder: "[[Task Note]]",
 					notices: {
 						noEntries: "Please enter at least one task",
@@ -3221,6 +3265,7 @@ export const en: TranslationTree = {
 				scheduledDate: "Scheduled Date",
 				timeEstimate: "Time Estimate",
 				totalTrackedTime: "Total Tracked Time",
+				checklistProgress: "Checklist Progress",
 				recurrence: "Recurrence",
 				completedDate: "Completed Date",
 				createdDate: "Created Date",

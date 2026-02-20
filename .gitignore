@@ -82,3 +82,7 @@ tasknotes-upstream/
 # Agent workspace and planning
 knowledge-base/
 task_plan.md
+
+# Upstream ops workspace
+/.ops
+AGENTS.md

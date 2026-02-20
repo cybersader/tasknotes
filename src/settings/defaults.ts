@@ -171,6 +171,7 @@ export const DEFAULT_CALENDAR_VIEW_SETTINGS: CalendarViewSettings = {
 	// Timeblocking settings
 	enableTimeblocking: false, // Disabled by default - toggleable feature
 	defaultShowTimeblocks: true,
+	defaultTimeblockColor: "#6366f1",
 	// Calendar behavior
 	nowIndicator: true,
 	selectMirror: true,
@@ -450,6 +451,7 @@ export const DEFAULT_SETTINGS: TaskNotesSettings = {
 	enableAPI: false,
 	apiPort: 8080,
 	apiAuthToken: "",
+	enableMCP: false,
 	// Webhook defaults
 	webhooks: [],
 	// User Fields defaults (multiple)
@@ -474,6 +476,7 @@ export const DEFAULT_SETTINGS: TaskNotesSettings = {
 	inlineVisibleProperties: ["status", "priority", "due", "scheduled", "recurrence"],
 	// Bases integration defaults
 	enableBases: true,
+	enableMdbaseSpec: false,
 	autoCreateDefaultBasesFiles: true, // Auto-create missing default Base files on startup
 	enableBulkActionsButton: true, // Show the "Bulk tasking" button in Bases view toolbars
 	enableUniversalBasesButtons: true, // Show TaskNotes buttons on all Bases views (not just TaskNotes view types)
@@ -490,11 +493,10 @@ export const DEFAULT_SETTINGS: TaskNotesSettings = {
 	},
 	// Recurring task behavior defaults
 	maintainDueDateOffsetInRecurring: false,
+	resetCheckboxesOnRecurrence: false, // Off by default - user opts in
 	// Frontmatter link format defaults
 	useFrontmatterMarkdownLinks: false, // Default to wikilinks for compatibility
 	// OAuth Calendar Integration defaults
-	oauthSetupMode: "advanced" as "quick" | "advanced", // BETA: Default to advanced setup (quick setup temporarily disabled)
-	lemonSqueezyLicenseKey: "",
 	googleOAuthClientId: "",
 	googleOAuthClientSecret: "",
 	microsoftOAuthClientId: "",
