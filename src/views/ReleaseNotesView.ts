@@ -135,11 +135,9 @@ export class ReleaseNotesView extends ItemView {
 
 		// Transform issue references into clickable links and render the markdown
 		const transformedNotes = this.transformIssueLinks(versionData.content);
-		const baseFilesNotice = this.plugin.i18n.translate("views.releaseNotes.baseFilesNotice");
-		const releaseContentWithNotice = `${baseFilesNotice}\n\n${transformedNotes}`;
 		await MarkdownRenderer.render(
 			this.plugin.app,
-			releaseContentWithNotice,
+			transformedNotes,
 			content,
 			"",
 			this as any
@@ -193,6 +191,12 @@ export class ReleaseNotesView extends ItemView {
 		} else {
 			starMessage.appendText(messageText);
 		}
+
+		// Show base files notice once at the top
+		const baseFilesNotice = this.plugin.i18n.translate("views.releaseNotes.baseFilesNotice");
+		const noticeContainer = container.createDiv({ cls: "release-notes-base-notice" });
+		noticeContainer.style.marginBottom = "16px";
+		await MarkdownRenderer.render(this.plugin.app, baseFilesNotice, noticeContainer, "", this as any);
 
 		// Render all versions
 		const versionsContainer = container.createEl("div", { cls: "release-notes-versions" });

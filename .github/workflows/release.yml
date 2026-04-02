@@ -59,6 +59,27 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      # Step 0: Validate CHANGELOG has an entry for this version
+      - name: Validate CHANGELOG entry
+        run: |
+          tag="${{ needs.check-version.outputs.new-version }}"
+          notes=$(awk -v ver="$tag" '
+            /^## \[/ {
+              if (found) exit
+              if ($0 ~ "\\[" ver "\\]") found=1
+              next
+            }
+            /^---/ { if (found) exit }
+            found { print }
+          ' CHANGELOG.md)
+
+          trimmed=$(echo "$notes" | sed '/^[[:space:]]*$/d')
+          if [ -z "$trimmed" ]; then
+            echo "::warning::No CHANGELOG.md entry found for version $tag! GitHub release will have a generic description. Add an entry to CHANGELOG.md before version-bumping."
+          else
+            echo "CHANGELOG entry found for $tag ($(echo "$trimmed" | wc -l) lines)"
+          fi
+
       # Step 1: Generate release notes from CHANGELOG.md BEFORE build
       - name: Generate release notes from CHANGELOG.md
         id: changelog

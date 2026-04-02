@@ -641,10 +641,10 @@ export class BasesToolbarInjector {
 								}
 							}
 						}
-						// Fallback: check for top-level folder filter patterns
-						if (!outputTaskFolder && parsed?.filters) {
-							const filterStr = JSON.stringify(parsed.filters);
-							const folderMatch = filterStr.match(/file\.inFolder\("([^"]+)"\)/);
+						// Fallback: check for file.inFolder() in raw YAML content
+						// (can't use JSON.stringify — it escapes inner quotes, breaking the regex)
+						if (!outputTaskFolder) {
+							const folderMatch = baseContent.match(/file\.inFolder\("([^"]+)"\)/);
 							if (folderMatch) {
 								outputTaskFolder = folderMatch[1];
 							}

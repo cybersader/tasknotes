@@ -4,6 +4,26 @@ All notable changes to this TaskNotes fork will be documented in this file.
 
 This fork (`cybersader/tasknotes`) adds bulk tasking, notifications, and other enhancements to the upstream [TaskNotes](https://github.com/callumalpass/tasknotes) plugin.
 
+## [4.3.78] - 2026-04-02
+
+### Fixed
+- **New task button source folder actually works** — `file.inFolder()` extraction was broken because `JSON.stringify` escapes inner quotes, making the regex always return null. Now searches raw YAML content directly.
+- **"What's new" base files notice shown once** — The `.base` files info callout now appears once at the top of the release notes view instead of repeating on every version section.
+- **Backfilled release notes** — Added missing CHANGELOG entries and `docs/releases/` files for 4.3.76 and 4.3.77. GitHub release descriptions updated.
+
+### Improved
+- **CHANGELOG validation in CI** — Release workflow now warns if no CHANGELOG entry exists for the version being released.
+
+## [4.3.77] - 2026-04-01
+
+### Added
+- **Copy config to clipboard** — New button in Developer Options (Settings → General → Developer Options) copies full plugin configuration as JSON for debugging and support
+
+## [4.3.76] - 2026-04-01
+
+### Fixed
+- **New task button uses .base source folder** — "New task" in Bases toolbar now creates files in the view's source folder (from `sources.folder` or `file.inFolder` filter) instead of always using the default tasks folder
+
 ## [4.3.75] - 2026-03-30
 
 ### Fixed
